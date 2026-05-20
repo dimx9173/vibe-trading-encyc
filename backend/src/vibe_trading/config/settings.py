@@ -74,6 +74,10 @@ class Settings:
     binance_testnet_api_secret: str = field(default_factory=lambda: os.getenv("BINANCE_TESTNET_API_SECRET", ""))
     binance_api_key: str = field(default_factory=lambda: os.getenv("BINANCE_API_KEY", ""))
     binance_api_secret: str = field(default_factory=lambda: os.getenv("BINANCE_API_SECRET", ""))
+    okx_api_key: str = field(default_factory=lambda: os.getenv("OKX_API_KEY", ""))
+    okx_secret_key: str = field(default_factory=lambda: os.getenv("OKX_SECRET_KEY", ""))
+    okx_passphrase: str = field(default_factory=lambda: os.getenv("OKX_PASSPHRASE", ""))
+    okx_demo_trading: bool = field(default_factory=lambda: os.getenv("OKX_DEMO_TRADING", "false").lower() == "true")
     cryptocmp_api_key: Optional[str] = field(default_factory=lambda: os.getenv("CRYPTOCOMPARE_API_KEY"))
     lunarcrush_api_key: Optional[str] = field(default_factory=lambda: os.getenv("LUNARCRUSH_API_KEY"))
 
@@ -104,6 +108,10 @@ class Settings:
             binance_testnet_api_secret=os.getenv("BINANCE_TESTNET_API_SECRET", ""),
             binance_api_key=os.getenv("BINANCE_API_KEY", ""),
             binance_api_secret=os.getenv("BINANCE_API_SECRET", ""),
+            okx_api_key=os.getenv("OKX_API_KEY", ""),
+            okx_secret_key=os.getenv("OKX_SECRET_KEY", ""),
+            okx_passphrase=os.getenv("OKX_PASSPHRASE", ""),
+            okx_demo_trading=os.getenv("OKX_DEMO_TRADING", "false").lower() == "true",
             database_url=os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./vibe_trading.db"),
             cryptocmp_api_key=os.getenv("CRYPTOCOMPARE_API_KEY"),
             lunarcrush_api_key=os.getenv("LUNARCRUSH_API_KEY"),
