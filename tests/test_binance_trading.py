@@ -140,6 +140,46 @@ async def test_limit_order_payload_includes_time_in_force(monkeypatch):
     assert captured["params"]["timeInForce"] == "GTC"
 
 
+@pytest.mark.asyncio
+async def test_reduce_only_order_payload_includes_reduce_only(monkeypatch):
+    config = BinanceConfig(
+        environment=BinanceEnvironment.TESTNET,
+        api_key="key",
+        api_secret="secret",
+    )
+    client = BinanceRestClient(config)
+    captured = {}
+
+    async def fake_request(method, endpoint, signed=False, **kwargs):
+        captured.update({"method": method, "endpoint": endpoint, "signed": signed, **kwargs})
+        return {
+            "symbol": "BTCUSDT",
+            "orderId": 123,
+            "clientOrderId": "abc",
+            "side": "SELL",
+            "type": "MARKET",
+            "positionSide": "LONG",
+            "origQty": "0.01",
+            "price": "0",
+            "stopPrice": "0",
+            "status": "NEW",
+            "executedQty": "0",
+            "cumQty": "0",
+        }
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    await client.place_order(
+        symbol="BTCUSDT",
+        side=OrderSide.SELL,
+        order_type=OrderType.MARKET,
+        quantity=0.01,
+        position_side=PositionSide.LONG,
+        reduce_only=True,
+    )
+
+    assert captured["params"]["reduceOnly"] == "true"
+
+
 def test_settings_expose_binance_credentials(monkeypatch):
     monkeypatch.setenv("BINANCE_TESTNET_API_KEY", "test-key")
     monkeypatch.setenv("BINANCE_TESTNET_API_SECRET", "test-secret")

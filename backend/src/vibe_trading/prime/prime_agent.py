@@ -6,13 +6,12 @@ Prime Agent - 中央决策和监控系统
 基于pi_agent_core.Agent框架构建，复用其状态管理、事件系统和消息处理能力。
 """
 import asyncio
-from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from pi_agent_core import Agent, AgentOptions, AgentMessage as CoreAgentMessage
-from pi_ai import UserMessage, TextContent
+from pi_ai import TextContent
 from pi_logger import get_logger, info, success, warning, error
 
 from vibe_trading.agents.messaging import AgentMessage, MessageType
@@ -22,18 +21,12 @@ from vibe_trading.prime.models import (
     Decision,
     DecisionPriority,
     EmergencyType,
-    HarnessConfig,
-    PrimeConfig,
     PrimeAgentConfig,
     SystemState,
     TradingAction,
 )
-# SubagentHandle不再需要，因为Prime Agent现在只是监控系统
-# from vibe_trading.prime.subagent_handle import SubagentHandle
-# SubagentFactory不再需要，因为Prime Agent现在只是监控系统
-# from vibe_trading.prime.subagent_factory import SubagentFactory
-# DecisionAggregator暂时不再使用，因为Prime Agent现在只是监控系统
-# from vibe_trading.prime.decision_aggregator import DecisionAggregator
+from vibe_trading.prime.decision_aggregator import DecisionAggregator
+from vibe_trading.prime.subagent_factory import SubagentFactory
 
 logger = get_logger(__name__)
 
@@ -98,8 +91,9 @@ class PrimeAgent(Agent):
         )
         self.harness = HarnessManager(config=config.harness_config)
 
-        # 决策聚合器（暂时不使用）
-        # self.decision_aggregator = DecisionAggregator(min_signals=3)
+        # Legacy tests and diagnostic flows still exercise the old aggregation API.
+        self.decision_aggregator = DecisionAggregator(min_signals=3)
+        self.subagents: Dict[str, Any] = {}
 
         # 系统状态
         self.system_state = SystemState()
@@ -241,6 +235,15 @@ class PrimeAgent(Agent):
 
         info(f"Initialized {len(self.emergency_agents)} emergency agents", tag="PRIME")
         logger.info("Emergency agents ready: " + ", ".join(self.emergency_agents.keys()), tag="PRIME")
+
+    async def _initialize_subagents(self) -> None:
+        """Compatibility initializer for legacy Prime integration tests."""
+        self.subagents = SubagentFactory.create_all_subagents(
+            channel=self.message_channel,
+            enabled_only=True,
+            symbol=self.prime_config.symbol,
+            interval=self.prime_config.interval,
+        )
 
     async def _start_monitoring_loop(self) -> None:
         """

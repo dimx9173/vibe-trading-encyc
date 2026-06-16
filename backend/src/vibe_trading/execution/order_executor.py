@@ -21,6 +21,7 @@ from vibe_trading.data_sources.binance_client import (
 )
 from vibe_trading.config.binance_config import BinanceEnvironment
 from vibe_trading.config.settings import get_settings
+from vibe_trading.execution.exchange_filters import ExchangeFilterValidator
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,7 @@ class OrderExecutor(ABC):
         price: Optional[float] = None,
         stop_price: Optional[float] = None,
         position_side: Optional[PositionSide] = None,
+        reduce_only: bool = False,
     ) -> OrderResult:
         """下单"""
         pass
@@ -122,6 +124,10 @@ class PaperOrderExecutor(OrderExecutor):
             if pos.symbol == symbol:
                 pos.update_unrealized_pnl(price)
 
+    def get_reference_price(self, symbol: str) -> Optional[float]:
+        """Return the latest paper-market reference price for risk checks."""
+        return self._current_prices.get(symbol)
+
     async def place_order(
         self,
         symbol: str,
@@ -131,6 +137,7 @@ class PaperOrderExecutor(OrderExecutor):
         price: Optional[float] = None,
         stop_price: Optional[float] = None,
         position_side: Optional[PositionSide] = None,
+        reduce_only: bool = False,
     ) -> OrderResult:
         """下单（模拟）"""
         order_id = f"paper_{uuid.uuid4().hex[:8]}"
@@ -259,6 +266,7 @@ class BinanceOrderExecutor(OrderExecutor):
         )
         self._client = BinanceClient(config)
         self._dry_run = dry_run  # dry-run模式：只打印订单不执行
+        self._exchange_filter_validator: Optional[ExchangeFilterValidator] = None
 
     async def place_order(
         self,
@@ -269,6 +277,7 @@ class BinanceOrderExecutor(OrderExecutor):
         price: Optional[float] = None,
         stop_price: Optional[float] = None,
         position_side: Optional[PositionSide] = None,
+        reduce_only: bool = False,
     ) -> OrderResult:
         """下单"""
         if self._dry_run:
@@ -309,6 +318,7 @@ class BinanceOrderExecutor(OrderExecutor):
             price=price,
             stop_price=stop_price,
             position_side=position_side,
+            reduce_only=reduce_only,
         )
 
         return OrderResult(
@@ -346,6 +356,14 @@ class BinanceOrderExecutor(OrderExecutor):
         """获取余额"""
         balance = await self._client.rest.get_balance()
         return {k: v["balance"] for k, v in balance.items()}
+
+    async def get_exchange_filter_validator(self) -> ExchangeFilterValidator:
+        """Load and cache Binance symbol filters for local validation."""
+        if self._exchange_filter_validator is None:
+            self._exchange_filter_validator = ExchangeFilterValidator(
+                await self._client.rest.get_symbol_filters()
+            )
+        return self._exchange_filter_validator
 
     async def close(self) -> None:
         """关闭连接"""

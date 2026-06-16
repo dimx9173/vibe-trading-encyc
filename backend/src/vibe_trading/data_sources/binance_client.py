@@ -175,6 +175,33 @@ class Position:
     adl_quantile: int = 0
 
 
+@dataclass
+class SymbolFilters:
+    """Relevant Binance Futures symbol filters for pre-trade validation."""
+
+    symbol: str
+    tick_size: float
+    step_size: float
+    min_qty: float
+    max_qty: float
+    min_notional: float
+
+    @classmethod
+    def from_exchange_symbol(cls, symbol_data: dict) -> "SymbolFilters":
+        filters = {item.get("filterType"): item for item in symbol_data.get("filters", [])}
+        price_filter = filters.get("PRICE_FILTER", {})
+        lot_filter = filters.get("LOT_SIZE") or filters.get("MARKET_LOT_SIZE", {})
+        notional_filter = filters.get("MIN_NOTIONAL", {})
+        return cls(
+            symbol=symbol_data["symbol"],
+            tick_size=float(price_filter.get("tickSize", 0)),
+            step_size=float(lot_filter.get("stepSize", 0)),
+            min_qty=float(lot_filter.get("minQty", 0)),
+            max_qty=float(lot_filter.get("maxQty", 0)),
+            min_notional=float(notional_filter.get("notional", notional_filter.get("minNotional", 0))),
+        )
+
+
 # =============================================================================
 # Binance WebSocket 客户端
 # =============================================================================
@@ -343,6 +370,15 @@ class BinanceRestClient:
     async def get_exchange_info(self) -> dict:
         """获取交易所信息"""
         return await self._request("GET", "/fapi/v1/exchangeInfo")
+
+    async def get_symbol_filters(self) -> Dict[str, SymbolFilters]:
+        """Fetch Binance Futures symbol filters keyed by symbol."""
+        exchange_info = await self.get_exchange_info()
+        return {
+            item["symbol"]: SymbolFilters.from_exchange_symbol(item)
+            for item in exchange_info.get("symbols", [])
+            if item.get("symbol")
+        }
 
     async def get_klines(
         self,
