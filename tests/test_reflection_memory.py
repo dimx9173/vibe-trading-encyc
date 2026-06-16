@@ -128,3 +128,98 @@ async def test_reflection_persists_and_surfaces_alpha(tmp_path):
     hits = memory.retrieve_relevant("ETHUSDT BUY", top_k=5)
     assert hits
     assert any("Alpha" in h for h in hits), "retrieved text does not surface alpha"
+
+
+# ---------------------------------------------------------------------------
+# C3: per-bar Portfolio Manager memory injection
+# ---------------------------------------------------------------------------
+from types import SimpleNamespace  # noqa: E402
+
+from vibe_trading.agents.decision.decision_agents import PortfolioManagerAgent  # noqa: E402
+from vibe_trading.agents.decision.trading_tools import (  # noqa: E402
+    DecisionScorecard,
+    ExecutionStyle,
+    PositionSide,
+    TradingPlan,
+)
+
+
+def _make_pm(symbol="ETHUSDT", memory=None):
+    pm = PortfolioManagerAgent()
+    pm._tool_context = SimpleNamespace(symbol=symbol, interval="30m")
+    pm._memory = memory
+    return pm
+
+
+def _make_scorecard(action="BUY", rationale="ETHUSDT uptrend continuation"):
+    return DecisionScorecard(
+        overall_score=60.0,
+        confidence=0.7,
+        technical_score=65.0,
+        fundamental_score=55.0,
+        sentiment_score=60.0,
+        risk_score=70.0,
+        recommended_action=action,
+        position_size_recommendation="medium",
+        rationale=rationale,
+    )
+
+
+def _make_plan():
+    return TradingPlan(
+        symbol="ETHUSDT",
+        position_side=PositionSide.LONG,
+        direction="LONG",
+        execution_style=ExecutionStyle.IMMEDIATE,
+        entry_orders=[{"order_type": "market", "price": 100.0, "pct": 100, "note": "entry"}],
+        total_position_usdt=50.0,
+        total_position_coin=0.5,
+        leverage=5,
+        stop_loss_orders=[{"trigger_price": 98.0, "note": "sl"}],
+        take_profit_orders=[{"price": 105.0, "pct": 100, "note": "tp"}],
+        max_loss_usdt=1.0,
+        max_loss_pct=0.02,
+        risk_reward_ratio=2.5,
+    )
+
+
+def test_memory_section_includes_lessons_when_present(tmp_path):
+    memory = PersistentMemory(storage_path=str(tmp_path / "m.pkl"))
+    memory.add_memory(
+        situation="ETHUSDT BUY uptrend RSI healthy",
+        advice="LONG | lessons: trail stops in trending markets",
+        outcome="PnL: 4.00%",
+        pnl=4.0,
+        alpha=2.5,
+    )
+    pm = _make_pm(memory=memory)
+    section = pm._build_memory_section(_make_scorecard())
+    assert "RELEVANT PAST LESSONS" in section
+    assert "trail stops" in section
+
+
+def test_memory_section_empty_when_no_memory():
+    pm = _make_pm(memory=None)
+    assert pm._build_memory_section(_make_scorecard()) == ""
+
+
+def test_decision_prompt_contains_memory_section(tmp_path):
+    memory = PersistentMemory(storage_path=str(tmp_path / "m.pkl"))
+    memory.add_memory(
+        situation="ETHUSDT BUY uptrend",
+        advice="LONG | lessons: avoid over-leverage in trend",
+        outcome="PnL: 3.00%",
+        pnl=3.0,
+    )
+    pm = _make_pm(memory=memory)
+    prompt = pm._build_decision_prompt(
+        scorecard=_make_scorecard(),
+        analyst_reports={"technical": "ETHUSDT uptrend, buy"},
+        investment_plan="accumulate on dips",
+        trading_plan=_make_plan(),
+        risk_debate={"aggressive": "go long"},
+        current_positions=[],
+        account_balance=10000.0,
+        current_price=100.0,
+    )
+    assert "RELEVANT PAST LESSONS" in prompt
