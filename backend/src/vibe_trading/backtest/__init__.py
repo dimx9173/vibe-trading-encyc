@@ -1,0 +1,1 @@
+"""Minimal backtest compatibility package."""

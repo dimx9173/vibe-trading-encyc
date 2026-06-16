@@ -78,6 +78,36 @@ class OnBarThread:
         await self._coordinator.initialize()
         
         logger.info("OnBarThread initialized with full agent team")
+
+    async def _get_positions(self) -> list[dict]:
+        """Read current positions through the configured executor."""
+        if not self.executor:
+            return []
+        positions = await self.executor.get_positions()
+        return [
+            {
+                "symbol": pos.symbol,
+                "position_amount": pos.position_amount,
+                "entry_price": pos.entry_price,
+                "mark_price": pos.mark_price,
+                "unrealized_profit": pos.unrealized_profit,
+                "liquidation_price": pos.liquidation_price,
+                "leverage": pos.leverage,
+                "position_side": pos.position_side.value,
+                "notional": pos.notional,
+            }
+            for pos in positions
+        ]
+
+    async def _get_account_balance(self) -> float:
+        """Read available USDT balance through the configured executor."""
+        if not self.executor:
+            return 10000.0
+        balances = await self.executor.get_balance()
+        usdt = balances.get("USDT", 10000.0)
+        if isinstance(usdt, dict):
+            return float(usdt.get("available", usdt.get("balance", 10000.0)))
+        return float(usdt)
     
     async def start(self) -> None:
         """Start the On Bar thread"""
@@ -278,10 +308,12 @@ class OnBarThread:
             )
 
             # Execute full 5-phase decision flow with all 13 agents
+            positions = await self._get_positions()
+            account_balance = await self._get_account_balance()
             decision = await self._coordinator.analyze_and_decide(
                 current_price=close_price,
-                account_balance=10000.0,  # Would get from account
-                current_positions=[],  # Would get from position manager
+                account_balance=account_balance,
+                current_positions=positions,
                 bar_open_time_ms=int(kline.open_time),
             )
 
@@ -441,10 +473,12 @@ class OnBarThread:
             logger.info(f"Running OnBarThread once for {self.symbol} @ ${price:.2f}")
             
             # Execute full 5-phase decision flow with all 13 agents
+            positions = await self._get_positions()
+            account_balance = await self._get_account_balance()
             decision = await self._coordinator.analyze_and_decide(
                 current_price=price,
-                account_balance=10000.0,
-                current_positions=[],
+                account_balance=account_balance,
+                current_positions=positions,
             )
             
             logger.info(f"Decision: {decision.decision}")

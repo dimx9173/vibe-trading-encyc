@@ -55,6 +55,10 @@ class Settings:
     stop_loss_pct: float = 0.02  # 止损百分比
     take_profit_pct: float = 0.05  # 止盈百分比
     leverage: int = 5  # 杠杆倍数
+    execution_max_single_order_notional: float = 100.0
+    execution_max_total_exposure: float = 300.0
+    execution_max_margin_fraction: float = 0.5
+    execution_position_mode: str = "hedge"
 
     # Agent 配置
     debate_rounds: int = 2  # 辩论轮数
@@ -74,6 +78,10 @@ class Settings:
     binance_testnet_api_secret: str = field(default_factory=lambda: os.getenv("BINANCE_TESTNET_API_SECRET", ""))
     binance_api_key: str = field(default_factory=lambda: os.getenv("BINANCE_API_KEY", ""))
     binance_api_secret: str = field(default_factory=lambda: os.getenv("BINANCE_API_SECRET", ""))
+    okx_api_key: str = field(default_factory=lambda: os.getenv("OKX_API_KEY", ""))
+    okx_secret_key: str = field(default_factory=lambda: os.getenv("OKX_SECRET_KEY", ""))
+    okx_passphrase: str = field(default_factory=lambda: os.getenv("OKX_PASSPHRASE", ""))
+    okx_demo_trading: bool = field(default_factory=lambda: os.getenv("OKX_DEMO_TRADING", "false").lower() == "true")
     cryptocmp_api_key: Optional[str] = field(default_factory=lambda: os.getenv("CRYPTOCOMPARE_API_KEY"))
     lunarcrush_api_key: Optional[str] = field(default_factory=lambda: os.getenv("LUNARCRUSH_API_KEY"))
 
@@ -93,6 +101,10 @@ class Settings:
             stop_loss_pct=float(os.getenv("STOP_LOSS_PCT", "0.02")),
             take_profit_pct=float(os.getenv("TAKE_PROFIT_PCT", "0.05")),
             leverage=int(os.getenv("LEVERAGE", "5")),
+            execution_max_single_order_notional=float(os.getenv("EXECUTION_MAX_SINGLE_ORDER_NOTIONAL", "100")),
+            execution_max_total_exposure=float(os.getenv("EXECUTION_MAX_TOTAL_EXPOSURE", "300")),
+            execution_max_margin_fraction=float(os.getenv("EXECUTION_MAX_MARGIN_FRACTION", "0.5")),
+            execution_position_mode=os.getenv("EXECUTION_POSITION_MODE", "hedge"),
             debate_rounds=int(os.getenv("DEBATE_ROUNDS", "2")),
             enable_memory=os.getenv("ENABLE_MEMORY", "true").lower() == "true",
             memory_top_k=int(os.getenv("MEMORY_TOP_K", "3")),
@@ -104,6 +116,10 @@ class Settings:
             binance_testnet_api_secret=os.getenv("BINANCE_TESTNET_API_SECRET", ""),
             binance_api_key=os.getenv("BINANCE_API_KEY", ""),
             binance_api_secret=os.getenv("BINANCE_API_SECRET", ""),
+            okx_api_key=os.getenv("OKX_API_KEY", ""),
+            okx_secret_key=os.getenv("OKX_SECRET_KEY", ""),
+            okx_passphrase=os.getenv("OKX_PASSPHRASE", ""),
+            okx_demo_trading=os.getenv("OKX_DEMO_TRADING", "false").lower() == "true",
             database_url=os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./vibe_trading.db"),
             cryptocmp_api_key=os.getenv("CRYPTOCOMPARE_API_KEY"),
             lunarcrush_api_key=os.getenv("LUNARCRUSH_API_KEY"),

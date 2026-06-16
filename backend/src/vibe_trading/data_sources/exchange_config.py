@@ -57,9 +57,11 @@ class ExchangeConfig:
         """
         if exchange == ExchangeType.BINANCE:
             return BinanceExchangeConfig.from_env()
+        elif exchange == ExchangeType.OKX:
+            return OkxExchangeConfig.from_env()
 
         # 其他交易所的配置
-        # 后续扩展 OKX、Bybit 等
+        # 后续扩展 Bybit 等
         raise ValueError(f"Unsupported exchange: {exchange}")
 
 
@@ -123,6 +125,45 @@ class BinanceExchangeConfig(ExchangeConfig):
             environment=env,
             api_key=self.api_key,
             api_secret=self.api_secret,
+        )
+
+
+@dataclass
+class OkxExchangeConfig(ExchangeConfig):
+    """OKX 交易所配置"""
+
+    passphrase: str = ""
+    demo_trading: bool = False  # OKX 使用 x-simulated-trading 头切换 demo 模式
+
+    ws_base_url: str = ""
+    rest_base_url: str = ""
+
+    def __post_init__(self):
+        if not self.rest_base_url:
+            self.rest_base_url = "https://www.okx.com"
+        if not self.ws_base_url:
+            if self.environment == "testnet":
+                self.ws_base_url = "wss://wspap.okx.com:8443/ws/v5/public?brokerId=9999"
+            else:
+                self.ws_base_url = "wss://ws.okx.com:8443/ws/v5/public"
+
+    @classmethod
+    def from_env(cls) -> "OkxExchangeConfig":
+        """从环境变量创建 OKX 配置"""
+        api_key = os.getenv("OKX_API_KEY", "")
+        secret_key = os.getenv("OKX_SECRET_KEY", "")
+        passphrase = os.getenv("OKX_PASSPHRASE", "")
+        demo_trading = os.getenv("OKX_DEMO_TRADING", "false").lower() == "true"
+
+        environment = "testnet" if not api_key else "mainnet"
+
+        return cls(
+            exchange_type=ExchangeType.OKX,
+            environment=environment,
+            api_key=api_key,
+            api_secret=secret_key,
+            passphrase=passphrase,
+            demo_trading=demo_trading,
         )
 
 

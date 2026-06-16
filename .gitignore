@@ -63,6 +63,7 @@ test_*
 docs/TECHNICAL_DOCUMENTATION.md
 test_*.py
 !tests/test_binance_trading.py
+!tests/test_execution_safety.py
 backend/test_*.py
 node_modules/*
 docs/node_modules/*

@@ -112,6 +112,9 @@ class ToolContext:
         self.interval = interval
         self.storage = storage
         self.executor = executor
+        self.risk_gate = None
+        self.exchange_filter_validator = None
+        self.order_audit = None
         self.current_bar_open_time_ms = None
 
 

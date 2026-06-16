@@ -274,9 +274,23 @@ class MultiThreadedTradingSystem:
         Returns:
             持仓列表
         """
-        # TODO: 实现真实的持仓获取
-        # 这里需要与订单执行器集成
-        return []
+        if not self.executor:
+            return []
+        positions = await self.executor.get_positions()
+        return [
+            {
+                "symbol": pos.symbol,
+                "position_amount": pos.position_amount,
+                "entry_price": pos.entry_price,
+                "mark_price": pos.mark_price,
+                "unrealized_profit": pos.unrealized_profit,
+                "liquidation_price": pos.liquidation_price,
+                "leverage": pos.leverage,
+                "position_side": pos.position_side.value,
+                "notional": pos.notional,
+            }
+            for pos in positions
+        ]
 
     async def _get_account_balance(self) -> float:
         """
@@ -285,9 +299,13 @@ class MultiThreadedTradingSystem:
         Returns:
             账户余额
         """
-        # TODO: 实现真实的余额获取
-        # 这里需要与Binance API集成
-        return 10000.0
+        if not self.executor:
+            return 10000.0
+        balances = await self.executor.get_balance()
+        usdt = balances.get("USDT", 10000.0)
+        if isinstance(usdt, dict):
+            return float(usdt.get("available", usdt.get("balance", 10000.0)))
+        return float(usdt)
 
     async def _handle_trigger_event(self, event) -> None:
         """

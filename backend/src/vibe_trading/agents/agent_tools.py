@@ -158,7 +158,9 @@ class SubmitTradeOrderParams(BaseModel):
     quantity: float = Field(gt=0, description="下单数量，币本位数量，例如 BTC 数量")
     position_side: str = Field(default="BOTH", description="持仓方向：BOTH、LONG 或 SHORT")
     price: Optional[float] = Field(default=None, description="限价单价格；市价单不填")
+    reference_price: Optional[float] = Field(default=None, description="市价单风控估值价格；用于下单前名义价值检查")
     stop_price: Optional[float] = Field(default=None, description="止损/止盈触发价格")
+    reduce_only: bool = Field(default=False, description="是否只减仓；平仓时应设置为 true")
     rationale: str = Field(default="", description="Portfolio Manager 对本次下单的最终理由")
 
 
@@ -542,6 +544,109 @@ def create_submit_trade_order_tool(tool_context: Any) -> AgentTool:
         side = OrderSide(args.side.upper())
         order_type = OrderType(args.order_type.upper())
         position_side = PositionSide(args.position_side.upper())
+        trace_id = getattr(tool_context, "current_trace_id", None) or getattr(
+            tool_context, "current_bar_open_time_ms", None
+        ) or "manual"
+
+        risk_result = None
+        if getattr(tool_context, "risk_gate", None):
+            risk_result = await tool_context.risk_gate.validate_order(
+                symbol=args.symbol.upper(),
+                side=side,
+                order_type=order_type,
+                quantity=args.quantity,
+                price=args.price,
+                reference_price=args.reference_price,
+                position_side=position_side,
+                reduce_only=args.reduce_only,
+            )
+            if getattr(tool_context, "order_audit", None):
+                await tool_context.order_audit.record_risk_check(
+                    trace_id=str(trace_id),
+                    symbol=args.symbol.upper(),
+                    interval=tool_context.interval,
+                    open_time_ms=getattr(tool_context, "current_bar_open_time_ms", None),
+                    verdict=risk_result.verdict.value,
+                    reason=risk_result.reason,
+                    request=args.model_dump(),
+                    metrics=risk_result.to_dict(),
+                )
+            if not risk_result.approved:
+                details = {
+                    "order_id": None,
+                    "symbol": args.symbol.upper(),
+                    "side": side.value,
+                    "order_type": order_type.value,
+                    "quantity": args.quantity,
+                    "price": args.price,
+                    "filled_price": None,
+                    "filled_quantity": 0.0,
+                    "status": "REJECTED_BY_RISK",
+                    "is_paper": None,
+                    "rationale": args.rationale,
+                    "reduce_only": args.reduce_only,
+                    "risk_check": risk_result.to_dict(),
+                }
+                if getattr(tool_context, "order_audit", None):
+                    await tool_context.order_audit.record_order(
+                        trace_id=str(trace_id),
+                        symbol=args.symbol.upper(),
+                        interval=tool_context.interval,
+                        open_time_ms=getattr(tool_context, "current_bar_open_time_ms", None),
+                        order_id=None,
+                        status=details["status"],
+                        side=side.value,
+                        order_type=order_type.value,
+                        quantity=args.quantity,
+                        result=details,
+                    )
+                return AgentToolResult(
+                    content=[TextContent(text=f"订单被风控拒绝: {risk_result.reason}")],
+                    details=details,
+                )
+
+        exchange_filter_result = None
+        if getattr(tool_context, "exchange_filter_validator", None):
+            exchange_filter_result = tool_context.exchange_filter_validator.validate(
+                symbol=args.symbol.upper(),
+                quantity=args.quantity,
+                price=args.price or args.reference_price,
+            )
+            if not exchange_filter_result.approved:
+                details = {
+                    "order_id": None,
+                    "symbol": args.symbol.upper(),
+                    "side": side.value,
+                    "order_type": order_type.value,
+                    "quantity": args.quantity,
+                    "price": args.price,
+                    "filled_price": None,
+                    "filled_quantity": 0.0,
+                    "status": "REJECTED_BY_EXCHANGE_FILTER",
+                    "is_paper": None,
+                    "rationale": args.rationale,
+                    "reduce_only": args.reduce_only,
+                    "exchange_filter": exchange_filter_result.to_dict(),
+                }
+                if risk_result:
+                    details["risk_check"] = risk_result.to_dict()
+                if getattr(tool_context, "order_audit", None):
+                    await tool_context.order_audit.record_order(
+                        trace_id=str(trace_id),
+                        symbol=args.symbol.upper(),
+                        interval=tool_context.interval,
+                        open_time_ms=getattr(tool_context, "current_bar_open_time_ms", None),
+                        order_id=None,
+                        status=details["status"],
+                        side=side.value,
+                        order_type=order_type.value,
+                        quantity=args.quantity,
+                        result=details,
+                    )
+                return AgentToolResult(
+                    content=[TextContent(text=f"订单未满足交易所过滤规则: {exchange_filter_result.reason}")],
+                    details=details,
+                )
 
         result = await tool_context.executor.place_order(
             symbol=args.symbol.upper(),
@@ -551,6 +656,7 @@ def create_submit_trade_order_tool(tool_context: Any) -> AgentTool:
             price=args.price,
             stop_price=args.stop_price,
             position_side=position_side,
+            reduce_only=args.reduce_only,
         )
 
         details = {
@@ -565,7 +671,62 @@ def create_submit_trade_order_tool(tool_context: Any) -> AgentTool:
             "status": result.status,
             "is_paper": result.is_paper,
             "rationale": args.rationale,
+            "reduce_only": args.reduce_only,
         }
+        if risk_result:
+            details["risk_check"] = risk_result.to_dict()
+        if exchange_filter_result:
+            details["exchange_filter"] = exchange_filter_result.to_dict()
+        if getattr(tool_context, "order_audit", None):
+            await tool_context.order_audit.record_order(
+                trace_id=str(trace_id),
+                symbol=result.symbol,
+                interval=tool_context.interval,
+                open_time_ms=getattr(tool_context, "current_bar_open_time_ms", None),
+                order_id=result.order_id,
+                status=result.status,
+                side=result.side.value,
+                order_type=result.order_type.value,
+                quantity=result.quantity,
+                result=details,
+            )
+            if result.filled_quantity:
+                await tool_context.order_audit.record_fill(
+                    trace_id=str(trace_id),
+                    symbol=result.symbol,
+                    interval=tool_context.interval,
+                    open_time_ms=getattr(tool_context, "current_bar_open_time_ms", None),
+                    order_id=result.order_id,
+                    fill_id=f"{result.order_id}:fill",
+                    side=result.side.value,
+                    quantity=result.filled_quantity,
+                    price=result.filled_price or result.price or 0.0,
+                    fee=None,
+                    fee_asset=None,
+                )
+            positions = await tool_context.executor.get_positions()
+            balances = await tool_context.executor.get_balance()
+            await tool_context.order_audit.record_position_snapshot(
+                trace_id=str(trace_id),
+                symbol=result.symbol,
+                interval=tool_context.interval,
+                open_time_ms=getattr(tool_context, "current_bar_open_time_ms", None),
+                positions=[
+                    {
+                        "symbol": pos.symbol,
+                        "position_amount": pos.position_amount,
+                        "entry_price": pos.entry_price,
+                        "mark_price": pos.mark_price,
+                        "unrealized_profit": pos.unrealized_profit,
+                        "liquidation_price": pos.liquidation_price,
+                        "leverage": pos.leverage,
+                        "position_side": pos.position_side.value,
+                        "notional": pos.notional,
+                    }
+                    for pos in positions
+                ],
+                balances=balances,
+            )
         text = (
             f"订单已提交: {result.status}\n"
             f"order_id={result.order_id}, symbol={result.symbol}, side={result.side.value}, "

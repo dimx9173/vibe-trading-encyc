@@ -87,4 +87,7 @@ class ProviderRegistry:
 
 # 注册内置Provider
 from .binance_provider import BinanceProvider
+from .okx_provider import OkxProvider
+
 ProviderRegistry.register("binance", BinanceProvider)
+ProviderRegistry.register("okx", OkxProvider)

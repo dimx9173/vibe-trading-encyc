@@ -65,6 +65,8 @@ from vibe_trading.memory.reflection import (
     TradeReflector,
 )
 from vibe_trading.execution.order_executor import OrderExecutor, PaperOrderExecutor
+from vibe_trading.execution.order_audit import ExecutionAuditStorage
+from vibe_trading.execution.pre_trade_risk import PreTradeRiskGate, RiskPolicy
 
 logger = logging.getLogger(__name__)
 log = get_logger("TradingCoordinator")
@@ -123,6 +125,8 @@ class TradingCoordinator:
             storage=storage,
             executor=self.executor,
         )
+        self._tool_context.risk_gate = PreTradeRiskGate(self.executor, RiskPolicy.from_settings())
+        self._tool_context.order_audit = ExecutionAuditStorage()
 
         # Agents
         self._analysts: Dict[str, Any] = {}
@@ -257,6 +261,8 @@ class TradingCoordinator:
 
     async def initialize(self) -> None:
         """初始化所有 Agent"""
+        await self._initialize_exchange_filters()
+
         # 初始化分析师
         if self.agent_config.technical_analyst.enabled:
             self._analysts["technical"] = await create_technical_analyst(self._tool_context)
@@ -315,6 +321,16 @@ class TradingCoordinator:
             )
 
         logger.info(f"All agents initialized for {self.symbol}")
+
+    async def _initialize_exchange_filters(self) -> None:
+        """Load exchange filters from executors that support them."""
+        loader = getattr(self.executor, "get_exchange_filter_validator", None)
+        if not callable(loader):
+            return
+        try:
+            self._tool_context.exchange_filter_validator = await loader()
+        except Exception as exc:
+            logger.warning(f"Failed to load exchange filters: {exc}")
 
     async def analyze_and_decide(
         self,
@@ -576,6 +592,7 @@ class TradingCoordinator:
         import time
         phase_start = time.time()
         self._tool_context.current_bar_open_time_ms = bar_open_time_ms
+        self._tool_context.current_trace_id = f"{self.symbol}:{self.interval}:{bar_open_time_ms or int(time.time() * 1000)}"
         final_decision = await self._run_portfolio_manager(
             analyst_reports,
             investment_plan,
