@@ -525,10 +525,13 @@ class PortfolioManagerAgent:
         )
         top_k = get_settings().memory_top_k
         lessons = self._memory.retrieve_relevant(query, top_k=top_k)
-        if not lessons:
+        cross = self._memory.get_cross_ticker_lessons(top_k=3)
+        if not lessons and not cross:
             return ""
 
         body = "\n---\n".join(lessons)
+        if cross:
+            body += "\n\nCROSS-TICKER LESSONS (aggregate across symbols):\n" + cross
         return (
             "\n\nRELEVANT PAST LESSONS (learn from prior similar situations; "
             "Alpha = market-adjusted result):\n" + body + "\n"

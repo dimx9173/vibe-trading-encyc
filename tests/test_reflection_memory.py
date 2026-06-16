@@ -315,3 +315,29 @@ async def test_reflect_on_matured_hold_captures_missed_move(tmp_path):
 
     hits = memory.retrieve_relevant("ETHUSDT HOLD", top_k=5)
     assert hits
+
+
+# ---------------------------------------------------------------------------
+# C5: cross-ticker lessons (pure aggregate, no LLM)
+# ---------------------------------------------------------------------------
+
+def test_cross_ticker_lessons_aggregates_by_alpha(tmp_path):
+    memory = PersistentMemory(storage_path=str(tmp_path / "m.pkl"))
+    memory.add_memory("ETHUSDT BUY trend", "LONG | lessons: trail stops", pnl=5.0, alpha=4.0, symbol="ETHUSDT")
+    memory.add_memory("BTCUSDT BUY breakout", "LONG | lessons: size up on volume", pnl=8.0, alpha=6.0, symbol="BTCUSDT")
+    memory.add_memory("SOLUSDT HOLD chop", "HOLD | lessons: avoid ranging mkt", pnl=0.0, alpha=-5.0, symbol="SOLUSDT")
+    memory.add_memory("no alpha entry", "do something", pnl=1.0)  # ignored
+
+    digest = memory.get_cross_ticker_lessons(top_k=3)
+    assert "Winning patterns" in digest
+    assert "Losing patterns" in digest
+    assert "BTCUSDT" in digest and "SOLUSDT" in digest
+    # no-alpha entry excluded
+    assert "no alpha entry" not in digest
+
+
+def test_cross_ticker_lessons_empty_when_nothing():
+    assert PersistentMemory(storage_path="/tmp/_none.pkl").get_cross_ticker_lessons() == ""
+    m = PersistentMemory(storage_path="/tmp/_none2.pkl")
+    m.add_memory("x", "y", pnl=1.0)  # alpha missing
+    assert m.get_cross_ticker_lessons() == ""

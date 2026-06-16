@@ -225,6 +225,42 @@ class BM25Memory:
         """获取所有记忆"""
         return self.documents.copy()
 
+    def get_cross_ticker_lessons(self, top_k: int = 3) -> str:
+        """
+        聚合跨币种的胜负经验，返回精简摘要供 PM 参考（纯聚合，无 LLM）。
+
+        借鉴 TradingAgents 的"跨 ticker 教训"思路：把高 alpha 的赢家模式与
+        负 alpha 的输家模式提炼出来，让单一币种决策也能看到全局规律。
+        无 alpha 的条目不参与（无法判断决策质量）。
+        """
+        with_alpha = [d for d in self.documents if d.alpha is not None]
+        if not with_alpha:
+            return ""
+
+        winners = sorted(
+            [d for d in with_alpha if d.alpha > 0],
+            key=lambda d: d.alpha,
+            reverse=True,
+        )[:top_k]
+        losers = sorted(
+            [d for d in with_alpha if d.alpha < 0], key=lambda d: d.alpha
+        )[:top_k]
+
+        lines: List[str] = []
+        if winners:
+            lines.append("Winning patterns (positive alpha):")
+            for d in winners:
+                lines.append(
+                    f"  + [{d.symbol or '?'} a{d.alpha:+.1f}%] {d.advice[:80]}"
+                )
+        if losers:
+            lines.append("Losing patterns (negative alpha):")
+            for d in losers:
+                lines.append(
+                    f"  - [{d.symbol or '?'} a{d.alpha:+.1f}%] {d.advice[:80]}"
+                )
+        return "\n".join(lines)
+
     def clear(self) -> None:
         """清空所有记忆"""
         self.documents = []
