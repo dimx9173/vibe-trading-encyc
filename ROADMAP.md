@@ -168,7 +168,12 @@
 
 ## TODO 清单（按建议执行顺序）
 
-- [ ] **P0.1** 反思记忆闭环：加 benchmark alpha + 每 bar 注入 PM（`_build_decision_prompt`）+ 决策级反思 + 跨 ticker 教训
+- [x] **P0.1** 反思记忆闭环 ✅ _(branch `feat/reflection-memory-loop`，5 commits)_
+  - C1 修复原有反思/记忆接线（发现骨架是坏的：`TradeReflector` 调用不存在的 `.add/.search`，coordinator `await` 同步 `add_memory` 且 kwargs 错误，且生产路径从未注入 `PersistentMemory`）
+  - C2 benchmark alpha（默认 BTC，`REFLECTION_BENCHMARK_SYMBOL`）
+  - C3 每 bar 注入 PM（`_build_decision_prompt`）
+  - C4 决策级反思（含 HOLD，`REFLECTION_MATURATION_BARS`）
+  - C5 跨 ticker 教训聚合（无 LLM）
 - [ ] **P0.2** 结构化输出：`pi_ai/llm.py` 加 `response_format`；Trader/PM 产出 schema 化
 - [ ] **P0.3** 用量遥测：`pi_ai/usage_ledger.py` + 前端面板
 - [ ] **P1.1** MCP server 化 `get_all_tools()`
