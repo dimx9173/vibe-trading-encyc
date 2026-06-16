@@ -53,6 +53,23 @@ class TradeResult:
     hold_duration_hours: float
     market_condition: str  # "trending"/"ranging"/"volatile"
     timestamp: datetime = field(default_factory=datetime.now)
+    benchmark_return: Optional[float] = None  # 基准（如 BTC）同期回报%
+    alpha: Optional[float] = None  # 市场调整后超额回报 = pnl% - benchmark%
+
+
+def compute_alpha(
+    pnl_percentage: Optional[float],
+    benchmark_return: Optional[float],
+) -> Optional[float]:
+    """
+    市场调整后的超额回报 = 决策 pnl% - 基准同期回报%。
+
+    借鉴 TradingAgents 的 alpha-vs-SPY 思路；crypto 场景下基准默认为 BTC。
+    任一输入缺失时返回 None（无法计算 alpha）。
+    """
+    if pnl_percentage is None or benchmark_return is None:
+        return None
+    return pnl_percentage - benchmark_return
 
 
 class TradeReflector:
@@ -132,7 +149,10 @@ class TradeReflector:
 
         # 4. 更新记忆
         await self._update_memory_from_reflections(
-            reflections, pnl_percentage=trade_result.pnl_percentage
+            reflections,
+            pnl_percentage=trade_result.pnl_percentage,
+            benchmark_return=trade_result.benchmark_return,
+            alpha=trade_result.alpha,
         )
 
         logger.info(
@@ -143,14 +163,19 @@ class TradeReflector:
         return reflections
 
     def _evaluate_outcome(self, trade_result: TradeResult) -> ReflectionOutcome:
-        """评估交易结果"""
-        pnl_pct = trade_result.pnl_percentage
+        """评估交易结果（优先使用市场调整后的 alpha，缺失时回退原始 pnl）"""
+        # 优先用 alpha（剥离 beta 后的真实决策质量）；无 alpha 时退回原始 pnl
+        metric = (
+            trade_result.alpha
+            if trade_result.alpha is not None
+            else trade_result.pnl_percentage
+        )
 
-        if pnl_pct > 2:  # 盈利超过2%
+        if metric > 2:  # 超额/盈利超过2%
             return ReflectionOutcome.CORRECT
-        elif pnl_pct < -2:  # 亏损超过2%
+        elif metric < -2:  # 跑输/亏损超过2%
             return ReflectionOutcome.INCORRECT
-        elif abs(pnl_pct) < 0.5:  # 盈亏小于0.5%
+        elif abs(metric) < 0.5:  # 盈亏小于0.5%
             return ReflectionOutcome.PARTIAL
         else:
             return ReflectionOutcome.UNCERTAIN
@@ -378,6 +403,8 @@ class TradeReflector:
         self,
         reflections: List[Reflection],
         pnl_percentage: Optional[float] = None,
+        benchmark_return: Optional[float] = None,
+        alpha: Optional[float] = None,
     ) -> None:
         """从反思更新记忆（同步写入 PersistentMemory）。"""
         for reflection in reflections:
@@ -393,6 +420,8 @@ class TradeReflector:
                 advice=advice,
                 outcome=reflection.actual_outcome,
                 pnl=pnl_percentage,
+                benchmark_return=benchmark_return,
+                alpha=alpha,
             )
 
             logger.debug(

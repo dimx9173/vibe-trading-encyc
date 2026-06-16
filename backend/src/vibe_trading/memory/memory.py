@@ -25,6 +25,9 @@ class MemoryEntry:
     outcome: Optional[str] = None
     pnl: Optional[float] = None
     timestamp: float = 0
+    symbol: Optional[str] = None
+    benchmark_return: Optional[float] = None  # 基准同期回报%
+    alpha: Optional[float] = None  # 市场调整后超额回报%
 
     def to_dict(self) -> dict:
         return {
@@ -33,6 +36,9 @@ class MemoryEntry:
             "outcome": self.outcome,
             "pnl": self.pnl,
             "timestamp": self.timestamp,
+            "symbol": self.symbol,
+            "benchmark_return": self.benchmark_return,
+            "alpha": self.alpha,
         }
 
     @classmethod
@@ -43,6 +49,9 @@ class MemoryEntry:
             outcome=data.get("outcome"),
             pnl=data.get("pnl"),
             timestamp=data.get("timestamp", 0),
+            symbol=data.get("symbol"),
+            benchmark_return=data.get("benchmark_return"),
+            alpha=data.get("alpha"),
         )
 
 
@@ -75,6 +84,9 @@ class BM25Memory:
         advice: str,
         outcome: Optional[str] = None,
         pnl: Optional[float] = None,
+        symbol: Optional[str] = None,
+        benchmark_return: Optional[float] = None,
+        alpha: Optional[float] = None,
     ) -> None:
         """
         添加记忆条目
@@ -84,6 +96,9 @@ class BM25Memory:
             advice: 当时给出的建议/决策
             outcome: 结果描述（可选）
             pnl: 盈亏（可选）
+            symbol: 交易对（可选）
+            benchmark_return: 基准同期回报%（可选）
+            alpha: 市场调整后超额回报%（可选）
         """
         import time
 
@@ -93,6 +108,9 @@ class BM25Memory:
             outcome=outcome,
             pnl=pnl,
             timestamp=time.time(),
+            symbol=symbol,
+            benchmark_return=benchmark_return,
+            alpha=alpha,
         )
 
         self.documents.append(entry)
@@ -197,6 +215,8 @@ class BM25Memory:
                     advice += f"\nOutcome: {doc.outcome}"
                 if doc.pnl is not None:
                     advice += f"\nPnL: {doc.pnl:.2f}%"
+                if doc.alpha is not None:
+                    advice += f"\nAlpha (mkt-adj): {doc.alpha:+.2f}%"
                 results.append(advice)
 
         return results

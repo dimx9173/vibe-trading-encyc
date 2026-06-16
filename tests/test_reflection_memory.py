@@ -10,7 +10,12 @@ behaviour.
 import pytest
 
 from vibe_trading.memory.memory import PersistentMemory
-from vibe_trading.memory.reflection import TradeResult, TradeReflector
+from vibe_trading.memory.reflection import (
+    ReflectionOutcome,
+    TradeResult,
+    TradeReflector,
+    compute_alpha,
+)
 
 
 def _make_trade_result(pnl_percentage: float = 3.0) -> TradeResult:
@@ -64,3 +69,62 @@ async def test_reflection_survives_reload(tmp_path):
     assert reloaded.size() > 0
     hits = reloaded.retrieve_relevant("ETHUSDT SELL", top_k=3)
     assert hits
+
+
+# ---------------------------------------------------------------------------
+# C2: benchmark alpha (market-adjusted decision quality)
+# ---------------------------------------------------------------------------
+
+def test_compute_alpha_pure_helper():
+    """alpha = decision pnl% - benchmark return%."""
+    assert compute_alpha(5.0, 8.0) == -3.0          # gained but underperformed market
+    assert compute_alpha(5.0, 0.0) == 5.0           # no benchmark move
+    assert compute_alpha(None, 8.0) is None         # no pnl → no alpha
+    assert compute_alpha(5.0, None) is None         # no benchmark → no alpha
+
+
+def _make_trade_result_with_alpha(pnl_percentage, benchmark_return):
+    tr = _make_trade_result(pnl_percentage)
+    tr.benchmark_return = benchmark_return
+    tr.alpha = compute_alpha(pnl_percentage, benchmark_return)
+    return tr
+
+
+def test_outcome_uses_alpha_when_present():
+    """When alpha is available it drives the verdict, not raw pnl."""
+    reflector = TradeReflector(memory=PersistentMemory(storage_path="/tmp/_unused.pkl"))
+
+    # gained 5% but BTC did 9% → alpha -4% → underperformed market → INCORRECT
+    tr = _make_trade_result_with_alpha(5.0, 9.0)
+    assert reflector._evaluate_outcome(tr) == ReflectionOutcome.INCORRECT
+
+    # gained 5%, BTC flat → alpha +5% → CORRECT
+    tr2 = _make_trade_result_with_alpha(5.0, 0.0)
+    assert reflector._evaluate_outcome(tr2) == ReflectionOutcome.CORRECT
+
+
+def test_outcome_falls_back_to_raw_pnl_without_alpha():
+    """No alpha → legacy raw-pnl thresholds preserved."""
+    reflector = TradeReflector(memory=PersistentMemory(storage_path="/tmp/_unused.pkl"))
+    assert reflector._evaluate_outcome(_make_trade_result(3.0)) == ReflectionOutcome.CORRECT
+    assert reflector._evaluate_outcome(_make_trade_result(-4.0)) == ReflectionOutcome.INCORRECT
+
+
+async def test_reflection_persists_and_surfaces_alpha(tmp_path):
+    """Alpha must be stored on the memory entry and shown in retrieved text."""
+    memory = PersistentMemory(storage_path=str(tmp_path / "mem.pkl"))
+    reflector = TradeReflector(memory=memory, llm_model=None)
+
+    await reflector.reflect_on_trade(
+        trade_result=_make_trade_result_with_alpha(5.0, 9.0),  # alpha -4%
+        agent_reports={"technical_analyst": "ETHUSDT strong, buy"},
+        decision_context={"decision_id": "d3"},
+    )
+
+    entries = memory.get_all_memories()
+    assert entries, "no memory entries persisted"
+    assert any(e.alpha is not None for e in entries), "alpha not persisted on any entry"
+
+    hits = memory.retrieve_relevant("ETHUSDT BUY", top_k=5)
+    assert hits
+    assert any("Alpha" in h for h in hits), "retrieved text does not surface alpha"
