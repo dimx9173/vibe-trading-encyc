@@ -223,3 +223,95 @@ def test_decision_prompt_contains_memory_section(tmp_path):
         current_price=100.0,
     )
     assert "RELEVANT PAST LESSONS" in prompt
+
+
+# ---------------------------------------------------------------------------
+# C4: decision-level reflection (incl HOLD)
+# ---------------------------------------------------------------------------
+from vibe_trading.memory.decision_snapshots import (  # noqa: E402
+    DecisionSnapshot,
+    DecisionSnapshotStore,
+    interval_to_ms,
+)
+from vibe_trading.memory.reflection import (  # noqa: E402
+    evaluate_decision_outcome,
+    reflect_on_matured_snapshot,
+)
+
+
+def test_interval_to_ms():
+    assert interval_to_ms("30m") == 30 * 60_000
+    assert interval_to_ms("1h") == 3_600_000
+    assert interval_to_ms("4h") == 4 * 3_600_000
+    assert interval_to_ms("1d") == 86_400_000
+    assert interval_to_ms("") == 0
+    assert interval_to_ms("bogus") == 0
+
+
+def test_snapshot_store_pop_matured():
+    store = DecisionSnapshotStore()
+    window_ms = interval_to_ms("1h") * 12  # 12h
+
+    # 3 snapshots at t0, t0+5h, t0+13h(t=now-ish)
+    base = 1_000_000
+    fresh = DecisionSnapshot("d_fresh", "ETHUSDT", "HOLD", 100.0, base)
+    mid = DecisionSnapshot("d_mid", "ETHUSDT", "BUY", 100.0, base + 5 * interval_to_ms("1h"))
+    old = DecisionSnapshot("d_old", "ETHUSDT", "SELL", 100.0, base)
+    old.bar_open_time_ms = base  # well in the past
+    store.record(fresh)
+    store.record(mid)
+    store.record(old)
+
+    now = base + 13 * interval_to_ms("1h")  # 13h after base
+    matured = store.pop_matured(now, window_ms)
+    ids = {m.decision_id for m in matured}
+    # base and base+5h are >= 12h old → matured; (none here are base+0 vs 13h=13h>=12h yes)
+    assert "d_old" in ids
+    assert "d_mid" not in ids  # only 8h old
+    assert len(store) == 1  # only d_mid remains
+
+
+def test_evaluate_decision_outcome():
+    # BUY gains with price up
+    pnl, alpha = evaluate_decision_outcome("BUY", 100.0, 110.0)
+    assert pnl == 10.0 and alpha is None
+    # SELL loses when price up
+    pnl, _ = evaluate_decision_outcome("SELL", 100.0, 110.0)
+    assert pnl == -10.0
+    # HOLD: no pnl, but alpha reflects opportunity cost vs benchmark
+    pnl, alpha = evaluate_decision_outcome("HOLD", 100.0, 110.0, benchmark_return=10.0)
+    assert pnl == 0.0 and alpha == -10.0
+    # BUY beating benchmark
+    pnl, alpha = evaluate_decision_outcome("BUY", 100.0, 110.0, benchmark_return=8.0)
+    assert pnl == 10.0 and alpha == 2.0
+    # bad inputs
+    assert evaluate_decision_outcome("BUY", 0.0, 100.0) == (None, None)
+
+
+async def test_reflect_on_matured_hold_captures_missed_move(tmp_path):
+    """HOLD while market (and benchmark) rose 10% → negative alpha → INCORRECT."""
+    memory = PersistentMemory(storage_path=str(tmp_path / "m.pkl"))
+    reflector = TradeReflector(memory=memory, llm_model=None)
+
+    snap = DecisionSnapshot(
+        decision_id="d_hold",
+        symbol="ETHUSDT",
+        decision="HOLD",
+        price_at_decision=100.0,
+        bar_open_time_ms=1_000_000,
+    )
+
+    reflections = await reflect_on_matured_snapshot(
+        reflector=reflector,
+        snapshot=snap,
+        exit_price=110.0,           # market +10%
+        benchmark_return=10.0,      # BTC +10% → alpha = 0 - 10 = -10
+    )
+    assert reflections  # at least the overall reflection
+
+    entries = memory.get_all_memories()
+    assert entries
+    assert any(e.alpha is not None and e.alpha < 0 for e in entries)
+
+    hits = memory.retrieve_relevant("ETHUSDT HOLD", top_k=5)
+    assert hits

@@ -66,6 +66,7 @@ class Settings:
     memory_top_k: int = 3  # 记忆检索数量
     memory_storage_path: str = "./data/memory_storage.pkl"  # 反思记忆持久化路径
     reflection_benchmark_symbol: str = "BTCUSDT"  # alpha 计算的基准交易对
+    reflection_maturation_bars: int = 12  # 决策快照多少根 bar 后回看评估
 
     # LLM 配置 - 使用 pi_ai/config.py 中的 llm.yaml
     llm_config_name: str = field(default_factory=lambda: os.getenv("LLM_MODEL", "glm_4_7"))
@@ -112,6 +113,7 @@ class Settings:
             memory_top_k=int(os.getenv("MEMORY_TOP_K", "3")),
             memory_storage_path=os.getenv("MEMORY_STORAGE_PATH", "./data/memory_storage.pkl"),
             reflection_benchmark_symbol=os.getenv("REFLECTION_BENCHMARK_SYMBOL", "BTCUSDT"),
+            reflection_maturation_bars=int(os.getenv("REFLECTION_MATURATION_BARS", "12")),
             llm_config_name=os.getenv("LLM_MODEL", "glm_4_7"),
             log_level=LogLevel(os.getenv("LOG_LEVEL", "INFO")),
             log_file=os.getenv("LOG_FILE"),

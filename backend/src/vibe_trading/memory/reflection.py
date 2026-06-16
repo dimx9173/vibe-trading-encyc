@@ -72,6 +72,79 @@ def compute_alpha(
     return pnl_percentage - benchmark_return
 
 
+def evaluate_decision_outcome(
+    decision: Optional[str],
+    entry_price: Optional[float],
+    exit_price: Optional[float],
+    benchmark_return: Optional[float] = None,
+):
+    """
+    评估一个决策（含 HOLD）在价格从 entry_price 走到 exit_price 时的结果。
+
+    - BUY/LONG：收益 = 价格涨幅
+    - SELL/SHORT：收益 = 价格跌幅（做空）
+    - HOLD/其它：收益 = 0（没有持仓），但 alpha 仍会反映机会成本
+      （若基准上涨而 HOLD，alpha 为负——"该做却没做"）。
+
+    Returns:
+        (pnl_pct, alpha) —— 输入不足时返回 (None, None)
+    """
+    if entry_price is None or entry_price <= 0 or exit_price is None:
+        return None, None
+
+    price_pct = (exit_price - entry_price) / entry_price * 100.0
+    d = (decision or "HOLD").upper()
+    if "SELL" in d or "SHORT" in d:
+        pnl_pct = -price_pct
+    elif "BUY" in d or "LONG" in d:
+        pnl_pct = price_pct
+    else:  # HOLD / 未知
+        pnl_pct = 0.0
+
+    alpha = compute_alpha(pnl_pct, benchmark_return)
+    return pnl_pct, alpha
+
+
+async def reflect_on_matured_snapshot(
+    reflector: "TradeReflector",
+    snapshot,
+    exit_price: float,
+    benchmark_return: Optional[float] = None,
+    agent_reports: Optional[Dict[str, str]] = None,
+):
+    """
+    对一条已成熟的决策快照执行反思并写入记忆。
+
+    把快照视作一笔"虚拟交易"（入场=决策时价格，出场=当前价格），
+    复用 TradeReflector 的反思管线。
+    """
+    pnl_pct, alpha = evaluate_decision_outcome(
+        snapshot.decision, snapshot.price_at_decision, exit_price, benchmark_return
+    )
+    if pnl_pct is None:
+        return []
+
+    trade_result = TradeResult(
+        symbol=snapshot.symbol,
+        decision=snapshot.decision,
+        entry_price=snapshot.price_at_decision,
+        exit_price=exit_price,
+        position_size=0.0,
+        pnl=0.0,
+        pnl_percentage=pnl_pct,
+        hold_duration_hours=0.0,
+        market_condition="unknown",
+        benchmark_return=benchmark_return,
+        alpha=alpha,
+    )
+
+    return await reflector.reflect_on_trade(
+        trade_result=trade_result,
+        agent_reports=agent_reports or {},
+        decision_context={"decision_id": snapshot.decision_id, "matured": True},
+    )
+
+
 class TradeReflector:
     """
     交易反思器

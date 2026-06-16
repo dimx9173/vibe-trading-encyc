@@ -63,6 +63,12 @@ from vibe_trading.coordinator.quality_tracker import (
 )
 from vibe_trading.memory.reflection import (
     TradeReflector,
+    reflect_on_matured_snapshot,
+)
+from vibe_trading.memory.decision_snapshots import (
+    DecisionSnapshot,
+    DecisionSnapshotStore,
+    interval_to_ms,
 )
 from vibe_trading.execution.order_executor import OrderExecutor, PaperOrderExecutor
 from vibe_trading.execution.order_audit import ExecutionAuditStorage
@@ -117,6 +123,11 @@ class TradingCoordinator:
         self.memory = memory
         self.agent_config = agent_config or AgentTeamConfig()
         self.executor = executor or PaperOrderExecutor()
+
+        # 决策级反思快照队列（仅在启用记忆时工作）
+        self._snapshot_store: Optional[DecisionSnapshotStore] = (
+            DecisionSnapshotStore() if self.memory is not None else None
+        )
 
         # 工具上下文
         self._tool_context = ToolContext(
@@ -352,6 +363,9 @@ class TradingCoordinator:
         """
         start_time = datetime.now()
         decision_id = f"{self.symbol}_{int(start_time.timestamp() * 1000)}"
+
+        # ========== 决策级反思：回看此前已成熟的决策快照 ==========
+        await self._reflect_on_matured_decisions(current_price, bar_open_time_ms)
 
         # ========== 改进工具: 状态机初始化 ==========
         self._current_state_machine = self._state_manager.create_machine(
@@ -689,6 +703,20 @@ class TradingCoordinator:
             "investment_plan": investment_plan,
             "risk_assessment": risk_assessment,
         }
+
+        # 6. 记录决策快照（含 HOLD），供 N 根 bar 后回看评估
+        if self._snapshot_store is not None:
+            self._snapshot_store.record(
+                DecisionSnapshot(
+                    decision_id=decision_id,
+                    symbol=self.symbol,
+                    decision=decision.decision,
+                    price_at_decision=current_price,
+                    bar_open_time_ms=bar_open_time_ms or int(start_time.timestamp() * 1000),
+                    confidence=getattr(processed_signal, "confidence", 0.0),
+                    context_digest=market_condition,
+                )
+            )
 
         elapsed = (datetime.now() - start_time).total_seconds()
         success(f"分析完成: {decision.decision} (耗时 {elapsed:.2f}s)", tag="Coordinator")
@@ -1255,6 +1283,97 @@ class TradingCoordinator:
 
         except Exception as e:
             logger.error(f"质量评估失败: {e}", tag="QualityTracker")
+
+    # ========== 决策级反思（P0.1 C4）==========
+
+    def _maturation_window_ms(self) -> int:
+        """成熟窗口 = maturation_bars * 单根 bar 时长。"""
+        settings = get_settings()
+        return settings.reflection_maturation_bars * interval_to_ms(self.interval)
+
+    def _get_reflector(self) -> Optional[TradeReflector]:
+        if not self.memory:
+            return None
+        if self._reflector is None:
+            self._reflector = TradeReflector(memory=self.memory)
+        return self._reflector
+
+    async def _fetch_benchmark_return(self) -> Optional[float]:
+        """
+        尽力获取基准（默认 BTC）在最近一个成熟窗口的回报%。
+
+        get_kline_data 仅支持取最近 N 根，故用窗口首尾收盘价近似。
+        失败/数据不足时返回 None（alpha 将缺失，退回原始 pnl 评估）。
+        """
+        settings = get_settings()
+        benchmark = settings.reflection_benchmark_symbol
+        if benchmark == self.symbol:
+            return None  # 与本币种相同，无 alpha 意义
+        try:
+            from vibe_trading.tools.market_data_tools import get_kline_data
+
+            limit = settings.reflection_maturation_bars + 1
+            data = await get_kline_data(
+                benchmark, self.interval, limit=limit, storage=self.storage
+            )
+            rows = data.get("data") if isinstance(data, dict) else None
+            if not rows or len(rows) < 2:
+                return None
+            first_close = float(rows[0].get("close"))
+            last_close = float(rows[-1].get("close"))
+            if first_close > 0:
+                return (last_close - first_close) / first_close * 100.0
+        except Exception as exc:
+            logger.warning(
+                f"获取基准({benchmark})回报失败，alpha 将缺失: {exc}",
+                tag="Reflection",
+            )
+        return None
+
+    async def _reflect_on_matured_decisions(
+        self, current_price: float, current_bar_open_time_ms: Optional[int]
+    ) -> None:
+        """回看此前已成熟的决策快照（含 HOLD），生成反思并写入记忆。"""
+        if self._snapshot_store is None or self.memory is None:
+            return
+
+        matured = self._snapshot_store.pop_matured(
+            current_bar_open_time_ms, self._maturation_window_ms()
+        )
+        if not matured:
+            return
+
+        reflector = self._get_reflector()
+        if reflector is None:
+            return
+
+        # 基准回报对所有同期成熟的快照通用，取一次即可
+        benchmark_return = await self._fetch_benchmark_return()
+
+        reflected = 0
+        for snap in matured:
+            try:
+                await reflect_on_matured_snapshot(
+                    reflector=reflector,
+                    snapshot=snap,
+                    exit_price=current_price,
+                    benchmark_return=benchmark_return,
+                )
+                reflected += 1
+            except Exception as exc:
+                logger.warning(
+                    f"决策快照反思失败 {snap.decision_id}: {exc}", tag="Reflection"
+                )
+
+        if reflected:
+            try:
+                self.memory.save()
+            except Exception as exc:
+                logger.warning(f"反思记忆保存失败: {exc}", tag="Memory")
+        logger.info(
+            f"决策级反思: 回看 {len(matured)} 条，成功 {reflected} 条",
+            tag="Reflection",
+        )
 
     def _determine_market_condition(self, context: TradingContext) -> str:
         """判断市场状态"""
