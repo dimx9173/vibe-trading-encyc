@@ -64,6 +64,7 @@ class Settings:
     debate_rounds: int = 2  # 辩论轮数
     enable_memory: bool = True  # 是否启用记忆系统
     memory_top_k: int = 3  # 记忆检索数量
+    memory_storage_path: str = "./data/memory_storage.pkl"  # 反思记忆持久化路径
 
     # LLM 配置 - 使用 pi_ai/config.py 中的 llm.yaml
     llm_config_name: str = field(default_factory=lambda: os.getenv("LLM_MODEL", "glm_4_7"))
@@ -108,6 +109,7 @@ class Settings:
             debate_rounds=int(os.getenv("DEBATE_ROUNDS", "2")),
             enable_memory=os.getenv("ENABLE_MEMORY", "true").lower() == "true",
             memory_top_k=int(os.getenv("MEMORY_TOP_K", "3")),
+            memory_storage_path=os.getenv("MEMORY_STORAGE_PATH", "./data/memory_storage.pkl"),
             llm_config_name=os.getenv("LLM_MODEL", "glm_4_7"),
             log_level=LogLevel(os.getenv("LOG_LEVEL", "INFO")),
             log_file=os.getenv("LOG_FILE"),

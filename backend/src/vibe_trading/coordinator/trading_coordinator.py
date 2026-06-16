@@ -1146,12 +1146,12 @@ class TradingCoordinator:
             # 记录决策
             logger.info(f"Decision for {kline.symbol}: {decision.decision}")
             if self.memory and decision.decision != "HOLD":
-                # 存储到记忆系统
-                await self.memory.add_memory(
+                # 存储到记忆系统（add_memory 为同步接口）
+                self.memory.add_memory(
                     situation=f"{kline.symbol} price {kline.close}, {decision.rationale}",
-                    action=decision.decision,
-                    outcome_type="trade",
-                    expected_return=0.0,  # 实际收益在后续更新
+                    advice=decision.decision,
+                    outcome="pending",  # 实际收益在后续反思中更新
+                    pnl=None,
                 )
 
         except Exception as e:
@@ -1227,6 +1227,13 @@ class TradingCoordinator:
                     f"反思完成: 生成了 {len(reflections)} 条反思",
                     tag="Reflection"
                 )
+
+                # 持久化反思记忆，跨会话保留
+                if hasattr(self.memory, "save"):
+                    try:
+                        self.memory.save()
+                    except Exception as save_err:
+                        logger.warning(f"反思记忆保存失败: {save_err}", tag="Memory")
 
             except Exception as e:
                 logger.error(f"反思失败: {e}", tag="Reflection")

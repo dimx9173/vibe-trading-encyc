@@ -70,10 +70,13 @@ class OnBarThread:
     async def initialize(self) -> None:
         """Initialize the thread"""
         # Initialize coordinator with full agent team
+        from vibe_trading.memory.memory import create_memory_from_settings
+
         self._coordinator = TradingCoordinator(
             symbol=self.symbol,
             interval=self.interval,
             executor=self.executor,
+            memory=create_memory_from_settings(),
         )
         await self._coordinator.initialize()
         

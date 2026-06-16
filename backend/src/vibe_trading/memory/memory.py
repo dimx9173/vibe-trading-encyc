@@ -303,3 +303,20 @@ class PersistentMemory(BM25Memory):
         except Exception as e:
             logger.error(f"Failed to import memories: {e}")
             return 0
+
+
+def create_memory_from_settings():
+    """
+    根据全局 settings 构造并加载持久化记忆。
+
+    enable_memory 关闭时返回 None。
+    """
+    from vibe_trading.config.settings import get_settings
+
+    settings = get_settings()
+    if not settings.enable_memory:
+        return None
+
+    memory = PersistentMemory(storage_path=settings.memory_storage_path)
+    memory.load()  # 加载历史记忆（不存在时安全返回 False）
+    return memory

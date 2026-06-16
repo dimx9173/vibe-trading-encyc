@@ -131,7 +131,9 @@ class TradeReflector:
         reflections.append(overall_reflection)
 
         # 4. 更新记忆
-        await self._update_memory_from_reflections(reflections)
+        await self._update_memory_from_reflections(
+            reflections, pnl_percentage=trade_result.pnl_percentage
+        )
 
         logger.info(
             f"反思完成: 生成了 {len(reflections)} 条反思",
@@ -372,24 +374,25 @@ class TradeReflector:
             confidence=0.7,
         )
 
-    async def _update_memory_from_reflections(self, reflections: List[Reflection]):
-        """从反思更新记忆"""
+    async def _update_memory_from_reflections(
+        self,
+        reflections: List[Reflection],
+        pnl_percentage: Optional[float] = None,
+    ) -> None:
+        """从反思更新记忆（同步写入 PersistentMemory）。"""
         for reflection in reflections:
-            # 构建记忆条目
-            memory_entry = {
-                "situation": reflection.situation,
-                "decision": reflection.decision,
-                "outcome": reflection.actual_outcome,
-                "lessons": "; ".join(reflection.lessons_learned),
-                "timestamp": reflection.timestamp.isoformat(),
-            }
+            advice = reflection.decision
+            if reflection.lessons_learned:
+                advice = (
+                    f"{reflection.decision} | "
+                    f"lessons: {'; '.join(reflection.lessons_learned)}"
+                )
 
-            # 存储到记忆（按agent分类）
-            collection = f"reflections_{reflection.agent_name}"
-            await self.memory.add(
-                query=reflection.situation,
-                content=memory_entry,
-                collection=collection,
+            self.memory.add_memory(
+                situation=reflection.situation,
+                advice=advice,
+                outcome=reflection.actual_outcome,
+                pnl=pnl_percentage,
             )
 
             logger.debug(
@@ -402,26 +405,19 @@ class TradeReflector:
         agent_name: str,
         current_situation: str,
         top_k: int = 3,
-    ) -> List[Dict[str, Any]]:
+    ) -> List[str]:
         """
-        获取相关的历史反思
+        获取相关的历史反思（跨 agent 全局检索）。
 
         Args:
-            agent_name: Agent名称
+            agent_name: Agent名称（保留参数，检索为全局）
             current_situation: 当前情况描述
             top_k: 返回数量
 
         Returns:
-            相关的反思列表
+            相关的反思文本列表
         """
-        collection = f"reflections_{agent_name}"
-        results = await self.memory.search(
-            query=current_situation,
-            collection=collection,
-            limit=top_k,
-        )
-
-        return results
+        return self.memory.retrieve_relevant(current_situation, top_k=top_k)
 
 
 # ============================================================================
