@@ -509,6 +509,34 @@ class PortfolioManagerAgent:
             "execution_plan": trading_plan if trading_plan.total_position_usdt > 0 else None,
         }
 
+    def _build_memory_section(self, scorecard: DecisionScorecard) -> str:
+        """
+        每根 bar 决策前检索相关历史反思，注入 PM prompt。
+
+        借鉴 TradingAgents：把近期相似情境的决策与结果（含市场调整后的 alpha）
+        作为上下文喂给 Portfolio Manager，形成"从历史中学习"的闭环。
+        """
+        if not (self._memory and hasattr(self._memory, "retrieve_relevant")):
+            return ""
+
+        query = (
+            f"{self._tool_context.symbol} {scorecard.recommended_action} "
+            f"{scorecard.rationale[:120]}"
+        )
+        top_k = get_settings().memory_top_k
+        lessons = self._memory.retrieve_relevant(query, top_k=top_k)
+        cross = self._memory.get_cross_ticker_lessons(top_k=3)
+        if not lessons and not cross:
+            return ""
+
+        body = "\n---\n".join(lessons)
+        if cross:
+            body += "\n\nCROSS-TICKER LESSONS (aggregate across symbols):\n" + cross
+        return (
+            "\n\nRELEVANT PAST LESSONS (learn from prior similar situations; "
+            "Alpha = market-adjusted result):\n" + body + "\n"
+        )
+
     def _build_decision_prompt(
         self,
         scorecard: DecisionScorecard,
@@ -589,6 +617,9 @@ Current Positions: {len(current_positions)}
 
         for pos in current_positions:
             prompt += f"  - {pos.get('symbol', 'N/A')}: {pos.get('position_amount', 'N/A')} @ {pos.get('entry_price', 'N/A')} (PnL: {pos.get('unrealized_profit', 'N/A')})\n"
+
+        # 注入相关历史反思（每根 bar 检索，非仅初始化时）
+        prompt += self._build_memory_section(scorecard)
 
         prompt += """
 Please provide your FINAL DECISION including:

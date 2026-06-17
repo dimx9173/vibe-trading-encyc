@@ -7,7 +7,7 @@ BM25 记忆系统
 import json
 import logging
 import pickle
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Dict, Optional
 
@@ -25,6 +25,9 @@ class MemoryEntry:
     outcome: Optional[str] = None
     pnl: Optional[float] = None
     timestamp: float = 0
+    symbol: Optional[str] = None
+    benchmark_return: Optional[float] = None  # 基准同期回报%
+    alpha: Optional[float] = None  # 市场调整后超额回报%
 
     def to_dict(self) -> dict:
         return {
@@ -33,6 +36,9 @@ class MemoryEntry:
             "outcome": self.outcome,
             "pnl": self.pnl,
             "timestamp": self.timestamp,
+            "symbol": self.symbol,
+            "benchmark_return": self.benchmark_return,
+            "alpha": self.alpha,
         }
 
     @classmethod
@@ -43,6 +49,9 @@ class MemoryEntry:
             outcome=data.get("outcome"),
             pnl=data.get("pnl"),
             timestamp=data.get("timestamp", 0),
+            symbol=data.get("symbol"),
+            benchmark_return=data.get("benchmark_return"),
+            alpha=data.get("alpha"),
         )
 
 
@@ -75,6 +84,9 @@ class BM25Memory:
         advice: str,
         outcome: Optional[str] = None,
         pnl: Optional[float] = None,
+        symbol: Optional[str] = None,
+        benchmark_return: Optional[float] = None,
+        alpha: Optional[float] = None,
     ) -> None:
         """
         添加记忆条目
@@ -84,6 +96,9 @@ class BM25Memory:
             advice: 当时给出的建议/决策
             outcome: 结果描述（可选）
             pnl: 盈亏（可选）
+            symbol: 交易对（可选）
+            benchmark_return: 基准同期回报%（可选）
+            alpha: 市场调整后超额回报%（可选）
         """
         import time
 
@@ -93,6 +108,9 @@ class BM25Memory:
             outcome=outcome,
             pnl=pnl,
             timestamp=time.time(),
+            symbol=symbol,
+            benchmark_return=benchmark_return,
+            alpha=alpha,
         )
 
         self.documents.append(entry)
@@ -197,6 +215,8 @@ class BM25Memory:
                     advice += f"\nOutcome: {doc.outcome}"
                 if doc.pnl is not None:
                     advice += f"\nPnL: {doc.pnl:.2f}%"
+                if doc.alpha is not None:
+                    advice += f"\nAlpha (mkt-adj): {doc.alpha:+.2f}%"
                 results.append(advice)
 
         return results
@@ -204,6 +224,42 @@ class BM25Memory:
     def get_all_memories(self) -> List[MemoryEntry]:
         """获取所有记忆"""
         return self.documents.copy()
+
+    def get_cross_ticker_lessons(self, top_k: int = 3) -> str:
+        """
+        聚合跨币种的胜负经验，返回精简摘要供 PM 参考（纯聚合，无 LLM）。
+
+        借鉴 TradingAgents 的"跨 ticker 教训"思路：把高 alpha 的赢家模式与
+        负 alpha 的输家模式提炼出来，让单一币种决策也能看到全局规律。
+        无 alpha 的条目不参与（无法判断决策质量）。
+        """
+        with_alpha = [d for d in self.documents if d.alpha is not None]
+        if not with_alpha:
+            return ""
+
+        winners = sorted(
+            [d for d in with_alpha if d.alpha > 0],
+            key=lambda d: d.alpha,
+            reverse=True,
+        )[:top_k]
+        losers = sorted(
+            [d for d in with_alpha if d.alpha < 0], key=lambda d: d.alpha
+        )[:top_k]
+
+        lines: List[str] = []
+        if winners:
+            lines.append("Winning patterns (positive alpha):")
+            for d in winners:
+                lines.append(
+                    f"  + [{d.symbol or '?'} a{d.alpha:+.1f}%] {d.advice[:80]}"
+                )
+        if losers:
+            lines.append("Losing patterns (negative alpha):")
+            for d in losers:
+                lines.append(
+                    f"  - [{d.symbol or '?'} a{d.alpha:+.1f}%] {d.advice[:80]}"
+                )
+        return "\n".join(lines)
 
     def clear(self) -> None:
         """清空所有记忆"""
@@ -236,6 +292,7 @@ class PersistentMemory(BM25Memory):
     def save(self) -> None:
         """保存记忆到文件"""
         try:
+            self.storage_path.parent.mkdir(parents=True, exist_ok=True)
             data = {
                 "documents": [doc.to_dict() for doc in self.documents],
                 "k1": self.k1,
@@ -303,3 +360,20 @@ class PersistentMemory(BM25Memory):
         except Exception as e:
             logger.error(f"Failed to import memories: {e}")
             return 0
+
+
+def create_memory_from_settings():
+    """
+    根据全局 settings 构造并加载持久化记忆。
+
+    enable_memory 关闭时返回 None。
+    """
+    from vibe_trading.config.settings import get_settings
+
+    settings = get_settings()
+    if not settings.enable_memory:
+        return None
+
+    memory = PersistentMemory(storage_path=settings.memory_storage_path)
+    memory.load()  # 加载历史记忆（不存在时安全返回 False）
+    return memory

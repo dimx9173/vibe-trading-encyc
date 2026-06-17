@@ -53,6 +53,106 @@ class TradeResult:
     hold_duration_hours: float
     market_condition: str  # "trending"/"ranging"/"volatile"
     timestamp: datetime = field(default_factory=datetime.now)
+    benchmark_return: Optional[float] = None  # 基准（如 BTC）同期回报%
+    alpha: Optional[float] = None  # 市场调整后超额回报 = pnl% - benchmark%
+
+
+def compute_alpha(
+    pnl_percentage: Optional[float],
+    benchmark_return: Optional[float],
+) -> Optional[float]:
+    """
+    市场调整后的超额回报 = 决策 pnl% - 基准同期回报%。
+
+    借鉴 TradingAgents 的 alpha-vs-SPY 思路；crypto 场景下基准默认为 BTC。
+    任一输入缺失时返回 None（无法计算 alpha）。
+    """
+    if pnl_percentage is None or benchmark_return is None:
+        return None
+    return pnl_percentage - benchmark_return
+
+
+def compute_return_pct(
+    entry_price: Optional[float],
+    exit_price: Optional[float],
+) -> Optional[float]:
+    """计算价格涨跌幅百分比。"""
+    if entry_price is None or entry_price <= 0 or exit_price is None:
+        return None
+    return (exit_price - entry_price) / entry_price * 100.0
+
+
+def evaluate_decision_outcome(
+    decision: Optional[str],
+    entry_price: Optional[float],
+    exit_price: Optional[float],
+    benchmark_return: Optional[float] = None,
+):
+    """
+    评估一个决策（含 HOLD）在价格从 entry_price 走到 exit_price 时的结果。
+
+    - BUY/LONG：收益 = 价格涨幅
+    - SELL/SHORT：收益 = 价格跌幅（做空）
+    - HOLD/其它：收益 = 0（没有持仓），但 alpha 仍会反映机会成本
+      （若基准上涨而 HOLD，alpha 为负——"该做却没做"）。
+
+    Returns:
+        (pnl_pct, alpha) —— 输入不足时返回 (None, None)
+    """
+    price_pct = compute_return_pct(entry_price, exit_price)
+    if price_pct is None:
+        return None, None
+
+    d = (decision or "HOLD").upper()
+    if "SELL" in d or "SHORT" in d:
+        pnl_pct = -price_pct
+    elif "BUY" in d or "LONG" in d:
+        pnl_pct = price_pct
+    else:  # HOLD / 未知
+        pnl_pct = 0.0
+
+    alpha = compute_alpha(pnl_pct, benchmark_return)
+    return pnl_pct, alpha
+
+
+async def reflect_on_matured_snapshot(
+    reflector: "TradeReflector",
+    snapshot,
+    exit_price: float,
+    benchmark_return: Optional[float] = None,
+    agent_reports: Optional[Dict[str, str]] = None,
+):
+    """
+    对一条已成熟的决策快照执行反思并写入记忆。
+
+    把快照视作一笔"虚拟交易"（入场=决策时价格，出场=当前价格），
+    复用 TradeReflector 的反思管线。
+    """
+    pnl_pct, alpha = evaluate_decision_outcome(
+        snapshot.decision, snapshot.price_at_decision, exit_price, benchmark_return
+    )
+    if pnl_pct is None:
+        return []
+
+    trade_result = TradeResult(
+        symbol=snapshot.symbol,
+        decision=snapshot.decision,
+        entry_price=snapshot.price_at_decision,
+        exit_price=exit_price,
+        position_size=0.0,
+        pnl=0.0,
+        pnl_percentage=pnl_pct,
+        hold_duration_hours=0.0,
+        market_condition="unknown",
+        benchmark_return=benchmark_return,
+        alpha=alpha,
+    )
+
+    return await reflector.reflect_on_trade(
+        trade_result=trade_result,
+        agent_reports=agent_reports or {},
+        decision_context={"decision_id": snapshot.decision_id, "matured": True},
+    )
 
 
 class TradeReflector:
@@ -131,7 +231,12 @@ class TradeReflector:
         reflections.append(overall_reflection)
 
         # 4. 更新记忆
-        await self._update_memory_from_reflections(reflections)
+        await self._update_memory_from_reflections(
+            reflections,
+            pnl_percentage=trade_result.pnl_percentage,
+            benchmark_return=trade_result.benchmark_return,
+            alpha=trade_result.alpha,
+        )
 
         logger.info(
             f"反思完成: 生成了 {len(reflections)} 条反思",
@@ -141,14 +246,19 @@ class TradeReflector:
         return reflections
 
     def _evaluate_outcome(self, trade_result: TradeResult) -> ReflectionOutcome:
-        """评估交易结果"""
-        pnl_pct = trade_result.pnl_percentage
+        """评估交易结果（优先使用市场调整后的 alpha，缺失时回退原始 pnl）"""
+        # 优先用 alpha（剥离 beta 后的真实决策质量）；无 alpha 时退回原始 pnl
+        metric = (
+            trade_result.alpha
+            if trade_result.alpha is not None
+            else trade_result.pnl_percentage
+        )
 
-        if pnl_pct > 2:  # 盈利超过2%
+        if metric > 2:  # 超额/盈利超过2%
             return ReflectionOutcome.CORRECT
-        elif pnl_pct < -2:  # 亏损超过2%
+        elif metric < -2:  # 跑输/亏损超过2%
             return ReflectionOutcome.INCORRECT
-        elif abs(pnl_pct) < 0.5:  # 盈亏小于0.5%
+        elif abs(metric) < 0.5:  # 盈亏小于0.5%
             return ReflectionOutcome.PARTIAL
         else:
             return ReflectionOutcome.UNCERTAIN
@@ -372,24 +482,29 @@ class TradeReflector:
             confidence=0.7,
         )
 
-    async def _update_memory_from_reflections(self, reflections: List[Reflection]):
-        """从反思更新记忆"""
+    async def _update_memory_from_reflections(
+        self,
+        reflections: List[Reflection],
+        pnl_percentage: Optional[float] = None,
+        benchmark_return: Optional[float] = None,
+        alpha: Optional[float] = None,
+    ) -> None:
+        """从反思更新记忆（同步写入 PersistentMemory）。"""
         for reflection in reflections:
-            # 构建记忆条目
-            memory_entry = {
-                "situation": reflection.situation,
-                "decision": reflection.decision,
-                "outcome": reflection.actual_outcome,
-                "lessons": "; ".join(reflection.lessons_learned),
-                "timestamp": reflection.timestamp.isoformat(),
-            }
+            advice = reflection.decision
+            if reflection.lessons_learned:
+                advice = (
+                    f"{reflection.decision} | "
+                    f"lessons: {'; '.join(reflection.lessons_learned)}"
+                )
 
-            # 存储到记忆（按agent分类）
-            collection = f"reflections_{reflection.agent_name}"
-            await self.memory.add(
-                query=reflection.situation,
-                content=memory_entry,
-                collection=collection,
+            self.memory.add_memory(
+                situation=reflection.situation,
+                advice=advice,
+                outcome=reflection.actual_outcome,
+                pnl=pnl_percentage,
+                benchmark_return=benchmark_return,
+                alpha=alpha,
             )
 
             logger.debug(
@@ -402,26 +517,19 @@ class TradeReflector:
         agent_name: str,
         current_situation: str,
         top_k: int = 3,
-    ) -> List[Dict[str, Any]]:
+    ) -> List[str]:
         """
-        获取相关的历史反思
+        获取相关的历史反思（跨 agent 全局检索）。
 
         Args:
-            agent_name: Agent名称
+            agent_name: Agent名称（保留参数，检索为全局）
             current_situation: 当前情况描述
             top_k: 返回数量
 
         Returns:
-            相关的反思列表
+            相关的反思文本列表
         """
-        collection = f"reflections_{agent_name}"
-        results = await self.memory.search(
-            query=current_situation,
-            collection=collection,
-            limit=top_k,
-        )
-
-        return results
+        return self.memory.retrieve_relevant(current_situation, top_k=top_k)
 
 
 # ============================================================================

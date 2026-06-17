@@ -63,6 +63,13 @@ from vibe_trading.coordinator.quality_tracker import (
 )
 from vibe_trading.memory.reflection import (
     TradeReflector,
+    compute_return_pct,
+    reflect_on_matured_snapshot,
+)
+from vibe_trading.memory.decision_snapshots import (
+    DecisionSnapshot,
+    DecisionSnapshotStore,
+    interval_to_ms,
 )
 from vibe_trading.execution.order_executor import OrderExecutor, PaperOrderExecutor
 from vibe_trading.execution.order_audit import ExecutionAuditStorage
@@ -117,6 +124,11 @@ class TradingCoordinator:
         self.memory = memory
         self.agent_config = agent_config or AgentTeamConfig()
         self.executor = executor or PaperOrderExecutor()
+
+        # 决策级反思快照队列（仅在启用记忆时工作）
+        self._snapshot_store: Optional[DecisionSnapshotStore] = (
+            DecisionSnapshotStore() if self.memory is not None else None
+        )
 
         # 工具上下文
         self._tool_context = ToolContext(
@@ -352,6 +364,9 @@ class TradingCoordinator:
         """
         start_time = datetime.now()
         decision_id = f"{self.symbol}_{int(start_time.timestamp() * 1000)}"
+
+        # ========== 决策级反思：回看此前已成熟的决策快照 ==========
+        await self._reflect_on_matured_decisions(current_price, bar_open_time_ms)
 
         # ========== 改进工具: 状态机初始化 ==========
         self._current_state_machine = self._state_manager.create_machine(
@@ -689,6 +704,22 @@ class TradingCoordinator:
             "investment_plan": investment_plan,
             "risk_assessment": risk_assessment,
         }
+
+        # 6. 记录决策快照（含 HOLD），供 N 根 bar 后回看评估
+        if self._snapshot_store is not None:
+            benchmark_price_at_decision = await self._fetch_benchmark_price()
+            self._snapshot_store.record(
+                DecisionSnapshot(
+                    decision_id=decision_id,
+                    symbol=self.symbol,
+                    decision=decision.decision,
+                    price_at_decision=current_price,
+                    bar_open_time_ms=bar_open_time_ms or int(start_time.timestamp() * 1000),
+                    benchmark_price_at_decision=benchmark_price_at_decision,
+                    confidence=getattr(processed_signal, "confidence", 0.0),
+                    context_digest=market_condition,
+                )
+            )
 
         elapsed = (datetime.now() - start_time).total_seconds()
         success(f"分析完成: {decision.decision} (耗时 {elapsed:.2f}s)", tag="Coordinator")
@@ -1146,12 +1177,12 @@ class TradingCoordinator:
             # 记录决策
             logger.info(f"Decision for {kline.symbol}: {decision.decision}")
             if self.memory and decision.decision != "HOLD":
-                # 存储到记忆系统
-                await self.memory.add_memory(
+                # 存储到记忆系统（add_memory 为同步接口）
+                self.memory.add_memory(
                     situation=f"{kline.symbol} price {kline.close}, {decision.rationale}",
-                    action=decision.decision,
-                    outcome_type="trade",
-                    expected_return=0.0,  # 实际收益在后续更新
+                    advice=decision.decision,
+                    outcome="pending",  # 实际收益在后续反思中更新
+                    pnl=None,
                 )
 
         except Exception as e:
@@ -1228,6 +1259,13 @@ class TradingCoordinator:
                     tag="Reflection"
                 )
 
+                # 持久化反思记忆，跨会话保留
+                if hasattr(self.memory, "save"):
+                    try:
+                        self.memory.save()
+                    except Exception as save_err:
+                        logger.warning(f"反思记忆保存失败: {save_err}", tag="Memory")
+
             except Exception as e:
                 logger.error(f"反思失败: {e}", tag="Reflection")
 
@@ -1248,6 +1286,92 @@ class TradingCoordinator:
 
         except Exception as e:
             logger.error(f"质量评估失败: {e}", tag="QualityTracker")
+
+    # ========== 决策级反思（P0.1 C4）==========
+
+    def _maturation_window_ms(self) -> int:
+        """成熟窗口 = maturation_bars * 单根 bar 时长。"""
+        settings = get_settings()
+        return settings.reflection_maturation_bars * interval_to_ms(self.interval)
+
+    def _get_reflector(self) -> Optional[TradeReflector]:
+        if not self.memory:
+            return None
+        if self._reflector is None:
+            self._reflector = TradeReflector(memory=self.memory)
+        return self._reflector
+
+    async def _fetch_benchmark_price(self) -> Optional[float]:
+        """
+        尽力获取基准（默认 BTC）当前价格。
+
+        反思时再用快照记录的基准入场价和当前价格计算收益率。
+        """
+        settings = get_settings()
+        benchmark = settings.reflection_benchmark_symbol
+        if benchmark == self.symbol:
+            return None  # 与本币种相同，无 alpha 意义
+        try:
+            from vibe_trading.tools.market_data_tools import get_current_price
+
+            data = await get_current_price(benchmark, storage=self.storage)
+            if isinstance(data, dict):
+                price = data.get("price")
+                return float(price) if price is not None else None
+        except Exception as exc:
+            logger.warning(
+                f"获取基准({benchmark})价格失败，alpha 将缺失: {exc}",
+                tag="Reflection",
+            )
+        return None
+
+    async def _reflect_on_matured_decisions(
+        self, current_price: float, current_bar_open_time_ms: Optional[int]
+    ) -> None:
+        """回看此前已成熟的决策快照（含 HOLD），生成反思并写入记忆。"""
+        if self._snapshot_store is None or self.memory is None:
+            return
+
+        matured = self._snapshot_store.get_matured(
+            current_bar_open_time_ms, self._maturation_window_ms()
+        )
+        if not matured:
+            return
+
+        reflector = self._get_reflector()
+        if reflector is None:
+            return
+
+        benchmark_price = await self._fetch_benchmark_price()
+
+        reflected = 0
+        for snap in matured:
+            try:
+                benchmark_return = compute_return_pct(
+                    snap.benchmark_price_at_decision, benchmark_price
+                )
+                await reflect_on_matured_snapshot(
+                    reflector=reflector,
+                    snapshot=snap,
+                    exit_price=current_price,
+                    benchmark_return=benchmark_return,
+                )
+                self._snapshot_store.discard(snap.decision_id)
+                reflected += 1
+            except Exception as exc:
+                logger.warning(
+                    f"决策快照反思失败 {snap.decision_id}: {exc}", tag="Reflection"
+                )
+
+        if reflected:
+            try:
+                self.memory.save()
+            except Exception as exc:
+                logger.warning(f"反思记忆保存失败: {exc}", tag="Memory")
+        logger.info(
+            f"决策级反思: 回看 {len(matured)} 条，成功 {reflected} 条",
+            tag="Reflection",
+        )
 
     def _determine_market_condition(self, context: TradingContext) -> str:
         """判断市场状态"""

@@ -288,10 +288,14 @@ def analyze(
         storage = KlineStorage()
         await storage.init()
 
+        from vibe_trading.memory.memory import create_memory_from_settings
+        memory = create_memory_from_settings()
+
         coordinator = TradingCoordinator(
             symbol=symbol,
             interval=interval,
             storage=storage,
+            memory=memory,
         )
         await coordinator.initialize()
 
