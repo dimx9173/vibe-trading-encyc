@@ -63,6 +63,7 @@ from vibe_trading.coordinator.quality_tracker import (
 )
 from vibe_trading.memory.reflection import (
     TradeReflector,
+    compute_return_pct,
     reflect_on_matured_snapshot,
 )
 from vibe_trading.memory.decision_snapshots import (
@@ -706,6 +707,7 @@ class TradingCoordinator:
 
         # 6. 记录决策快照（含 HOLD），供 N 根 bar 后回看评估
         if self._snapshot_store is not None:
+            benchmark_price_at_decision = await self._fetch_benchmark_price()
             self._snapshot_store.record(
                 DecisionSnapshot(
                     decision_id=decision_id,
@@ -713,6 +715,7 @@ class TradingCoordinator:
                     decision=decision.decision,
                     price_at_decision=current_price,
                     bar_open_time_ms=bar_open_time_ms or int(start_time.timestamp() * 1000),
+                    benchmark_price_at_decision=benchmark_price_at_decision,
                     confidence=getattr(processed_signal, "confidence", 0.0),
                     context_digest=market_condition,
                 )
@@ -1298,34 +1301,26 @@ class TradingCoordinator:
             self._reflector = TradeReflector(memory=self.memory)
         return self._reflector
 
-    async def _fetch_benchmark_return(self) -> Optional[float]:
+    async def _fetch_benchmark_price(self) -> Optional[float]:
         """
-        尽力获取基准（默认 BTC）在最近一个成熟窗口的回报%。
+        尽力获取基准（默认 BTC）当前价格。
 
-        get_kline_data 仅支持取最近 N 根，故用窗口首尾收盘价近似。
-        失败/数据不足时返回 None（alpha 将缺失，退回原始 pnl 评估）。
+        反思时再用快照记录的基准入场价和当前价格计算收益率。
         """
         settings = get_settings()
         benchmark = settings.reflection_benchmark_symbol
         if benchmark == self.symbol:
             return None  # 与本币种相同，无 alpha 意义
         try:
-            from vibe_trading.tools.market_data_tools import get_kline_data
+            from vibe_trading.tools.market_data_tools import get_current_price
 
-            limit = settings.reflection_maturation_bars + 1
-            data = await get_kline_data(
-                benchmark, self.interval, limit=limit, storage=self.storage
-            )
-            rows = data.get("data") if isinstance(data, dict) else None
-            if not rows or len(rows) < 2:
-                return None
-            first_close = float(rows[0].get("close"))
-            last_close = float(rows[-1].get("close"))
-            if first_close > 0:
-                return (last_close - first_close) / first_close * 100.0
+            data = await get_current_price(benchmark, storage=self.storage)
+            if isinstance(data, dict):
+                price = data.get("price")
+                return float(price) if price is not None else None
         except Exception as exc:
             logger.warning(
-                f"获取基准({benchmark})回报失败，alpha 将缺失: {exc}",
+                f"获取基准({benchmark})价格失败，alpha 将缺失: {exc}",
                 tag="Reflection",
             )
         return None
@@ -1337,7 +1332,7 @@ class TradingCoordinator:
         if self._snapshot_store is None or self.memory is None:
             return
 
-        matured = self._snapshot_store.pop_matured(
+        matured = self._snapshot_store.get_matured(
             current_bar_open_time_ms, self._maturation_window_ms()
         )
         if not matured:
@@ -1347,18 +1342,21 @@ class TradingCoordinator:
         if reflector is None:
             return
 
-        # 基准回报对所有同期成熟的快照通用，取一次即可
-        benchmark_return = await self._fetch_benchmark_return()
+        benchmark_price = await self._fetch_benchmark_price()
 
         reflected = 0
         for snap in matured:
             try:
+                benchmark_return = compute_return_pct(
+                    snap.benchmark_price_at_decision, benchmark_price
+                )
                 await reflect_on_matured_snapshot(
                     reflector=reflector,
                     snapshot=snap,
                     exit_price=current_price,
                     benchmark_return=benchmark_return,
                 )
+                self._snapshot_store.discard(snap.decision_id)
                 reflected += 1
             except Exception as exc:
                 logger.warning(

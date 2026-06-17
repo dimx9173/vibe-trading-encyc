@@ -7,7 +7,7 @@ BM25 记忆系统
 import json
 import logging
 import pickle
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Dict, Optional
 
@@ -292,6 +292,7 @@ class PersistentMemory(BM25Memory):
     def save(self) -> None:
         """保存记忆到文件"""
         try:
+            self.storage_path.parent.mkdir(parents=True, exist_ok=True)
             data = {
                 "documents": [doc.to_dict() for doc in self.documents],
                 "k1": self.k1,

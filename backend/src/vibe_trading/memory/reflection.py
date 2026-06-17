@@ -72,6 +72,16 @@ def compute_alpha(
     return pnl_percentage - benchmark_return
 
 
+def compute_return_pct(
+    entry_price: Optional[float],
+    exit_price: Optional[float],
+) -> Optional[float]:
+    """计算价格涨跌幅百分比。"""
+    if entry_price is None or entry_price <= 0 or exit_price is None:
+        return None
+    return (exit_price - entry_price) / entry_price * 100.0
+
+
 def evaluate_decision_outcome(
     decision: Optional[str],
     entry_price: Optional[float],
@@ -89,10 +99,10 @@ def evaluate_decision_outcome(
     Returns:
         (pnl_pct, alpha) —— 输入不足时返回 (None, None)
     """
-    if entry_price is None or entry_price <= 0 or exit_price is None:
+    price_pct = compute_return_pct(entry_price, exit_price)
+    if price_pct is None:
         return None, None
 
-    price_pct = (exit_price - entry_price) / entry_price * 100.0
     d = (decision or "HOLD").upper()
     if "SELL" in d or "SHORT" in d:
         pnl_pct = -price_pct

@@ -15,6 +15,7 @@ from vibe_trading.memory.reflection import (
     TradeResult,
     TradeReflector,
     compute_alpha,
+    compute_return_pct,
 )
 
 
@@ -52,7 +53,7 @@ async def test_reflection_persists_to_memory_and_retrieves(tmp_path):
 
 async def test_reflection_survives_reload(tmp_path):
     """Persisted reflections must survive a save/load cycle (cross-session)."""
-    path = str(tmp_path / "mem.pkl")
+    path = str(tmp_path / "nested" / "mem.pkl")
     memory = PersistentMemory(storage_path=path)
     reflector = TradeReflector(memory=memory, llm_model=None)
 
@@ -62,7 +63,7 @@ async def test_reflection_survives_reload(tmp_path):
         decision_context={"decision_id": "d2"},
     )
     memory.save()
-    assert path  # exists
+    assert (tmp_path / "nested").exists()
 
     reloaded = PersistentMemory(storage_path=path)
     assert reloaded.load()
@@ -257,18 +258,22 @@ def test_snapshot_store_pop_matured():
     fresh = DecisionSnapshot("d_fresh", "ETHUSDT", "HOLD", 100.0, base)
     mid = DecisionSnapshot("d_mid", "ETHUSDT", "BUY", 100.0, base + 5 * interval_to_ms("1h"))
     old = DecisionSnapshot("d_old", "ETHUSDT", "SELL", 100.0, base)
-    old.bar_open_time_ms = base  # well in the past
     store.record(fresh)
     store.record(mid)
     store.record(old)
 
     now = base + 13 * interval_to_ms("1h")  # 13h after base
-    matured = store.pop_matured(now, window_ms)
+    matured = store.get_matured(now, window_ms)
     ids = {m.decision_id for m in matured}
     # base and base+5h are >= 12h old → matured; (none here are base+0 vs 13h=13h>=12h yes)
     assert "d_old" in ids
     assert "d_mid" not in ids  # only 8h old
-    assert len(store) == 1  # only d_mid remains
+    assert "d_fresh" in ids
+    assert len(store) == 3  # no implicit removal anymore
+
+    store.discard("d_old")
+    assert len(store) == 2
+    assert {snap.decision_id for snap in store.get_matured(now, window_ms)} == {"d_fresh"}
 
 
 def test_evaluate_decision_outcome():
@@ -288,6 +293,12 @@ def test_evaluate_decision_outcome():
     assert evaluate_decision_outcome("BUY", 0.0, 100.0) == (None, None)
 
 
+def test_compute_return_pct():
+    assert compute_return_pct(100.0, 110.0) == 10.0
+    assert compute_return_pct(100.0, 90.0) == -10.0
+    assert compute_return_pct(0.0, 100.0) is None
+
+
 async def test_reflect_on_matured_hold_captures_missed_move(tmp_path):
     """HOLD while market (and benchmark) rose 10% → negative alpha → INCORRECT."""
     memory = PersistentMemory(storage_path=str(tmp_path / "m.pkl"))
@@ -299,6 +310,7 @@ async def test_reflect_on_matured_hold_captures_missed_move(tmp_path):
         decision="HOLD",
         price_at_decision=100.0,
         bar_open_time_ms=1_000_000,
+        benchmark_price_at_decision=100.0,
     )
 
     reflections = await reflect_on_matured_snapshot(
@@ -315,6 +327,19 @@ async def test_reflect_on_matured_hold_captures_missed_move(tmp_path):
 
     hits = memory.retrieve_relevant("ETHUSDT HOLD", top_k=5)
     assert hits
+
+
+def test_snapshot_alpha_is_per_decision_entry_price():
+    current_benchmark_price = 120.0
+    snap_a = DecisionSnapshot("a", "ETHUSDT", "BUY", 100.0, 1, benchmark_price_at_decision=100.0)
+    snap_b = DecisionSnapshot("b", "ETHUSDT", "BUY", 100.0, 2, benchmark_price_at_decision=110.0)
+
+    alpha_a = compute_alpha(10.0, compute_return_pct(snap_a.benchmark_price_at_decision, current_benchmark_price))
+    alpha_b = compute_alpha(10.0, compute_return_pct(snap_b.benchmark_price_at_decision, current_benchmark_price))
+
+    assert alpha_a == -10.0
+    assert alpha_b == pytest.approx(0.9090909090909)
+    assert alpha_a != alpha_b
 
 
 # ---------------------------------------------------------------------------
