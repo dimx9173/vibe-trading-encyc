@@ -648,12 +648,18 @@ def create_submit_trade_order_tool(tool_context: Any) -> AgentTool:
                     details=details,
                 )
 
+        # FIX: pass risk-checked effective_price as fallback to avoid the
+        # PaperOrderExecutor 50000 mock-price fallback when caller leaves
+        # price=None and no real-time price is cached.
+        fill_price = args.price
+        if fill_price is None and risk_result is not None:
+            fill_price = risk_result.checks.get("effective_price")
         result = await tool_context.executor.place_order(
             symbol=args.symbol.upper(),
             side=side,
             order_type=order_type,
             quantity=args.quantity,
-            price=args.price,
+            price=fill_price,
             stop_price=args.stop_price,
             position_side=position_side,
             reduce_only=args.reduce_only,
