@@ -703,7 +703,8 @@ async def update_decision_tree(tree_data: dict):
 # 辅助函数 - 用于 test_historical.py 调用
 # =============================================================================
 
-_api_base_url = "http://localhost:8000"
+import os
+_api_base_url = os.environ.get("VBT_API_BASE_URL", "http://localhost:8000")
 
 
 async def send_kline(kline: dict) -> None:

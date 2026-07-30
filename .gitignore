@@ -71,3 +71,4 @@ docs/node_modules/*
 docs/INTRO_ZHIHU*
 checkpoints/
 backtest_results/
+.worktree/

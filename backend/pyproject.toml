@@ -2,7 +2,7 @@
 name = "vibe-trading"
 version = "0.1.0"
 description = "Multi-agent cryptocurrency trading system using pi_agent_core"
-readme = "README.md"
+readme = "../README.md"
 requires-python = ">=3.13"
 dependencies = [
     # Local packages
@@ -42,7 +42,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/pi_agent_core", "src/pi_ai", "src/pi_logger", "src/vibe_trading"]
+packages = ["src/vibe_trading", "src/pi_agent_core", "src/pi_ai", "src/pi_logger"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src/"]
