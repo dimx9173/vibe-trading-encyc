@@ -110,6 +110,7 @@ class DecisionQualityTracker:
         self,
         storage_path: str = "./decision_quality.db",
         enable_persistence: bool = True,
+        journal_storage: Optional["DecisionJournalStorage"] = None,
     ):
         """
         初始化跟踪器
@@ -117,6 +118,8 @@ class DecisionQualityTracker:
         Args:
             storage_path: 存储路径
             enable_persistence: 是否启用持久化
+            journal_storage: Optional DecisionJournalStorage to bridge to.
+                If None, the process-wide singleton is used.
         """
         self.storage_path = storage_path
         self.enable_persistence = enable_persistence
@@ -124,6 +127,15 @@ class DecisionQualityTracker:
         # 内存存储
         self._decisions: List[DecisionRecord] = []
         self._agent_performances: Dict[str, AgentPerformance] = {}
+
+        # === Persistence bridge ===
+        # QualityTracker.record_decision was a dead-end (no downstream) before
+        # this change. We now wire it to DecisionJournalStorage, the per-bar
+        # SQLite store the web server already serves via /api/decisions.
+        if journal_storage is None:
+            from vibe_trading.web.journal_storage import get_journal_storage
+            journal_storage = get_journal_storage()
+        self._journal_storage = journal_storage
 
         # 性能指标缓存
         self._metrics_cache: Optional[QualityMetrics] = None
@@ -136,6 +148,8 @@ class DecisionQualityTracker:
         signal: ProcessedSignal,
         agent_contributions: Dict[str, float],
         market_condition: str = "unknown",
+        interval: str = "30m",
+        bar_open_time_ms: Optional[int] = None,
     ):
         """
         记录决策
@@ -146,6 +160,8 @@ class DecisionQualityTracker:
             signal: 处理后的信号
             agent_contributions: Agent贡献度
             market_condition: 市场状态
+            interval: K线周期 (used by journal_storage key)
+            bar_open_time_ms: 决策对应的K线开舱时间 (used by journal_storage key)
         """
         record = DecisionRecord(
             decision_id=decision_id,
@@ -168,7 +184,11 @@ class DecisionQualityTracker:
 
         # 持久化
         if self.enable_persistence:
-            await self._persist_decision(record)
+            await self._persist_decision(
+                record,
+                interval=interval,
+                bar_open_time_ms=bar_open_time_ms,
+            )
 
         logger.debug(
             f"记录决策: {decision_id} - {signal.signal.value} ({signal.confidence:.2f})",
@@ -331,15 +351,94 @@ class DecisionQualityTracker:
         # 实际评估需要在record_outcome中进行
         pass
 
-    async def _persist_decision(self, record: DecisionRecord):
-        """持久化决策记录"""
-        # TODO: 实现数据库持久化
-        pass
+    async def _persist_decision(
+        self,
+        record: DecisionRecord,
+        interval: str = "30m",
+        bar_open_time_ms: Optional[int] = None,
+    ) -> None:
+        """持久化决策记录到 DecisionJournalStorage."""
+        if self._journal_storage is None:
+            return
 
-    async def _persist_outcome(self, decision_id: str, record: DecisionRecord):
-        """持久化交易结果"""
-        # TODO: 实现数据库持久化
-        pass
+        # Derive bar_open_time_ms from decision_id if not provided.
+        # Existing convention: decision_id = "{symbol}_{bar_open_time_ms}"
+        if bar_open_time_ms is None:
+            parts = record.decision_id.rsplit("_", 1)
+            if len(parts) == 2 and parts[1].isdigit():
+                bar_open_time_ms = int(parts[1])
+
+        if bar_open_time_ms is None:
+            # Fallback to "now" if we truly can't derive a key (legacy callers).
+            bar_open_time_ms = int(record.timestamp.timestamp() * 1000)
+
+        decision_payload = {
+            "decision_id": record.decision_id,
+            "action": record.signal.value,
+            "confidence": record.confidence,
+            "strength": record.strength,
+            "agent_contributions": record.agent_contributions,
+            "market_condition": record.market_condition,
+            "recorded_at": record.timestamp.isoformat(),
+        }
+
+        try:
+            await self._journal_storage.upsert_bar(
+                symbol=record.symbol,
+                interval=interval,
+                open_time_ms=bar_open_time_ms,
+                bar_time=record.timestamp.isoformat(),
+                update={"decision": decision_payload},
+            )
+        except Exception as e:
+            # Persistence failure must not break the trading pipeline.
+            logger.error(
+                f"Failed to persist decision {record.decision_id}: {e}",
+                tag="QualityTracker",
+            )
+
+    async def _persist_outcome(
+        self,
+        decision_id: str,
+        record: DecisionRecord,
+        interval: str = "30m",
+        bar_open_time_ms: Optional[int] = None,
+    ) -> None:
+        """持久化交易结果到 DecisionJournalStorage (executions_json)."""
+        if self._journal_storage is None:
+            return
+
+        if bar_open_time_ms is None:
+            parts = decision_id.rsplit("_", 1)
+            if len(parts) == 2 and parts[1].isdigit():
+                bar_open_time_ms = int(parts[1])
+        if bar_open_time_ms is None:
+            bar_open_time_ms = int(record.timestamp.timestamp() * 1000)
+
+        execution_payload = {
+            "decision_id": decision_id,
+            "entry_price": record.entry_price,
+            "exit_price": record.exit_price,
+            "position_size": record.position_size,
+            "pnl": record.pnl,
+            "pnl_percentage": record.pnl_percentage,
+            "hold_duration_hours": record.hold_duration_hours,
+            "outcome_at": datetime.now().isoformat(),
+        }
+
+        try:
+            await self._journal_storage.upsert_bar(
+                symbol=record.symbol,
+                interval=interval,
+                open_time_ms=bar_open_time_ms,
+                bar_time=record.timestamp.isoformat(),
+                update={"execution": execution_payload},
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to persist outcome {decision_id}: {e}",
+                tag="QualityTracker",
+            )
 
     def get_agent_ranking(self, min_decisions: int = 5) -> List[Tuple[str, float]]:
         """

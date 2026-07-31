@@ -690,6 +690,8 @@ class TradingCoordinator:
             signal=processed_signal,
             agent_contributions=agent_contributions,
             market_condition=market_condition,
+            interval=self.interval,
+            bar_open_time_ms=bar_open_time_ms,
         )
 
         logger.info(f"[质量跟踪] 决策已记录: {decision_id}")

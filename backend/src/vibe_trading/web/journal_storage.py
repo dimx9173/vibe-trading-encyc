@@ -6,11 +6,31 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import aiosqlite
 
 from vibe_trading.config.settings import get_settings
+
+
+# === Singleton accessor ===
+# Both QualityTracker and the web server share this so a single DB file is
+# updated regardless of which path triggered the write.
+_journal_storage: Optional["DecisionJournalStorage"] = None
+
+
+def get_journal_storage() -> "DecisionJournalStorage":
+    """Return the process-wide DecisionJournalStorage singleton."""
+    global _journal_storage
+    if _journal_storage is None:
+        _journal_storage = DecisionJournalStorage()
+    return _journal_storage
+
+
+def reset_journal_storage_for_tests() -> None:
+    """Clear the singleton pointer (used only by tests)."""
+    global _journal_storage
+    _journal_storage = None
 
 
 @dataclass
@@ -208,3 +228,59 @@ class DecisionJournalStorage:
             executions=json.loads(row["executions_json"] or "[]"),
             updated_at=row["updated_at"],
         )
+
+    async def list_bars(
+        self,
+        *,
+        symbol: Optional[str] = None,
+        interval: Optional[str] = None,
+        limit: int = 100,
+        descending: bool = True,
+    ) -> List[BarJournal]:
+        """List recent bars, newest first by default.
+
+        Filters by symbol/interval if provided. Use this to populate /api/decisions
+        from the DB rather than relying on in-memory state.
+        """
+        clauses: List[str] = []
+        params: List[Any] = []
+        if symbol is not None:
+            clauses.append("symbol = ?")
+            params.append(symbol)
+        if interval is not None:
+            clauses.append("interval = ?")
+            params.append(interval)
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        order = "DESC" if descending else "ASC"
+        sql = f"""
+            SELECT symbol, interval, open_time_ms, bar_time,
+                   kline_json, phase_status_json, decision_json,
+                   reports_json, logs_json, executions_json, updated_at
+            FROM bar_decision_journal
+            {where}
+            ORDER BY open_time_ms {order}
+            LIMIT ?
+        """
+        params.append(limit)
+
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            cursor = await conn.execute(sql, params)
+            rows = await cursor.fetchall()
+
+        return [
+            BarJournal(
+                symbol=row["symbol"],
+                interval=row["interval"],
+                open_time_ms=row["open_time_ms"],
+                bar_time=row["bar_time"],
+                kline=json.loads(row["kline_json"] or "{}"),
+                phase_status=json.loads(row["phase_status_json"] or "{}"),
+                decision=json.loads(row["decision_json"]) if row["decision_json"] else None,
+                reports=json.loads(row["reports_json"] or "{}"),
+                logs=json.loads(row["logs_json"] or "[]"),
+                executions=json.loads(row["executions_json"] or "[]"),
+                updated_at=row["updated_at"],
+            )
+            for row in rows
+        ]

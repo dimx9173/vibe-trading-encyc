@@ -443,8 +443,23 @@ async def get_klines():
 
 @app.get("/api/decisions")
 async def get_decisions():
-    """获取所有决策"""
-    return {"decisions": state.decisions}
+    """获取所有决策 — reads from journal_storage so persisted data is visible.
+
+    Previously this returned the in-memory state.decisions list which was never
+    populated by TradingCoordinator. Now we query the SQLite journal for the
+    latest bars of the current symbol/interval and extract their `decision` JSON.
+    """
+    try:
+        bars = await journal_storage.list_bars(
+            symbol=state.current_symbol,
+            interval=state.current_interval,
+            limit=200,
+        )
+        decisions = [bar.decision for bar in bars if bar.decision is not None]
+    except Exception:
+        # Schema may not be initialized yet — fall back to empty list, not 500
+        decisions = []
+    return {"decisions": decisions}
 
 
 @app.get("/api/logs")
