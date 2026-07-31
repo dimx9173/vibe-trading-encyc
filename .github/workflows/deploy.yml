@@ -30,11 +30,24 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
       - name: Install dependencies
         run: cd docs && npm install
+
+      - name: Install Python test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy pytest pytest-asyncio
+
+      - name: Run backend tests
+        run: cd tests && python -m pytest -v
 
       - name: Build with VitePress
         run: cd docs && npm run build
