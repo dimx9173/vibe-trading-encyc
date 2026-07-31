@@ -67,6 +67,7 @@ test_*.py
 !tests/test_execution_safety.py
 !tests/test_indicators.py
 !tests/test_risk_manager.py
+!tests/test_state_machine.py
 backend/test_*.py
 node_modules/*
 docs/node_modules/*

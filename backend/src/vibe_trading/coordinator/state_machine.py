@@ -60,10 +60,15 @@ class DecisionStateMachine:
 
     # 定义允许的状态转换
     ALLOWED_TRANSITIONS = {
+        # PENDING is strict: must enter ANALYZING before completing (no shortcuts).
         DecisionState.PENDING: [DecisionState.ANALYZING, DecisionState.FAILED, DecisionState.CANCELLED],
-        DecisionState.ANALYZING: [DecisionState.DEBATING, DecisionState.FAILED, DecisionState.CANCELLED],
-        DecisionState.DEBATING: [DecisionState.ASSESSING_RISK, DecisionState.FAILED, DecisionState.CANCELLED],
-        DecisionState.ASSESSING_RISK: [DecisionState.PLANNING, DecisionState.FAILED, DecisionState.CANCELLED],
+        # Intermediate states allow COMPLETED as a safety valve so the coordinator
+        # can still record a decision even if intermediate transitions failed.
+        # Without this, line 601 in trading_coordinator.py silently fails
+        # (returns False) and the decision is never persisted.
+        DecisionState.ANALYZING: [DecisionState.DEBATING, DecisionState.FAILED, DecisionState.CANCELLED, DecisionState.COMPLETED],
+        DecisionState.DEBATING: [DecisionState.ASSESSING_RISK, DecisionState.FAILED, DecisionState.CANCELLED, DecisionState.COMPLETED],
+        DecisionState.ASSESSING_RISK: [DecisionState.PLANNING, DecisionState.FAILED, DecisionState.CANCELLED, DecisionState.COMPLETED],
         DecisionState.PLANNING: [DecisionState.EXECUTING, DecisionState.COMPLETED, DecisionState.FAILED, DecisionState.CANCELLED],
         DecisionState.EXECUTING: [DecisionState.COMPLETED, DecisionState.FAILED],
         DecisionState.COMPLETED: [],  # 终态
