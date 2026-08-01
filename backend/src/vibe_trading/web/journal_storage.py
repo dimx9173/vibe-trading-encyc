@@ -284,3 +284,36 @@ class DecisionJournalStorage:
             )
             for row in rows
         ]
+
+    async def count_bars(
+        self,
+        *,
+        symbol: Optional[str] = None,
+        interval: Optional[str] = None,
+        with_decision_only: bool = True,
+    ) -> int:
+        """Count bars in the journal, optionally filtered by symbol/interval.
+
+        Defaults to counting only rows whose `decision_json` was populated so the
+        number matches what /api/decisions surfaces (one per real decision). Pass
+        ``with_decision_only=False`` to count every upserted bar including
+        pre-decision or partial-cycle entries.
+        """
+        clauses: List[str] = []
+        params: List[Any] = []
+        if symbol is not None:
+            clauses.append("symbol = ?")
+            params.append(symbol)
+        if interval is not None:
+            clauses.append("interval = ?")
+            params.append(interval)
+        if with_decision_only:
+            clauses.append("decision_json IS NOT NULL")
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+
+        sql = f"SELECT COUNT(*) FROM bar_decision_journal {where}"
+
+        async with aiosqlite.connect(self.db_path) as conn:
+            cursor = await conn.execute(sql, params)
+            row = await cursor.fetchone()
+            return int(row[0]) if row else 0

@@ -427,10 +427,18 @@ async def init_config(config: InitConfig):
 @app.get("/api/status")
 async def get_status():
     """获取当前状态"""
+    try:
+        persisted_decisions = await journal_storage.count_bars(
+            symbol=state.current_symbol,
+            interval=state.current_interval,
+        )
+    except Exception:
+        # DB not initialized yet — surface 0 rather than 500
+        persisted_decisions = 0
     return {
         "connected_clients": len(state.active_connections),
         "total_klines": len(state.klines),
-        "total_decisions": len(state.decisions),
+        "total_decisions": persisted_decisions,
         "current_phase": state.phase_status.get("current"),
     }
 
