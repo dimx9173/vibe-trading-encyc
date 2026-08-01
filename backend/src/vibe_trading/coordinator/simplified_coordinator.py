@@ -99,6 +99,9 @@ class SimplifiedTradingCoordinator:
         self._portfolio_manager = None
         
         logger.info(f"SimplifiedTradingCoordinator initialized for {symbol}")
+
+        # PHASE_6 SWDD: serialize cycles to prevent agent state leak
+        self._cycle_lock: asyncio.Lock = asyncio.Lock()
     
     async def initialize(self) -> None:
         """Initialize all agents"""
@@ -153,59 +156,91 @@ class SimplifiedTradingCoordinator:
         Returns:
             Trading decision
         """
-        start_time = datetime.now()
-        decision_id = f"{self.symbol}_{int(start_time.timestamp() * 1000)}"
+        async with self._cycle_lock:
+            # Defensive: clear pi_agent_core state leak from previous failed cycle
+            self._reset_agent_states()
+            start_time = datetime.now()
+            decision_id = f"{self.symbol}_{int(start_time.timestamp() * 1000)}"
         
-        logger.info(f"Starting simplified decision flow for {self.symbol} @ ${current_price:.2f}")
+            logger.info(f"Starting simplified decision flow for {self.symbol} @ ${current_price:.2f}")
         
-        # Prepare context
-        context = await self._prepare_context(current_price)
-        current_positions = current_positions or []
+            # Prepare context
+            context = await self._prepare_context(current_price)
+            current_positions = current_positions or []
         
-        # Agent outputs
-        agent_outputs = {}
+            # Agent outputs
+            agent_outputs = {}
         
-        # Phase 1: Technical Analysis
-        logger.info("Phase 1: Technical Analysis")
-        tech_reports = await self._run_technical_analysis(context)
-        agent_outputs["technical"] = tech_reports
+            # Phase 1: Technical Analysis
+            logger.info("Phase 1: Technical Analysis")
+            tech_reports = await self._run_technical_analysis(context)
+            agent_outputs["technical"] = tech_reports
         
-        # Phase 2: Load Macro State
-        logger.info("Loading macro state")
-        macro_state = await self._load_macro_state()
-        agent_outputs["macro_state"] = macro_state
+            # Phase 2: Load Macro State
+            logger.info("Loading macro state")
+            macro_state = await self._load_macro_state()
+            agent_outputs["macro_state"] = macro_state
         
-        # Phase 3: Researcher Debate
-        logger.info("Phase 2: Researcher Debate")
-        debate_result = await self._run_research_debate(
-            context,
-            tech_reports,
-            macro_state,
-        )
-        agent_outputs["debate"] = debate_result
+            # Phase 3: Researcher Debate
+            logger.info("Phase 2: Researcher Debate")
+            debate_result = await self._run_research_debate(
+                context,
+                tech_reports,
+                macro_state,
+            )
+            agent_outputs["debate"] = debate_result
         
-        # Phase 4: Decision
-        logger.info("Phase 3: Decision")
-        final_decision = await self._make_final_decision(
-            tech_reports,
-            debate_result,
-            macro_state,
-            account_balance,
-            current_positions,
-        )
+            # Phase 4: Decision
+            logger.info("Phase 3: Decision")
+            final_decision = await self._make_final_decision(
+                tech_reports,
+                debate_result,
+                macro_state,
+                account_balance,
+                current_positions,
+            )
         
-        logger.info(f"Simplified decision flow completed: {final_decision.get('decision', 'HOLD')}")
+            logger.info(f"Simplified decision flow completed: {final_decision.get('decision', 'HOLD')}")
         
-        return TradingDecision(
-            symbol=self.symbol,
-            timestamp=int(datetime.now().timestamp() * 1000),
-            decision=final_decision.get("decision", "HOLD"),
-            rationale=final_decision.get("rationale", "No rationale provided"),
-            execution_instructions=None,
-            agent_outputs=agent_outputs,
-            macro_state=macro_state,
-        )
+            return TradingDecision(
+                symbol=self.symbol,
+                timestamp=int(datetime.now().timestamp() * 1000),
+                decision=final_decision.get("decision", "HOLD"),
+                rationale=final_decision.get("rationale", "No rationale provided"),
+                execution_instructions=None,
+                agent_outputs=agent_outputs,
+                macro_state=macro_state,
+            )
     
+    def _reset_agent_states(self) -> None:
+        """Defensive reset for pi_agent_core state leak (PHASE_5 SYNTHESIS spec).
+
+        pi_agent_core sets Agent._state.is_streaming = True during prompt();
+        the flag is NOT reset if _run_loop crashes mid-stream. Every new
+        cycle then hits RuntimeError ('Agent is already processing a prompt')
+        at researcher_agents.py:427. This clears leaked busy state before each cycle.
+
+        Fail-open: try/except around private _state attribute access so a future
+        library API change cannot crash the cycle.
+        """
+        for attr in (
+            "_technical_analyst",
+            "_bull_researcher",
+            "_bear_researcher",
+            "_research_manager",
+            "_portfolio_manager",
+        ):
+            wrapper = getattr(self, attr, None)
+            if wrapper is None:
+                continue
+            inner = getattr(wrapper, "_agent", None)
+            if inner is None:
+                continue
+            try:
+                inner._state.is_streaming = False
+            except Exception:
+                pass
+
     async def _prepare_context(self, current_price: float) -> TradingContext:
         """Prepare trading context"""
         # This would normally fetch klines and indicators

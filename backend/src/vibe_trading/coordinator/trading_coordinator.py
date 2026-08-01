@@ -199,6 +199,9 @@ class TradingCoordinator:
 
         logger.info(f"TradingCoordinator initialized for {symbol} {interval}")
 
+        # PHASE_6 SWDD: serialize cycles to prevent agent state leak
+        self._cycle_lock: asyncio.Lock = asyncio.Lock()
+
     async def _update_decision_tree(
         self,
         phase: str,
@@ -362,374 +365,403 @@ class TradingCoordinator:
         5. 交易员制定方案
         6. 投资组合经理最终决策
         """
-        start_time = datetime.now()
-        decision_id = f"{self.symbol}_{int(start_time.timestamp() * 1000)}"
+        async with self._cycle_lock:
+            # Defensive: clear pi_agent_core state leak from previous failed cycle
+            self._reset_agent_states()
+            start_time = datetime.now()
+            decision_id = f"{self.symbol}_{int(start_time.timestamp() * 1000)}"
 
-        # ========== 决策级反思：回看此前已成熟的决策快照 ==========
-        await self._reflect_on_matured_decisions(current_price, bar_open_time_ms)
+            # ========== 决策级反思：回看此前已成熟的决策快照 ==========
+            await self._reflect_on_matured_decisions(current_price, bar_open_time_ms)
 
-        # ========== 改进工具: 状态机初始化 ==========
-        self._current_state_machine = self._state_manager.create_machine(
-            decision_id=decision_id,
-            symbol=self.symbol,
-            interval=self.interval
-        )
-        self._current_correlation_id = decision_id
-
-        log.step(f"开始分析 {self.symbol} @ ${current_price:.2f}")
-        logger.info(f"[状态机] 创建决策: {decision_id}")
-
-        # 转换到ANALYZING状态
-        self._current_state_machine.transition_to(DecisionState.ANALYZING, "开始分析师阶段")
-        logger.info("[状态机] PENDING -> ANALYZING")
-
-        # 准备上下文
-        context = await self._prepare_context(current_price)
-        current_positions = current_positions or []
-
-        # 存储所有 Agent 输出
-        agent_outputs = {}
-
-        # 统计信息
-        stats = {
-            "cache_hits": 0,
-            "cache_misses": 0,
-            "api_calls": 0,
-            "messages_sent": 0,
-        }
-
-        # Phase 1: 分析师生成报告
-        info("Phase 1: 分析师生成报告...", tag="Analysts")
-
-        # 更新决策树 - 阶段开始
-        await self._update_decision_tree("analysts", "running")
-
-        # ========== 改进工具: 并行执行 + 消息记录 + 性能日志 ==========
-        import time
-        phase_start = time.time()
-        analyst_reports = await self._run_analysts_parallel(context, decision_id, stats)
-        phase_elapsed = time.time() - phase_start
-        logger.info(f"[性能] Phase 1 (分析师) 耗时: {phase_elapsed:.2f}s")
-        agent_outputs["analysts"] = analyst_reports
-
-        # 构建Agent状态列表
-        agent_statuses = [
-            {"name": role, "status": "completed"}
-            for role in analyst_reports.keys()
-        ]
-
-        # 更新决策树 - 阶段完成
-        await self._update_decision_tree("analysts", "completed", agents=agent_statuses)
-
-        # 推送报告到 Web
-        try:
-            from vibe_trading.web.server import send_report
-            for role, report in analyst_reports.items():
-                await send_report(
-                    role,
-                    report,
-                    "analysts",
-                    open_time_ms=bar_open_time_ms,
-                    symbol=self.symbol,
-                    interval=self.interval,
-                )
-        except Exception:
-            pass  # Web 未启用时忽略
-
-        # 打印分析师报告
-        for role, report in analyst_reports.items():
-            print(f"\n[{role.upper()} REPORT]")
-            separator("=", 60)
-            print(report[:500] + "..." if len(report) > 500 else report)
-            separator()
-        log.done("分析师报告完成")
-
-        # Phase 2: 研究员辩论
-        info("Phase 2: 研究员辩论...", tag="Researchers")
-
-        # ========== 改进工具: 状态机转换 ==========
-        self._current_state_machine.transition_to(DecisionState.DEBATING, "开始研究员辩论")
-        logger.info("[状态机] ANALYZING -> DEBATING")
-
-        # 更新决策树 - 阶段开始
-        await self._update_decision_tree("researchers", "running")
-
-        import time
-        phase_start = time.time()
-        investment_plan = await self._run_research_debate(context, analyst_reports, decision_id, stats)
-        phase_elapsed = time.time() - phase_start
-        logger.info(f"[性能] Phase 2 (研究员) 耗时: {phase_elapsed:.2f}s")
-        agent_outputs["investment_plan"] = investment_plan
-
-        # 更新决策树 - 阶段完成
-        await self._update_decision_tree(
-            "researchers",
-            "completed",
-            content=investment_plan[:500] if len(investment_plan) > 500 else investment_plan
-        )
-
-        # 推送投资计划到 Web
-        try:
-            from vibe_trading.web.server import send_report
-            await send_report(
-                "Research Manager",
-                investment_plan,
-                "researchers",
-                open_time_ms=bar_open_time_ms,
+            # ========== 改进工具: 状态机初始化 ==========
+            self._current_state_machine = self._state_manager.create_machine(
+                decision_id=decision_id,
                 symbol=self.symbol,
-                interval=self.interval,
+                interval=self.interval
             )
-        except Exception:
-            pass
+            self._current_correlation_id = decision_id
 
-        # 打印投资计划
-        print("\n[INVESTMENT PLAN]")
-        separator("=", 60)
-        print(investment_plan[:500] + "..." if len(investment_plan) > 500 else investment_plan)
-        separator()
-        log.done("研究员辩论完成")
+            log.step(f"开始分析 {self.symbol} @ ${current_price:.2f}")
+            logger.info(f"[状态机] 创建决策: {decision_id}")
 
-        # Phase 3: 风控评估
-        info("Phase 3: 风控评估...", tag="Risk")
+            # 转换到ANALYZING状态
+            self._current_state_machine.transition_to(DecisionState.ANALYZING, "开始分析师阶段")
+            logger.info("[状态机] PENDING -> ANALYZING")
 
-        # ========== 改进工具: 状态机转换 ==========
-        self._current_state_machine.transition_to(DecisionState.ASSESSING_RISK, "开始风控评估")
-        logger.info("[状态机] DEBATING -> ASSESSING_RISK")
+            # 准备上下文
+            context = await self._prepare_context(current_price)
+            current_positions = current_positions or []
 
-        # 更新决策树 - 阶段开始
-        await self._update_decision_tree("risk", "running")
+            # 存储所有 Agent 输出
+            agent_outputs = {}
 
-        import time
-        phase_start = time.time()
-        risk_assessment = await self._run_risk_assessment(
-            investment_plan, current_positions, account_balance, decision_id, stats
-        )
-        phase_elapsed = time.time() - phase_start
-        logger.info(f"[性能] Phase 3 (风控) 耗时: {phase_elapsed:.2f}s")
-        agent_outputs["risk_assessment"] = risk_assessment
+            # 统计信息
+            stats = {
+                "cache_hits": 0,
+                "cache_misses": 0,
+                "api_calls": 0,
+                "messages_sent": 0,
+            }
 
-        # 更新决策树 - 阶段完成
-        await self._update_decision_tree(
-            "risk",
-            "completed",
-            agents=[
+            # Phase 1: 分析师生成报告
+            info("Phase 1: 分析师生成报告...", tag="Analysts")
+
+            # 更新决策树 - 阶段开始
+            await self._update_decision_tree("analysts", "running")
+
+            # ========== 改进工具: 并行执行 + 消息记录 + 性能日志 ==========
+            import time
+            phase_start = time.time()
+            analyst_reports = await self._run_analysts_parallel(context, decision_id, stats)
+            phase_elapsed = time.time() - phase_start
+            logger.info(f"[性能] Phase 1 (分析师) 耗时: {phase_elapsed:.2f}s")
+            agent_outputs["analysts"] = analyst_reports
+
+            # 构建Agent状态列表
+            agent_statuses = [
                 {"name": role, "status": "completed"}
-                for role in risk_assessment.keys() if role != "error"
+                for role in analyst_reports.keys()
             ]
-        )
 
-        # 推送风控报告到 Web
-        try:
-            from vibe_trading.web.server import send_report
-            for role, assessment in risk_assessment.items():
-                if role != "error":
+            # 更新决策树 - 阶段完成
+            await self._update_decision_tree("analysts", "completed", agents=agent_statuses)
+
+            # 推送报告到 Web
+            try:
+                from vibe_trading.web.server import send_report
+                for role, report in analyst_reports.items():
                     await send_report(
-                        role.capitalize(),
-                        assessment,
-                        "risk",
+                        role,
+                        report,
+                        "analysts",
                         open_time_ms=bar_open_time_ms,
                         symbol=self.symbol,
                         interval=self.interval,
                     )
-        except Exception:
-            pass
+            except Exception:
+                pass  # Web 未启用时忽略
 
-        # 打印风控评估
-        print("\n[RISK ASSESSMENT]")
-        separator("=", 60)
-        for role, assessment in risk_assessment.items():
-            if role != "error":
-                print(f"[{role}]: {assessment[:200]}..." if len(assessment) > 200 else f"[{role}]: {assessment}")
-        separator()
-        log.done("风控评估完成")
+            # 打印分析师报告
+            for role, report in analyst_reports.items():
+                print(f"\n[{role.upper()} REPORT]")
+                separator("=", 60)
+                print(report[:500] + "..." if len(report) > 500 else report)
+                separator()
+            log.done("分析师报告完成")
 
-        # Phase 4: 交易员制定方案
-        info("Phase 4: 交易员制定方案...", tag="Trader")
+            # Phase 2: 研究员辩论
+            info("Phase 2: 研究员辩论...", tag="Researchers")
 
-        # ========== 改进工具: 状态机转换 ==========
-        self._current_state_machine.transition_to(DecisionState.PLANNING, "开始执行规划")
-        logger.info("[状态机] ASSESSING_RISK -> PLANNING")
+            # ========== 改进工具: 状态机转换 ==========
+            self._current_state_machine.transition_to(DecisionState.DEBATING, "开始研究员辩论")
+            logger.info("[状态机] ANALYZING -> DEBATING")
 
-        # 更新决策树 - 阶段开始
-        await self._update_decision_tree("trader", "running")
+            # 更新决策树 - 阶段开始
+            await self._update_decision_tree("researchers", "running")
 
-        import time
-        phase_start = time.time()
-        trading_plan = await self._run_trader(
-            investment_plan, risk_assessment, context, account_balance
-        )
-        phase_elapsed = time.time() - phase_start
-        logger.info(f"[性能] Phase 4 (交易员) 耗时: {phase_elapsed:.2f}s")
-        agent_outputs["trading_plan"] = trading_plan
+            import time
+            phase_start = time.time()
+            investment_plan = await self._run_research_debate(context, analyst_reports, decision_id, stats)
+            phase_elapsed = time.time() - phase_start
+            logger.info(f"[性能] Phase 2 (研究员) 耗时: {phase_elapsed:.2f}s")
+            agent_outputs["investment_plan"] = investment_plan
 
-        # 转换为字符串用于显示
-        trading_plan_str = str(trading_plan)
-        trading_plan_display = trading_plan_str[:500] + "..." if len(trading_plan_str) > 500 else trading_plan_str
-
-        # 更新决策树 - 阶段完成
-        await self._update_decision_tree(
-            "trader",
-            "completed",
-            content=trading_plan_display
-        )
-
-        # 推送交易方案到 Web
-        try:
-            from vibe_trading.web.server import send_report
-            await send_report(
-                "Trader",
-                trading_plan_display,
-                "trader",
-                open_time_ms=bar_open_time_ms,
-                symbol=self.symbol,
-                interval=self.interval,
+            # 更新决策树 - 阶段完成
+            await self._update_decision_tree(
+                "researchers",
+                "completed",
+                content=investment_plan[:500] if len(investment_plan) > 500 else investment_plan
             )
-        except Exception:
-            pass
 
-        # 打印交易方案
-        print("\n[TRADING PLAN]")
-        separator("=", 60)
-        print(trading_plan_display)
-        separator()
-        log.done("交易方案制定完成")
-
-        # Phase 5: 投资组合经理最终决策
-        info("Phase 5: 投资组合经理最终决策...", tag="PM")
-
-        # ========== 改进工具: 状态机转换 ==========
-        self._current_state_machine.transition_to(DecisionState.COMPLETED, "决策完成")
-        logger.info("[状态机] PLANNING -> COMPLETED")
-
-        # 更新决策树 - 阶段开始
-        await self._update_decision_tree("pm", "running")
-
-        import time
-        phase_start = time.time()
-        self._tool_context.current_bar_open_time_ms = bar_open_time_ms
-        self._tool_context.current_trace_id = f"{self.symbol}:{self.interval}:{bar_open_time_ms or int(time.time() * 1000)}"
-        final_decision = await self._run_portfolio_manager(
-            analyst_reports,
-            investment_plan,
-            trading_plan,
-            risk_assessment,
-            current_positions,
-            account_balance,
-            context,
-        )
-        phase_elapsed = time.time() - phase_start
-        logger.info(f"[性能] Phase 5 (投资组合经理) 耗时: {phase_elapsed:.2f}s")
-
-        # 更新决策树 - 最终决策
-        await self._update_decision_tree(
-            "pm",
-            "completed",
-            decision=final_decision.get("decision", "HOLD"),
-            content=final_decision.get("rationale", "")[:300]
-        )
-
-        # 推送最终决策到 Web
-        try:
-            from vibe_trading.web.server import send_report
-            decision_text = f"决策: {final_decision.get('decision', 'HOLD')}\n\n理由:\n{final_decision.get('rationale', '')}"
-            await send_report(
-                "Portfolio Manager",
-                decision_text,
-                "pm",
-                open_time_ms=bar_open_time_ms,
-                symbol=self.symbol,
-                interval=self.interval,
-            )
-        except Exception:
-            pass
-
-        # 打印最终决策
-        print("\n[FINAL DECISION]")
-        separator("=", 60)
-        print(f"决策: {final_decision.get('decision', 'HOLD')}")
-        print(f"\n理由:\n{final_decision.get('rationale', '')}")
-        separator()
-        log.done("投资组合经理决策完成")
-
-        # 创建决策结果
-        decision = TradingDecision(
-            symbol=self.symbol,
-            timestamp=int(datetime.now().timestamp() * 1000),
-            decision=final_decision.get("decision", "HOLD"),
-            rationale=final_decision.get("rationale", ""),
-            execution_instructions=final_decision.get("execution_instructions"),
-            agent_outputs=agent_outputs,
-        )
-
-        self._decision_history.append(decision)
-
-        # ========== P0 & P1 改进: 信号处理和质量跟踪 ==========
-        # 1. 提取结构化信号
-        processed_signal = self._signal_processor.process_signal(
-            decision_text=final_decision.get("rationale", ""),
-            agent_name="Portfolio Manager",
-        )
-
-        logger.info(f"[信号处理] 提取信号: {processed_signal.signal.value} "
-                   f"(置信度: {processed_signal.confidence:.2f}, 强度: {processed_signal.strength.value})")
-
-        # 2. 计算Agent贡献度
-        # 转换 trading_plan 为字符串（可能是 TradingPlan 对象）
-        trading_plan_str = str(trading_plan) if trading_plan else ""
-        agent_contributions = self._calculate_agent_contributions(
-            analyst_reports, investment_plan, trading_plan_str, risk_assessment
-        )
-
-        # 3. 确定市场状态
-        market_condition = self._determine_market_condition(context)
-
-        # 4. 记录决策到质量跟踪器
-        await self._quality_tracker.record_decision(
-            decision_id=decision_id,
-            symbol=self.symbol,
-            signal=processed_signal,
-            agent_contributions=agent_contributions,
-            market_condition=market_condition,
-            interval=self.interval,
-            bar_open_time_ms=bar_open_time_ms,
-        )
-
-        logger.info(f"[质量跟踪] 决策已记录: {decision_id}")
-
-        # 5. 保存决策ID和信号供后续反思使用
-        self._last_decision_id = decision_id
-        self._last_processed_signal = processed_signal
-        self._last_analyst_reports = analyst_reports
-        self._last_decision_context = {
-            "market_condition": market_condition,
-            "final_decision": final_decision,
-            "investment_plan": investment_plan,
-            "risk_assessment": risk_assessment,
-        }
-
-        # 6. 记录决策快照（含 HOLD），供 N 根 bar 后回看评估
-        if self._snapshot_store is not None:
-            benchmark_price_at_decision = await self._fetch_benchmark_price()
-            self._snapshot_store.record(
-                DecisionSnapshot(
-                    decision_id=decision_id,
+            # 推送投资计划到 Web
+            try:
+                from vibe_trading.web.server import send_report
+                await send_report(
+                    "Research Manager",
+                    investment_plan,
+                    "researchers",
+                    open_time_ms=bar_open_time_ms,
                     symbol=self.symbol,
-                    decision=decision.decision,
-                    price_at_decision=current_price,
-                    bar_open_time_ms=bar_open_time_ms or int(start_time.timestamp() * 1000),
-                    benchmark_price_at_decision=benchmark_price_at_decision,
-                    confidence=getattr(processed_signal, "confidence", 0.0),
-                    context_digest=market_condition,
+                    interval=self.interval,
                 )
+            except Exception:
+                pass
+
+            # 打印投资计划
+            print("\n[INVESTMENT PLAN]")
+            separator("=", 60)
+            print(investment_plan[:500] + "..." if len(investment_plan) > 500 else investment_plan)
+            separator()
+            log.done("研究员辩论完成")
+
+            # Phase 3: 风控评估
+            info("Phase 3: 风控评估...", tag="Risk")
+
+            # ========== 改进工具: 状态机转换 ==========
+            self._current_state_machine.transition_to(DecisionState.ASSESSING_RISK, "开始风控评估")
+            logger.info("[状态机] DEBATING -> ASSESSING_RISK")
+
+            # 更新决策树 - 阶段开始
+            await self._update_decision_tree("risk", "running")
+
+            import time
+            phase_start = time.time()
+            risk_assessment = await self._run_risk_assessment(
+                investment_plan, current_positions, account_balance, decision_id, stats
+            )
+            phase_elapsed = time.time() - phase_start
+            logger.info(f"[性能] Phase 3 (风控) 耗时: {phase_elapsed:.2f}s")
+            agent_outputs["risk_assessment"] = risk_assessment
+
+            # 更新决策树 - 阶段完成
+            await self._update_decision_tree(
+                "risk",
+                "completed",
+                agents=[
+                    {"name": role, "status": "completed"}
+                    for role in risk_assessment.keys() if role != "error"
+                ]
             )
 
-        elapsed = (datetime.now() - start_time).total_seconds()
-        success(f"分析完成: {decision.decision} (耗时 {elapsed:.2f}s)", tag="Coordinator")
+            # 推送风控报告到 Web
+            try:
+                from vibe_trading.web.server import send_report
+                for role, assessment in risk_assessment.items():
+                    if role != "error":
+                        await send_report(
+                            role.capitalize(),
+                            assessment,
+                            "risk",
+                            open_time_ms=bar_open_time_ms,
+                            symbol=self.symbol,
+                            interval=self.interval,
+                        )
+            except Exception:
+                pass
 
-        # ========== 改进工具: 统计信息输出 ==========
-        self._log_improvements_stats(elapsed, stats)
+            # 打印风控评估
+            print("\n[RISK ASSESSMENT]")
+            separator("=", 60)
+            for role, assessment in risk_assessment.items():
+                if role != "error":
+                    print(f"[{role}]: {assessment[:200]}..." if len(assessment) > 200 else f"[{role}]: {assessment}")
+            separator()
+            log.done("风控评估完成")
 
-        return decision
+            # Phase 4: 交易员制定方案
+            info("Phase 4: 交易员制定方案...", tag="Trader")
+
+            # ========== 改进工具: 状态机转换 ==========
+            self._current_state_machine.transition_to(DecisionState.PLANNING, "开始执行规划")
+            logger.info("[状态机] ASSESSING_RISK -> PLANNING")
+
+            # 更新决策树 - 阶段开始
+            await self._update_decision_tree("trader", "running")
+
+            import time
+            phase_start = time.time()
+            trading_plan = await self._run_trader(
+                investment_plan, risk_assessment, context, account_balance
+            )
+            phase_elapsed = time.time() - phase_start
+            logger.info(f"[性能] Phase 4 (交易员) 耗时: {phase_elapsed:.2f}s")
+            agent_outputs["trading_plan"] = trading_plan
+
+            # 转换为字符串用于显示
+            trading_plan_str = str(trading_plan)
+            trading_plan_display = trading_plan_str[:500] + "..." if len(trading_plan_str) > 500 else trading_plan_str
+
+            # 更新决策树 - 阶段完成
+            await self._update_decision_tree(
+                "trader",
+                "completed",
+                content=trading_plan_display
+            )
+
+            # 推送交易方案到 Web
+            try:
+                from vibe_trading.web.server import send_report
+                await send_report(
+                    "Trader",
+                    trading_plan_display,
+                    "trader",
+                    open_time_ms=bar_open_time_ms,
+                    symbol=self.symbol,
+                    interval=self.interval,
+                )
+            except Exception:
+                pass
+
+            # 打印交易方案
+            print("\n[TRADING PLAN]")
+            separator("=", 60)
+            print(trading_plan_display)
+            separator()
+            log.done("交易方案制定完成")
+
+            # Phase 5: 投资组合经理最终决策
+            info("Phase 5: 投资组合经理最终决策...", tag="PM")
+
+            # ========== 改进工具: 状态机转换 ==========
+            self._current_state_machine.transition_to(DecisionState.COMPLETED, "决策完成")
+            logger.info("[状态机] PLANNING -> COMPLETED")
+
+            # 更新决策树 - 阶段开始
+            await self._update_decision_tree("pm", "running")
+
+            import time
+            phase_start = time.time()
+            self._tool_context.current_bar_open_time_ms = bar_open_time_ms
+            self._tool_context.current_trace_id = f"{self.symbol}:{self.interval}:{bar_open_time_ms or int(time.time() * 1000)}"
+            final_decision = await self._run_portfolio_manager(
+                analyst_reports,
+                investment_plan,
+                trading_plan,
+                risk_assessment,
+                current_positions,
+                account_balance,
+                context,
+            )
+            phase_elapsed = time.time() - phase_start
+            logger.info(f"[性能] Phase 5 (投资组合经理) 耗时: {phase_elapsed:.2f}s")
+
+            # 更新决策树 - 最终决策
+            await self._update_decision_tree(
+                "pm",
+                "completed",
+                decision=final_decision.get("decision", "HOLD"),
+                content=final_decision.get("rationale", "")[:300]
+            )
+
+            # 推送最终决策到 Web
+            try:
+                from vibe_trading.web.server import send_report
+                decision_text = f"决策: {final_decision.get('decision', 'HOLD')}\n\n理由:\n{final_decision.get('rationale', '')}"
+                await send_report(
+                    "Portfolio Manager",
+                    decision_text,
+                    "pm",
+                    open_time_ms=bar_open_time_ms,
+                    symbol=self.symbol,
+                    interval=self.interval,
+                )
+            except Exception:
+                pass
+
+            # 打印最终决策
+            print("\n[FINAL DECISION]")
+            separator("=", 60)
+            print(f"决策: {final_decision.get('decision', 'HOLD')}")
+            print(f"\n理由:\n{final_decision.get('rationale', '')}")
+            separator()
+            log.done("投资组合经理决策完成")
+
+            # 创建决策结果
+            decision = TradingDecision(
+                symbol=self.symbol,
+                timestamp=int(datetime.now().timestamp() * 1000),
+                decision=final_decision.get("decision", "HOLD"),
+                rationale=final_decision.get("rationale", ""),
+                execution_instructions=final_decision.get("execution_instructions"),
+                agent_outputs=agent_outputs,
+            )
+
+            self._decision_history.append(decision)
+
+            # ========== P0 & P1 改进: 信号处理和质量跟踪 ==========
+            # 1. 提取结构化信号
+            processed_signal = self._signal_processor.process_signal(
+                decision_text=final_decision.get("rationale", ""),
+                agent_name="Portfolio Manager",
+            )
+
+            logger.info(f"[信号处理] 提取信号: {processed_signal.signal.value} "
+                       f"(置信度: {processed_signal.confidence:.2f}, 强度: {processed_signal.strength.value})")
+
+            # 2. 计算Agent贡献度
+            # 转换 trading_plan 为字符串（可能是 TradingPlan 对象）
+            trading_plan_str = str(trading_plan) if trading_plan else ""
+            agent_contributions = self._calculate_agent_contributions(
+                analyst_reports, investment_plan, trading_plan_str, risk_assessment
+            )
+
+            # 3. 确定市场状态
+            market_condition = self._determine_market_condition(context)
+
+            # 4. 记录决策到质量跟踪器
+            await self._quality_tracker.record_decision(
+                decision_id=decision_id,
+                symbol=self.symbol,
+                signal=processed_signal,
+                agent_contributions=agent_contributions,
+                market_condition=market_condition,
+                interval=self.interval,
+                bar_open_time_ms=bar_open_time_ms,
+            )
+
+            logger.info(f"[质量跟踪] 决策已记录: {decision_id}")
+
+            # 5. 保存决策ID和信号供后续反思使用
+            self._last_decision_id = decision_id
+            self._last_processed_signal = processed_signal
+            self._last_analyst_reports = analyst_reports
+            self._last_decision_context = {
+                "market_condition": market_condition,
+                "final_decision": final_decision,
+                "investment_plan": investment_plan,
+                "risk_assessment": risk_assessment,
+            }
+
+            # 6. 记录决策快照（含 HOLD），供 N 根 bar 后回看评估
+            if self._snapshot_store is not None:
+                benchmark_price_at_decision = await self._fetch_benchmark_price()
+                self._snapshot_store.record(
+                    DecisionSnapshot(
+                        decision_id=decision_id,
+                        symbol=self.symbol,
+                        decision=decision.decision,
+                        price_at_decision=current_price,
+                        bar_open_time_ms=bar_open_time_ms or int(start_time.timestamp() * 1000),
+                        benchmark_price_at_decision=benchmark_price_at_decision,
+                        confidence=getattr(processed_signal, "confidence", 0.0),
+                        context_digest=market_condition,
+                    )
+                )
+
+            elapsed = (datetime.now() - start_time).total_seconds()
+            success(f"分析完成: {decision.decision} (耗时 {elapsed:.2f}s)", tag="Coordinator")
+
+            # ========== 改进工具: 统计信息输出 ==========
+            self._log_improvements_stats(elapsed, stats)
+
+            return decision
+    def _reset_agent_states(self) -> None:
+        """Defensive reset for pi_agent_core state leak (PHASE_5 SYNTHESIS spec).
+
+        TradingCoordinator stores agents in dicts (self._analysts etc.) plus
+        a few individual attributes (_trader, _portfolio_manager).
+        """
+        for agents_dict in (self._analysts, self._researchers, self._risk_analysts):
+            for wrapper in agents_dict.values():
+                inner = getattr(wrapper, "_agent", None)
+                if inner is None:
+                    continue
+                try:
+                    inner._state.is_streaming = False
+                except Exception:
+                    pass
+        for attr in ("_trader", "_portfolio_manager"):
+            wrapper = getattr(self, attr, None)
+            if wrapper is None:
+                continue
+            inner = getattr(wrapper, "_agent", None)
+            if inner is None:
+                continue
+            try:
+                inner._state.is_streaming = False
+            except Exception:
+                pass
 
     def _log_improvements_stats(self, elapsed: float, stats: dict) -> None:
         """输出改进工具统计信息"""
