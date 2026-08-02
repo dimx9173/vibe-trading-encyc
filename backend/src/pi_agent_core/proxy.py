@@ -1,21 +1,28 @@
 """
-代理流支持
+Proxy stream function for apps that route LLM calls through a server.
+The server manages auth and proxies requests to LLM providers.
 
-对应 TypeScript 版本的 proxy.ts。
-用于浏览器应用通过后端代理服务器调用 LLM。
+Mirrors proxy.ts from the TypeScript implementation.
 """
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
-from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any
 
-from .llm import (
+import httpx
+
+from .types import (
+    AgentContext,
+    AssistantMessage,
     AssistantMessageEvent,
+    Model,
+    SimpleStreamOptions,
     StreamDoneEvent,
     StreamErrorEvent,
-    StreamResponse,
+    StreamResult,
     StreamStartEvent,
     StreamTextDeltaEvent,
     StreamTextEndEvent,
@@ -26,241 +33,308 @@ from .llm import (
     StreamToolCallDeltaEvent,
     StreamToolCallEndEvent,
     StreamToolCallStartEvent,
-    Model,
-)
-from .types import (
-    AssistantMessage,
     TextContent,
     ThinkingContent,
     ToolCall,
+    Usage,
+    UsageCost,
 )
 
 
-@dataclass
-class ProxyStreamOptions:
-    """代理流选项"""
+class ProxyStreamOptions(SimpleStreamOptions):
+    """Options for the proxy stream function."""
 
     auth_token: str
     proxy_url: str
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
-    reasoning: Optional[str] = None
-    signal: Optional[Any] = None  # asyncio.Event
+
+
+# Backward-compat export name.
+ProxyAsyncStream = StreamResult
 
 
 async def stream_proxy(
     model: Model,
-    context: Dict[str, Any],
+    context: AgentContext,
     options: ProxyStreamOptions,
-) -> StreamResponse:
+) -> StreamResult:
     """
-    通过代理服务器的流式函数。
+    Stream function that proxies through a server instead of calling LLM providers directly.
 
-    服务器从 delta 事件中剥离 partial 字段以减少带宽。
-    客户端在此重建完整的 partial 消息。
-
-    使用方式:
-        agent = Agent(AgentOptions(
-            stream_fn=lambda model, context, **opts:
-                stream_proxy(model, context, ProxyStreamOptions(
-                    auth_token=get_auth_token(),
-                    proxy_url="https://your-server.com",
-                    **opts,
-                )),
-        ))
+    Returns a procedural stream result:
+      - events: async iterator of AssistantMessageEvent
+      - result: async callable returning the final AssistantMessage
     """
+    queue: asyncio.Queue[AssistantMessageEvent | None] = asyncio.Queue()
+    done = asyncio.Event()
+    state: dict[str, Any] = {"final": None, "task": None}
 
-    async def _generate() -> AsyncGenerator[AssistantMessageEvent, None]:
-        try:
-            import aiohttp
-        except ImportError:
-            raise ImportError("请安装 aiohttp 包: pip install aiohttp")
+    partial = AssistantMessage(
+        api=model.api,
+        provider=model.provider,
+        model=model.id,
+    )
 
-        # 构建 partial 消息
-        partial = AssistantMessage(
-            content=[],
-            api=model.api,
-            provider=model.provider,
-            model=model.id,
-            usage={
-                "input": 0,
-                "output": 0,
-                "cache_read": 0,
-                "cache_write": 0,
-                "total_tokens": 0,
-                "cost": {"input": 0, "output": 0, "total": 0},
-            },
-        )
+    async def events_iter():
+        while True:
+            item = await queue.get()
+            if item is None:
+                return
+            yield item
 
-        headers = {
-            "Authorization": f"Bearer {options.auth_token}",
-            "Content-Type": "application/json",
-        }
+    async def result() -> AssistantMessage:
+        await done.wait()
+        final = state["final"]
+        if final is None:
+            raise RuntimeError("No result available")
+        return final
 
-        body = {
-            "model": {"provider": model.provider, "id": model.id, "api": model.api},
-            "context": context,
-            "options": {},
-        }
-        if options.temperature is not None:
-            body["options"]["temperature"] = options.temperature
-        if options.max_tokens is not None:
-            body["options"]["max_tokens"] = options.max_tokens
-        if options.reasoning:
-            body["options"]["reasoning"] = options.reasoning
+    async def _run() -> None:
+        nonlocal partial
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
+            body = {
+                "model": model.model_dump(),
+                "context": {
+                    "systemPrompt": context.system_prompt,
+                    "messages": [m.model_dump() if hasattr(m, "model_dump") else m for m in context.messages],
+                    "tools": [
+                        {
+                            "name": t.name,
+                            "description": t.description,
+                            "label": t.label,
+                            "parameters": t.parameters.model_dump(),
+                        }
+                        for t in context.tools
+                    ]
+                    if context.tools
+                    else [],
+                },
+                "options": {
+                    "temperature": options.temperature,
+                    "maxTokens": options.max_tokens,
+                    "reasoning": options.reasoning,
+                },
+            }
+
+            headers = {
+                "Authorization": f"Bearer {options.auth_token}",
+                "Content-Type": "application/json",
+            }
+
+            async with (
+                httpx.AsyncClient(timeout=httpx.Timeout(None)) as client,
+                client.stream(
+                    "POST",
                     f"{options.proxy_url}/api/stream",
                     headers=headers,
                     json=body,
-                ) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        raise RuntimeError(
-                            f"Proxy error: {response.status} {error_text}"
-                        )
+                ) as response,
+            ):
+                if response.status_code != 200:
+                    error_text = await response.aread()
+                    error_message = f"Proxy error: {response.status_code} {response.reason_phrase}"
+                    try:
+                        error_data = json.loads(error_text)
+                        if "error" in error_data:
+                            error_message = f"Proxy error: {error_data['error']}"
+                    except (json.JSONDecodeError, KeyError):
+                        pass
+                    raise RuntimeError(error_message)
 
-                    buffer = ""
-                    async for chunk in response.content.iter_any():
-                        if options.signal and options.signal.is_set():
-                            raise RuntimeError("Request aborted by user")
+                buffer = ""
+                async for chunk in response.aiter_text():
+                    if options.cancel_event and options.cancel_event.is_set():
+                        raise RuntimeError("Request aborted by user")
 
-                        buffer += chunk.decode("utf-8")
-                        lines = buffer.split("\n")
-                        buffer = lines.pop()
+                    buffer += chunk
+                    lines = buffer.split("\n")
+                    buffer = lines.pop()
 
-                        for line in lines:
-                            if line.startswith("data: "):
-                                data = line[6:].strip()
-                                if data:
-                                    proxy_event = json.loads(data)
-                                    event = _process_proxy_event(
-                                        proxy_event, partial
-                                    )
-                                    if event:
-                                        yield event
+                    for line in lines:
+                        if line.startswith("data: "):
+                            data = line[6:].strip()
+                            if data:
+                                proxy_event = json.loads(data)
+                                event = _process_proxy_event(proxy_event, partial)
+                                if event is not None:
+                                    queue.put_nowait(event)
 
-        except Exception as e:
-            error_message = str(e)
-            partial.stop_reason = "error"
+            if options.cancel_event and options.cancel_event.is_set():
+                raise RuntimeError("Request aborted by user")
+
+            state["final"] = partial
+
+        except Exception as error:
+            error_message = str(error)
+            reason = "aborted" if (options.cancel_event and options.cancel_event.is_set()) else "error"
+            partial.stop_reason = reason
             partial.error_message = error_message
-            yield StreamErrorEvent(reason="error", error=partial)
+            queue.put_nowait(
+                StreamErrorEvent(
+                    reason=reason,
+                    error=partial,
+                )
+            )
+            state["final"] = partial
 
-    return StreamResponse(_generate())
+        finally:
+            done.set()
+            queue.put_nowait(None)
+
+    state["task"] = asyncio.create_task(_run())
+
+    return {"events": events_iter(), "result": result}
 
 
 def _process_proxy_event(
-    proxy_event: Dict[str, Any],
+    proxy_event: dict[str, Any],
     partial: AssistantMessage,
-) -> Optional[AssistantMessageEvent]:
-    """处理代理事件并更新 partial 消息"""
+) -> AssistantMessageEvent | None:
+    """Process a proxy event and update the partial message."""
     event_type = proxy_event.get("type")
 
     if event_type == "start":
         return StreamStartEvent(partial=partial)
 
     elif event_type == "text_start":
-        ci = proxy_event["contentIndex"]
-        while len(partial.content) <= ci:
-            partial.content.append(TextContent(text=""))
-        partial.content[ci] = TextContent(text="")
-        return StreamTextStartEvent(content_index=ci, partial=partial)
+        idx = proxy_event["contentIndex"]
+        # Extend content list if needed
+        while len(partial.content) <= idx:
+            partial.content.append(TextContent())
+        partial.content[idx] = TextContent()
+        return StreamTextStartEvent(content_index=idx, partial=partial)
 
     elif event_type == "text_delta":
-        ci = proxy_event["contentIndex"]
-        content = partial.content[ci]
+        idx = proxy_event["contentIndex"]
+        content = partial.content[idx]
         if isinstance(content, TextContent):
             content.text += proxy_event["delta"]
-        return StreamTextDeltaEvent(
-            content_index=ci, delta=proxy_event["delta"], partial=partial
-        )
+            return StreamTextDeltaEvent(
+                content_index=idx,
+                delta=proxy_event["delta"],
+                partial=partial,
+            )
+        raise RuntimeError("Received text_delta for non-text content")
 
     elif event_type == "text_end":
-        ci = proxy_event["contentIndex"]
-        content = partial.content[ci]
-        text = content.text if isinstance(content, TextContent) else ""
-        return StreamTextEndEvent(
-            content_index=ci, content=text, partial=partial
-        )
+        idx = proxy_event["contentIndex"]
+        content = partial.content[idx]
+        if isinstance(content, TextContent):
+            content.text_signature = proxy_event.get("contentSignature")
+            return StreamTextEndEvent(
+                content_index=idx,
+                content=content.text,
+                partial=partial,
+            )
+        raise RuntimeError("Received text_end for non-text content")
 
     elif event_type == "thinking_start":
-        ci = proxy_event["contentIndex"]
-        while len(partial.content) <= ci:
-            partial.content.append(ThinkingContent(thinking=""))
-        partial.content[ci] = ThinkingContent(thinking="")
-        return StreamThinkingStartEvent(content_index=ci, partial=partial)
+        idx = proxy_event["contentIndex"]
+        while len(partial.content) <= idx:
+            partial.content.append(TextContent())
+        partial.content[idx] = ThinkingContent()
+        return StreamThinkingStartEvent(content_index=idx, partial=partial)
 
     elif event_type == "thinking_delta":
-        ci = proxy_event["contentIndex"]
-        content = partial.content[ci]
+        idx = proxy_event["contentIndex"]
+        content = partial.content[idx]
         if isinstance(content, ThinkingContent):
             content.thinking += proxy_event["delta"]
-        return StreamThinkingDeltaEvent(
-            content_index=ci, delta=proxy_event["delta"], partial=partial
-        )
+            return StreamThinkingDeltaEvent(
+                content_index=idx,
+                delta=proxy_event["delta"],
+                partial=partial,
+            )
+        raise RuntimeError("Received thinking_delta for non-thinking content")
 
     elif event_type == "thinking_end":
-        ci = proxy_event["contentIndex"]
-        content = partial.content[ci]
-        text = content.thinking if isinstance(content, ThinkingContent) else ""
-        return StreamThinkingEndEvent(
-            content_index=ci, content=text, partial=partial
-        )
+        idx = proxy_event["contentIndex"]
+        content = partial.content[idx]
+        if isinstance(content, ThinkingContent):
+            content.thinking_signature = proxy_event.get("contentSignature")
+            return StreamThinkingEndEvent(
+                content_index=idx,
+                content=content.thinking,
+                partial=partial,
+            )
+        raise RuntimeError("Received thinking_end for non-thinking content")
 
     elif event_type == "toolcall_start":
-        ci = proxy_event["contentIndex"]
-        while len(partial.content) <= ci:
-            partial.content.append(
-                ToolCall(id="", name="", arguments={})
-            )
-        partial.content[ci] = ToolCall(
-            id=proxy_event.get("id", ""),
-            name=proxy_event.get("toolName", ""),
-            arguments={},
+        idx = proxy_event["contentIndex"]
+        while len(partial.content) <= idx:
+            partial.content.append(TextContent())
+        partial.content[idx] = ToolCall(
+            id=proxy_event["id"],
+            name=proxy_event["toolName"],
         )
-        return StreamToolCallStartEvent(content_index=ci, partial=partial)
+        return StreamToolCallStartEvent(content_index=idx, partial=partial)
 
     elif event_type == "toolcall_delta":
-        ci = proxy_event["contentIndex"]
-        content = partial.content[ci]
+        idx = proxy_event["contentIndex"]
+        content = partial.content[idx]
         if isinstance(content, ToolCall):
-            # 增量 JSON 解析（简化版）
-            if not hasattr(content, "_partial_json"):
-                content._partial_json = ""  # type: ignore
-            content._partial_json += proxy_event["delta"]  # type: ignore
-            try:
-                content.arguments = json.loads(content._partial_json)  # type: ignore
-            except json.JSONDecodeError:
-                pass
-        return StreamToolCallDeltaEvent(
-            content_index=ci, delta=proxy_event["delta"], partial=partial
-        )
+            if content.partial_json is None:
+                content.partial_json = ""
+            content.partial_json += proxy_event["delta"]
+            # Try to parse partial JSON
+            with contextlib.suppress(json.JSONDecodeError):
+                content.arguments = json.loads(content.partial_json)
+            return StreamToolCallDeltaEvent(
+                content_index=idx,
+                delta=proxy_event["delta"],
+                partial=partial,
+            )
+        raise RuntimeError("Received toolcall_delta for non-toolCall content")
 
     elif event_type == "toolcall_end":
-        ci = proxy_event["contentIndex"]
-        content = partial.content[ci]
+        idx = proxy_event["contentIndex"]
+        content = partial.content[idx]
         if isinstance(content, ToolCall):
-            if hasattr(content, "_partial_json"):
-                delattr(content, "_partial_json")
+            content.partial_json = None
             return StreamToolCallEndEvent(
-                content_index=ci, tool_call=content, partial=partial
+                content_index=idx,
+                tool_call=content,
+                partial=partial,
             )
+        return None
 
     elif event_type == "done":
-        partial.stop_reason = proxy_event.get("reason", "stop")
-        if "usage" in proxy_event:
-            partial.usage = proxy_event["usage"]
-        return StreamDoneEvent(
-            reason=partial.stop_reason, message=partial
+        usage_data = proxy_event.get("usage", {})
+        partial.stop_reason = proxy_event["reason"]
+        partial.usage = _parse_usage(usage_data)
+        stream_result = StreamDoneEvent(
+            reason=proxy_event["reason"],
+            message=partial,
         )
+        return stream_result
 
     elif event_type == "error":
-        partial.stop_reason = proxy_event.get("reason", "error")
+        usage_data = proxy_event.get("usage", {})
+        partial.stop_reason = proxy_event["reason"]
         partial.error_message = proxy_event.get("errorMessage")
-        if "usage" in proxy_event:
-            partial.usage = proxy_event["usage"]
-        return StreamErrorEvent(reason=partial.stop_reason, error=partial)
+        partial.usage = _parse_usage(usage_data)
+        return StreamErrorEvent(
+            reason=proxy_event["reason"],
+            error=partial,
+        )
 
     return None
+
+
+def _parse_usage(data: dict[str, Any]) -> Usage:
+    """Parse usage data from proxy response."""
+    cost_data = data.get("cost", {})
+    return Usage(
+        input=data.get("input", 0),
+        output=data.get("output", 0),
+        cache_read=data.get("cacheRead", 0),
+        cache_write=data.get("cacheWrite", 0),
+        total_tokens=data.get("totalTokens", 0),
+        cost=UsageCost(
+            input=cost_data.get("input", 0),
+            output=cost_data.get("output", 0),
+            cache_read=cost_data.get("cacheRead", 0),
+            cache_write=cost_data.get("cacheWrite", 0),
+            total=cost_data.get("total", 0),
+        ),
+    )

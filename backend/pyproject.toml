@@ -6,7 +6,9 @@ readme = "../README.md"
 requires-python = ">=3.13"
 dependencies = [
     # Local packages
-    "pi-agent-core",
+    # (pi-agent-core removed — vendored at src/pi_agent_core/ is now in sync
+    #  with installed PyPI version. To avoid double-install/version drift,
+    #  vendored is the source of truth and shipped via the wheel.)
     # Data sources
     "python-binance>=1.0.19",
     "websockets>=12.0",

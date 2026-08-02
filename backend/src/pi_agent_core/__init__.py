@@ -1,11 +1,9 @@
 """
-Pi-Agent-Core: Python 复刻版
-
-基于 badlogic/pi-mono 的 @mariozechner/pi-agent-core 包进行的 Python 复刻。
-提供有状态的 Agent、无状态的 Agent Loop、事件流、工具执行和 Skill 管理。
-
-原始项目: https://github.com/badlogic/pi-mono
+pi-agent-core: Stateful agent with tool execution, event streaming,
+steering/follow-up message queuing, and proxy transport.
 """
+
+import contextlib
 
 # Core Agent
 from .agent import Agent, AgentOptions
@@ -13,50 +11,126 @@ from .agent import Agent, AgentOptions
 # Loop functions
 from .agent_loop import agent_loop, agent_loop_continue
 
+# Proxy utilities
+from .proxy import ProxyAsyncStream, ProxyStreamOptions, stream_proxy
+
+# Anthropic adapter (optional — requires `pip install pi-agent-core[anthropic]`)
+with contextlib.suppress(ImportError):
+    from .anthropic import stream_anthropic
+
 # Types
 from .types import (
     AgentContext,
+    AgentEndEvent,
     AgentEvent,
     AgentLoopConfig,
     AgentMessage,
+    AgentStartEvent,
     AgentState,
     AgentTool,
     AgentToolResult,
+    AgentToolSchema,
+    AgentToolUpdateCallback,
+    AssistantMessage,
+    AssistantMessageEvent,
+    ContentBlock,
+    ImageContent,
+    Message,
+    MessageEndEvent,
+    MessageStartEvent,
+    MessageUpdateEvent,
+    Model,
+    SimpleStreamOptions,
+    StopReason,
+    StreamDoneEvent,
+    StreamErrorEvent,
+    StreamFn,
+    StreamResult,
+    StreamStartEvent,
+    StreamTextDeltaEvent,
+    StreamTextEndEvent,
+    StreamTextStartEvent,
+    StreamThinkingDeltaEvent,
+    StreamThinkingEndEvent,
+    StreamThinkingStartEvent,
+    StreamToolCallDeltaEvent,
+    StreamToolCallEndEvent,
+    StreamToolCallStartEvent,
+    TextContent,
+    ThinkingBudgets,
+    ThinkingContent,
     ThinkingLevel,
+    ToolCall,
+    ToolExecutionEndEvent,
+    ToolExecutionStartEvent,
+    ToolExecutionUpdateEvent,
+    ToolResultMessage,
+    Transport,
+    TurnEndEvent,
+    TurnStartEvent,
+    Usage,
+    UsageCost,
+    UserMessage,
 )
 
-# Event Stream
-from pi_ai import EventStream, Model, get_model, stream_simple
-
-# Skills
-from .skills import Skill, load_skills, format_skills_for_prompt
-
-__version__ = "0.1.0"
-
 __all__ = [
-    # Agent
     "Agent",
+    "AgentContext",
+    "AgentEndEvent",
+    "AgentEvent",
+    "AgentLoopConfig",
+    "AgentMessage",
     "AgentOptions",
-    # Loop
-    "agent_loop",
-    "agent_loop_continue",
-    # Types
+    "AgentStartEvent",
     "AgentState",
     "AgentTool",
     "AgentToolResult",
-    "AgentMessage",
-    "AgentEvent",
-    "AgentContext",
-    "AgentLoopConfig",
-    "ThinkingLevel",
-    # Event Stream
-    "EventStream",
-    # LLM
+    "AgentToolSchema",
+    "AgentToolUpdateCallback",
+    "AssistantMessage",
+    "AssistantMessageEvent",
+    "ContentBlock",
+    "ImageContent",
+    "Message",
+    "MessageEndEvent",
+    "MessageStartEvent",
+    "MessageUpdateEvent",
     "Model",
-    "get_model",
-    "stream_simple",
-    # Skills
-    "Skill",
-    "load_skills",
-    "format_skills_for_prompt",
+    "ProxyAsyncStream",
+    "ProxyStreamOptions",
+    "SimpleStreamOptions",
+    "StopReason",
+    "StreamDoneEvent",
+    "StreamErrorEvent",
+    "StreamFn",
+    "StreamResult",
+    "StreamStartEvent",
+    "StreamTextDeltaEvent",
+    "StreamTextEndEvent",
+    "StreamTextStartEvent",
+    "StreamThinkingDeltaEvent",
+    "StreamThinkingEndEvent",
+    "StreamThinkingStartEvent",
+    "StreamToolCallDeltaEvent",
+    "StreamToolCallEndEvent",
+    "StreamToolCallStartEvent",
+    "TextContent",
+    "ThinkingBudgets",
+    "ThinkingContent",
+    "ThinkingLevel",
+    "ToolCall",
+    "ToolExecutionEndEvent",
+    "ToolExecutionStartEvent",
+    "ToolExecutionUpdateEvent",
+    "ToolResultMessage",
+    "Transport",
+    "TurnEndEvent",
+    "TurnStartEvent",
+    "Usage",
+    "UsageCost",
+    "UserMessage",
+    "agent_loop",
+    "agent_loop_continue",
+    "stream_anthropic",
+    "stream_proxy",
 ]

@@ -1,348 +1,467 @@
 """
-核心类型定义
+Type definitions for pi-agent-core.
 
-对应原始 TypeScript 版本的 types.ts。
-定义了 Agent 系统中所有的核心数据结构和类型。
+Mirrors the TypeScript types.ts, using Pydantic models and Python typing constructs.
 """
 
 from __future__ import annotations
 
+import asyncio
 import time
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import (
-    Any,
-    Awaitable,
-    Callable,
-    Dict,
-    List,
-    Literal,
-    Optional,
-    Protocol,
-    Set,
-    Type,
-    Union,
-    runtime_checkable,
-    TYPE_CHECKING,
-)
+from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import Any, Literal, TypedDict
 
-if TYPE_CHECKING:
-    from pi_ai.model_router import ModelRouter
+from pydantic import BaseModel, Field
 
-from pydantic import BaseModel
+# ---------------------------------------------------------------------------
+# Content types (mirrors TextContent, ImageContent, ThinkingContent, ToolCall)
+# ---------------------------------------------------------------------------
 
 
-from pi_ai.types import (
-    TextContent,
-    ImageContent,
-    ThinkingContent,
-    ToolCall,
-    Content,
-    ThinkingLevel,
-    UserMessage,
-    AssistantMessage,
-    ToolResultMessage,
-    Message,
-)
+class TextContent(BaseModel):
+    type: Literal["text"] = "text"
+    text: str = ""
+    text_signature: str | None = None
 
 
-@dataclass
-class CustomMessage:
-    """
-    自定义消息基类。
-
-    应用可以继承此类来创建自定义消息类型，类似于 TypeScript 版本的
-    declaration merging 机制。
-
-    示例:
-        @dataclass
-        class NotificationMessage(CustomMessage):
-            text: str
-            role: str = "notification"
-    """
-
-    timestamp: float = field(default_factory=time.time)
-    role: str = "custom"
+class ImageContent(BaseModel):
+    type: Literal["image"] = "image"
+    media_type: str  # e.g. "image/png"
+    data: str  # base64-encoded
 
 
-# AgentMessage = 标准 LLM 消息 + 自定义消息
-AgentMessage = Union[Message, CustomMessage]
+class ThinkingContent(BaseModel):
+    type: Literal["thinking"] = "thinking"
+    thinking: str = ""
+    thinking_signature: str | None = None
 
 
-# =============================================================================
-# Tool Types
-# =============================================================================
+class ToolCall(BaseModel):
+    type: Literal["toolCall"] = "toolCall"
+    id: str
+    name: str
+    arguments: dict[str, Any] = {}
+    partial_json: str | None = None
 
 
-@dataclass
-class AgentToolResult:
-    """
-    工具执行结果。
+# Union of all content block types
+ContentBlock = TextContent | ImageContent | ThinkingContent | ToolCall
 
-    Attributes:
-        content: 内容块列表（文本或图片）
-        details: 供 UI 显示或日志记录的详细信息
-    """
 
-    content: List[Union[TextContent, ImageContent]]
+# ---------------------------------------------------------------------------
+# Message types (mirrors Message union: UserMessage, AssistantMessage, ToolResultMessage)
+# ---------------------------------------------------------------------------
+
+
+class UserMessage(BaseModel):
+    role: Literal["user"] = "user"
+    content: list[TextContent | ImageContent] = []
+    timestamp: int = Field(default_factory=lambda: int(time.time() * 1000))
+
+
+class UsageCost(BaseModel):
+    input: float = 0
+    output: float = 0
+    cache_read: float = 0
+    cache_write: float = 0
+    total: float = 0
+
+
+class Usage(BaseModel):
+    input: int = 0
+    output: int = 0
+    cache_read: int = 0
+    cache_write: int = 0
+    total_tokens: int = 0
+    cost: UsageCost = Field(default_factory=UsageCost)
+
+
+StopReason = Literal["stop", "length", "toolUse", "aborted", "error"]
+
+
+class AssistantMessage(BaseModel):
+    role: Literal["assistant"] = "assistant"
+    content: list[ContentBlock] = []
+    api: str = ""
+    provider: str = ""
+    model: str = ""
+    usage: Usage = Field(default_factory=Usage)
+    stop_reason: StopReason = "stop"
+    error_message: str | None = None
+    timestamp: int = Field(default_factory=lambda: int(time.time() * 1000))
+
+
+class ToolResultMessage(BaseModel):
+    role: Literal["toolResult"] = "toolResult"
+    tool_call_id: str
+    tool_name: str
+    content: list[TextContent | ImageContent] = []
+    details: Any = None
+    is_error: bool = False
+    timestamp: int = Field(default_factory=lambda: int(time.time() * 1000))
+
+
+# Base LLM message type
+Message = UserMessage | AssistantMessage | ToolResultMessage
+
+# AgentMessage is the same as Message.
+AgentMessage = Message
+
+
+# ---------------------------------------------------------------------------
+# Model definition (mirrors pi-ai Model)
+# ---------------------------------------------------------------------------
+
+
+class Model(BaseModel):
+    """LLM model identifier."""
+
+    api: str
+    provider: str
+    id: str
+
+
+# ---------------------------------------------------------------------------
+# Thinking level
+# ---------------------------------------------------------------------------
+
+ThinkingLevel = Literal["off", "minimal", "low", "medium", "high", "xhigh"]
+
+Transport = Literal["sse", "websocket"]
+
+
+# ---------------------------------------------------------------------------
+# Tool types
+# ---------------------------------------------------------------------------
+
+
+class AgentToolResult(BaseModel):
+    """Result returned by a tool execution."""
+
+    content: list[TextContent | ImageContent] = []
     details: Any = None
 
 
-# 工具更新回调类型
+# Callback type for streaming tool execution updates
 AgentToolUpdateCallback = Callable[[AgentToolResult], None]
 
 
-@dataclass
-class AgentTool:
-    """
-    Agent 工具定义。
+class AgentToolSchema(BaseModel):
+    """JSON Schema description for tool parameters."""
 
-    扩展了基础 Tool 接口，增加了 execute 函数和 label 字段。
-    对应 TypeScript 版本的 AgentTool<TParameters, TDetails>。
+    type: str = "object"
+    properties: dict[str, Any] = {}
+    required: list[str] = []
 
-    Attributes:
-        name: 工具标识符
-        label: UI 显示名称
-        description: LLM 可读的工具描述
-        parameters: Pydantic Model 类，用于参数验证
-        execute: 异步执行函数
+
+class AgentTool(BaseModel):
     """
+    Agent tool definition with execution function.
+
+    The `execute` callable signature:
+        async def execute(
+            tool_call_id: str,
+            params: dict[str, Any],
+            cancel_event: asyncio.Event | None = None,
+            on_update: AgentToolUpdateCallback | None = None,
+        ) -> AgentToolResult
+    """
+
+    model_config = {"arbitrary_types_allowed": True}
 
     name: str
-    label: str
     description: str
-    parameters: Type[BaseModel]
-    execute: Callable[
-        [str, Any, Optional[Any], Optional[AgentToolUpdateCallback]],
-        Awaitable[AgentToolResult],
-    ]
+    label: str = ""
+    parameters: AgentToolSchema = Field(default_factory=AgentToolSchema)
+    execute: Callable[..., Awaitable[AgentToolResult]] = Field(exclude=True)
 
 
-# =============================================================================
-# Agent Context
-# =============================================================================
+# ---------------------------------------------------------------------------
+# Agent context
+# ---------------------------------------------------------------------------
 
 
-@dataclass
-class AgentContext:
-    """
-    Agent 上下文，类似于 LLM 的 Context 但使用 AgentTool。
+class AgentContext(BaseModel):
+    """Context passed to the agent loop."""
 
-    Attributes:
-        system_prompt: 系统提示词
-        messages: 消息历史
-        tools: 可用工具列表
-    """
-
-    system_prompt: str
-    messages: List[AgentMessage]
-    tools: Optional[List[AgentTool]] = None
-
-
-# =============================================================================
-# Agent State
-# =============================================================================
-
-
-@dataclass
-class AgentState:
-    """
-    Agent 状态，包含所有配置和对话数据。
-
-    Attributes:
-        system_prompt: 系统提示词
-        model: 当前使用的 LLM 模型
-        thinking_level: 思考级别
-        tools: 可用工具列表
-        messages: 消息历史（可包含自定义消息类型）
-        is_streaming: 是否正在流式处理
-        stream_message: 流式处理中的部分消息
-        pending_tool_calls: 待执行的工具调用 ID 集合
-        error: 错误信息
-    """
+    model_config = {"arbitrary_types_allowed": True}
 
     system_prompt: str = ""
-    model: Any = None  # Model 类型，在 llm.py 中定义
-    thinking_level: ThinkingLevel = ThinkingLevel.OFF
-    tools: List[AgentTool] = field(default_factory=list)
-    messages: List[AgentMessage] = field(default_factory=list)
+    messages: list[Message] = []
+    tools: list[AgentTool] = []
+
+
+# ---------------------------------------------------------------------------
+# Agent loop config
+# ---------------------------------------------------------------------------
+
+
+class ThinkingBudgets(BaseModel):
+    """Token budgets for thinking levels (provider-specific)."""
+
+    minimal: int = 1024
+    low: int = 2048
+    medium: int = 4096
+    high: int = 8192
+    xhigh: int = 16384
+
+
+class AgentLoopConfig(BaseModel):
+    """Configuration for the agent loop."""
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    model: Model
+    reasoning: ThinkingLevel | None = None
+    session_id: str | None = None
+    transport: Transport = "sse"
+    thinking_budgets: ThinkingBudgets | None = None
+    max_retry_delay_ms: int | None = None
+    api_key: str | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+
+    convert_to_llm: Callable[[list[Message]], list[Message] | Awaitable[list[Message]]] = Field(exclude=True)
+    transform_context: Callable[[list[Message], asyncio.Event | None], Awaitable[list[Message]]] | None = Field(
+        default=None, exclude=True
+    )
+    get_api_key: Callable[[str], str | None | Awaitable[str | None]] | None = Field(default=None, exclude=True)
+    get_steering_messages: Callable[[], Awaitable[list[Message]]] | None = Field(default=None, exclude=True)
+    get_follow_up_messages: Callable[[], Awaitable[list[Message]]] | None = Field(default=None, exclude=True)
+
+
+# ---------------------------------------------------------------------------
+# Agent state
+# ---------------------------------------------------------------------------
+
+
+class AgentState(BaseModel):
+    """Agent state containing all configuration and conversation data."""
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    system_prompt: str = ""
+    model: Model = Field(default_factory=lambda: Model(api="", provider="", id=""))
+    thinking_level: ThinkingLevel = "off"
+    tools: list[AgentTool] = []
+    messages: list[Message] = []
     is_streaming: bool = False
-    stream_message: Optional[AgentMessage] = None
-    pending_tool_calls: Set[str] = field(default_factory=set)
-    error: Optional[str] = None
-    model_router: Optional['ModelRouter'] = None
+    stream_message: Message | None = None
+    pending_tool_calls: set[str] = Field(default_factory=set)
+    error: str | None = None
 
 
-# =============================================================================
-# Agent Events
-# =============================================================================
+# ---------------------------------------------------------------------------
+# Agent events
+# ---------------------------------------------------------------------------
 
 
-@dataclass
-class AgentStartEvent:
-    """Agent 生命周期开始"""
-
+class AgentStartEvent(BaseModel):
     type: Literal["agent_start"] = "agent_start"
 
 
-@dataclass
-class AgentEndEvent:
-    """Agent 生命周期结束"""
-
-    messages: List[AgentMessage] = field(default_factory=list)
+class AgentEndEvent(BaseModel):
     type: Literal["agent_end"] = "agent_end"
+    messages: list[Message] = []
 
 
-@dataclass
-class TurnStartEvent:
-    """对话 Turn 开始"""
-
+class TurnStartEvent(BaseModel):
     type: Literal["turn_start"] = "turn_start"
 
 
-@dataclass
-class TurnEndEvent:
-    """对话 Turn 结束"""
-
-    message: Optional[AgentMessage] = None
-    tool_results: List[ToolResultMessage] = field(default_factory=list)
+class TurnEndEvent(BaseModel):
+    model_config = {"arbitrary_types_allowed": True}
     type: Literal["turn_end"] = "turn_end"
+    message: Message | None = None
+    tool_results: list[ToolResultMessage] = []
 
 
-@dataclass
-class MessageStartEvent:
-    """消息开始（user/assistant/toolResult）"""
-
-    message: Optional[AgentMessage] = None
+class MessageStartEvent(BaseModel):
     type: Literal["message_start"] = "message_start"
+    message: Message | None = None
 
 
-@dataclass
-class MessageUpdateEvent:
-    """消息流式更新（仅 assistant 消息）"""
-
-    message: Optional[AgentMessage] = None
-    assistant_message_event: Any = None
+class MessageUpdateEvent(BaseModel):
     type: Literal["message_update"] = "message_update"
+    message: Message | None = None
+    assistant_message_event: Any = None  # AssistantMessageEvent from stream
 
 
-@dataclass
-class MessageEndEvent:
-    """消息完成"""
-
-    message: Optional[AgentMessage] = None
+class MessageEndEvent(BaseModel):
     type: Literal["message_end"] = "message_end"
+    message: Message | None = None
 
 
-@dataclass
-class ToolExecutionStartEvent:
-    """工具开始执行"""
-
-    tool_call_id: str = ""
-    tool_name: str = ""
-    args: Any = None
+class ToolExecutionStartEvent(BaseModel):
     type: Literal["tool_execution_start"] = "tool_execution_start"
+    tool_call_id: str
+    tool_name: str
+    args: Any = None
 
 
-@dataclass
-class ToolExecutionUpdateEvent:
-    """工具流式进度"""
-
-    tool_call_id: str = ""
-    tool_name: str = ""
+class ToolExecutionUpdateEvent(BaseModel):
+    type: Literal["tool_execution_update"] = "tool_execution_update"
+    tool_call_id: str
+    tool_name: str
     args: Any = None
     partial_result: Any = None
-    type: Literal["tool_execution_update"] = "tool_execution_update"
 
 
-@dataclass
-class ToolExecutionEndEvent:
-    """工具执行完成"""
-
-    tool_call_id: str = ""
-    tool_name: str = ""
+class ToolExecutionEndEvent(BaseModel):
+    type: Literal["tool_execution_end"] = "tool_execution_end"
+    tool_call_id: str
+    tool_name: str
     result: Any = None
     is_error: bool = False
-    type: Literal["tool_execution_end"] = "tool_execution_end"
 
 
-# Agent 事件联合类型
-AgentEvent = Union[
-    AgentStartEvent,
-    AgentEndEvent,
-    TurnStartEvent,
-    TurnEndEvent,
-    MessageStartEvent,
-    MessageUpdateEvent,
-    MessageEndEvent,
-    ToolExecutionStartEvent,
-    ToolExecutionUpdateEvent,
-    ToolExecutionEndEvent,
-]
+AgentEvent = (
+    AgentStartEvent
+    | AgentEndEvent
+    | TurnStartEvent
+    | TurnEndEvent
+    | MessageStartEvent
+    | MessageUpdateEvent
+    | MessageEndEvent
+    | ToolExecutionStartEvent
+    | ToolExecutionUpdateEvent
+    | ToolExecutionEndEvent
+)
 
 
-# =============================================================================
-# Agent Loop Config
-# =============================================================================
+# ---------------------------------------------------------------------------
+# Assistant message event types (for streaming from LLM / proxy)
+# ---------------------------------------------------------------------------
 
 
-@dataclass
-class AgentLoopConfig:
-    """
-    Agent 循环配置。
-
-    Attributes:
-        model: LLM 模型
-        convert_to_llm: 将 AgentMessage[] 转换为 LLM 可理解的 Message[]
-        transform_context: 可选，在 convert_to_llm 之前转换上下文
-        get_api_key: 可选，动态获取 API Key
-        get_steering_messages: 可选，获取中途插入的 steering 消息
-        get_follow_up_messages: 可选，获取后续 follow-up 消息
-        reasoning: 可选，思考级别
-        api_key: 可选，静态 API Key
-        session_id: 可选，会话标识
-        max_retry_delay_ms: 可选，最大重试等待时间
-        # Credit tracking 配置
-        enable_credit_tracking: 是否启用 credit 计费追踪
-        user_id: 用户 ID（用于计费）
-        project_id: 项目 ID（用于计费）
-        agent_role: Agent 角色（用于计费，如 "world_builder", "character" 等）
-        model_config_name: 模型配置名称（用于计费，如 "glm_4_7"）
-    """
-
-    model: Any = None  # Model 类型
-    convert_to_llm: Optional[
-        Callable[[List[AgentMessage]], Union[List[Message], Awaitable[List[Message]]]]
-    ] = None
-    transform_context: Optional[
-        Callable[[List[AgentMessage], Optional[Any]], Awaitable[List[AgentMessage]]]
-    ] = None
-    get_api_key: Optional[
-        Callable[[str], Union[Optional[str], Awaitable[Optional[str]]]]
-    ] = None
-    get_steering_messages: Optional[
-        Callable[[], Awaitable[List[AgentMessage]]]
-    ] = None
-    get_follow_up_messages: Optional[
-        Callable[[], Awaitable[List[AgentMessage]]]
-    ] = None
-    reasoning: Optional[str] = None
-    api_key: Optional[str] = None
-    session_id: Optional[str] = None
-    max_retry_delay_ms: Optional[int] = None
-    # Credit tracking
-    enable_credit_tracking: bool = False
-    user_id: Optional[str] = None
-    project_id: Optional[str] = None
-    agent_role: Optional[str] = None
-    model_config_name: Optional[str] = None
-    # Model routing
-    model_router: Optional['ModelRouter'] = None
+class StreamStartEvent(BaseModel):
+    type: Literal["start"] = "start"
+    partial: AssistantMessage
 
 
-# =============================================================================
-# Stream Function Type
-# =============================================================================
+class StreamTextStartEvent(BaseModel):
+    type: Literal["text_start"] = "text_start"
+    content_index: int
+    partial: AssistantMessage
 
-# 流式函数类型：接受 model, context, options，返回异步生成器
-StreamFn = Callable[..., Any]
+
+class StreamTextDeltaEvent(BaseModel):
+    type: Literal["text_delta"] = "text_delta"
+    content_index: int
+    delta: str
+    partial: AssistantMessage
+
+
+class StreamTextEndEvent(BaseModel):
+    type: Literal["text_end"] = "text_end"
+    content_index: int
+    content: str
+    partial: AssistantMessage
+
+
+class StreamThinkingStartEvent(BaseModel):
+    type: Literal["thinking_start"] = "thinking_start"
+    content_index: int
+    partial: AssistantMessage
+
+
+class StreamThinkingDeltaEvent(BaseModel):
+    type: Literal["thinking_delta"] = "thinking_delta"
+    content_index: int
+    delta: str
+    partial: AssistantMessage
+
+
+class StreamThinkingEndEvent(BaseModel):
+    type: Literal["thinking_end"] = "thinking_end"
+    content_index: int
+    content: str
+    partial: AssistantMessage
+
+
+class StreamToolCallStartEvent(BaseModel):
+    type: Literal["toolcall_start"] = "toolcall_start"
+    content_index: int
+    partial: AssistantMessage
+
+
+class StreamToolCallDeltaEvent(BaseModel):
+    type: Literal["toolcall_delta"] = "toolcall_delta"
+    content_index: int
+    delta: str
+    partial: AssistantMessage
+
+
+class StreamToolCallEndEvent(BaseModel):
+    model_config = {"arbitrary_types_allowed": True}
+    type: Literal["toolcall_end"] = "toolcall_end"
+    content_index: int
+    tool_call: ToolCall
+    partial: AssistantMessage
+
+
+class StreamDoneEvent(BaseModel):
+    type: Literal["done"] = "done"
+    reason: StopReason
+    message: AssistantMessage
+
+
+class StreamErrorEvent(BaseModel):
+    type: Literal["error"] = "error"
+    reason: StopReason
+    error: AssistantMessage
+
+
+AssistantMessageEvent = (
+    StreamStartEvent
+    | StreamTextStartEvent
+    | StreamTextDeltaEvent
+    | StreamTextEndEvent
+    | StreamThinkingStartEvent
+    | StreamThinkingDeltaEvent
+    | StreamThinkingEndEvent
+    | StreamToolCallStartEvent
+    | StreamToolCallDeltaEvent
+    | StreamToolCallEndEvent
+    | StreamDoneEvent
+    | StreamErrorEvent
+)
+
+
+# ---------------------------------------------------------------------------
+# Stream function type
+# ---------------------------------------------------------------------------
+
+# StreamFn: an async callable that takes (model, context, config) and returns
+# a procedural stream response:
+#   - events: async iterator of AssistantMessageEvent
+#   - result: async callable returning the final AssistantMessage
+
+
+class StreamResult(TypedDict):
+    events: AsyncIterator[AssistantMessageEvent]
+    result: Callable[[], Awaitable[AssistantMessage]]
+
+
+StreamFn = Callable[..., Awaitable[StreamResult] | StreamResult]
+
+
+# ---------------------------------------------------------------------------
+# Simple stream options (base for config)
+# ---------------------------------------------------------------------------
+
+
+class SimpleStreamOptions(BaseModel):
+    """Options passed to the stream function."""
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    api_key: str | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    reasoning: ThinkingLevel | None = None
+    session_id: str | None = None
+    transport: Transport = "sse"
+    thinking_budgets: ThinkingBudgets | None = None
+    max_retry_delay_ms: int | None = None
+    cancel_event: asyncio.Event | None = Field(default=None, exclude=True)
