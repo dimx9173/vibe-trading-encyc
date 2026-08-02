@@ -607,14 +607,31 @@ class OpenAIProvider:
 
         except Exception as e:
             error_str = str(e)
-            
+
             # 检测速率限制错误 (429)
             if "429" in error_str or "rate limit" in error_str.lower() or "速率限制" in error_str:
                 partial.stop_reason = "error"
                 partial.error_message = error_str
                 yield StreamErrorEvent(reason="error", error=partial)
                 raise LLMRateLimitError(provider=model.provider)
-            
+
+            # 检测服务端临时错误 (529 overloaded / 503 unavailable / 502 bad gateway)
+            # 這些都該 retry（列在 RetryConfig.retryable_exceptions）
+            if (
+                "529" in error_str
+                or "503" in error_str
+                or "502" in error_str
+                or "overloaded" in error_str.lower()
+                or "service unavailable" in error_str.lower()
+                or "bad gateway" in error_str.lower()
+                or "服务过载" in error_str
+                or "服务不可用" in error_str
+            ):
+                partial.stop_reason = "error"
+                partial.error_message = error_str
+                yield StreamErrorEvent(reason="error", error=partial)
+                raise LLMConnectionError(provider=model.provider, message=error_str)
+
             # 检测认证错误
             if "401" in error_str or "unauthorized" in error_str.lower():
                 partial.stop_reason = "error"
@@ -678,6 +695,11 @@ async def stream_simple(
 
     Returns:
         StreamResponse 包装器
+
+    Raises:
+        LLMConnectionError: 服务端临时错误（529/503/502），已 retry 后仍失败
+        LLMRateLimitError: 速率限制（429），已 retry 后仍失败
+        LLMAuthenticationError: 认证错误（401），不可 retry
     """
     provider = get_provider(model.provider)
 
@@ -685,7 +707,7 @@ async def stream_simple(
     messages = context.get("messages", [])
     tools = context.get("tools", None)
 
-    async def _generate():
+    async def _stream_once():
         async for event in provider.stream(
             model=model,
             messages=messages,
@@ -695,4 +717,56 @@ async def stream_simple(
         ):
             yield event
 
-    return StreamResponse(_generate())
+    # 懒加载避免循环导入（retry_handler 也 import llm）
+    from .retry_handler import RetryHandler
+
+    async def _generate_with_retry():
+        # 用 RetryHandler 的 retryable_exceptions（包含 LLMConnectionError /
+        # LLMRateLimitError / LLMTimeoutError / LLMStreamError 等）自动 retry。
+        # 预设为 3 attempts、指数退避。
+        retry_handler = RetryHandler()
+        last_error: Exception | None = None
+
+        for attempt in range(1, retry_handler.config.max_attempts + 1):
+            try:
+                async for event in _stream_once():
+                    yield event
+                return  # 成功完成
+            except (
+                LLMConnectionError,
+                LLMRateLimitError,
+                LLMTimeoutError,
+                LLMStreamError,
+            ) as e:
+                last_error = e
+                # 不可重试的类型（401 / 400 / etc.）会让重试没意义，但已经在
+                # provider.stream() 里 raise 了对应特定错误；这里 catch 的是
+                # retryable_exceptions 列表里的项。
+                if attempt >= retry_handler.config.max_attempts:
+                    logger.warning(
+                        f"LLM call failed after {attempt} attempts: {type(e).__name__}: {e}"
+                    )
+                    raise
+
+                # 指数退避 + jitter
+                delay = retry_handler.config.base_delay * (
+                    retry_handler.config.exponential_base ** (attempt - 1)
+                )
+                delay = min(delay, retry_handler.config.max_delay)
+                if retry_handler.config.jitter:
+                    import random
+                    delay *= 1.0 + random.uniform(
+                        -retry_handler.config.jitter_range,
+                        retry_handler.config.jitter_range,
+                    )
+                logger.info(
+                    f"LLM call attempt {attempt} failed ({type(e).__name__}: {str(e)[:80]}), "
+                    f"retrying in {delay:.1f}s..."
+                )
+                await asyncio.sleep(delay)
+
+        # 理論上不會到這裡，但保險
+        if last_error is not None:
+            raise last_error
+
+    return StreamResponse(_generate_with_retry())
