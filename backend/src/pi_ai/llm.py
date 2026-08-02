@@ -56,30 +56,37 @@ from .exceptions import (
 # =============================================================================
 # Model
 # =============================================================================
+#
+# Model inherits from `pi_agent_core.types.Model` (installed via pip) so that
+# every `pi_ai.llm.Model` instance satisfies `AgentLoopConfig.model`'s strict
+# pydantic type check NATIVELY — no boundary conversion needed at any call
+# site that constructs an Agent.
+#
+# The installed `pi_agent_core.AgentLoopConfig` is a pydantic BaseModel with
+# `model: Model` field where `Model = pi_agent_core.types.Model` (3 fields:
+# `api`, `provider`, `id`). Subclassing lets us add `api_key` / `base_url`
+# (which the LLM streaming layer needs) while keeping identity compatibility.
+from pi_agent_core.types import Model as _AgentLoopModel
 
 
-@dataclass
-class Model:
+class Model(_AgentLoopModel):
     """
     LLM 模型定义。
 
+    Inherits required `api`, `provider`, `id` from pi_agent_core.types.Model.
+    Adds optional `api_key` and `base_url` for actual API calls (NVIDIA NIM,
+    DeepSeek, Ollama, etc., which use OpenAI-compatible endpoints).
+
     Attributes:
-        provider: 提供商标识 (e.g. "openai", "anthropic", "google")
-        id: 模型 ID (e.g. "gpt-4o", "claude-sonnet-4-20250514")
-        api: API 类型 (e.g. "openai", "anthropic", "google")
+        api: API 类型 (e.g. "openai", "anthropic", "google") — required
+        provider: 提供商标识 (e.g. "openai", "anthropic", "google") — required
+        id: 模型 ID (e.g. "gpt-4o", "deepseek-ai/deepseek-v4-flash") — required
         api_key: API 密钥（可选，也可通过环境变量设置）
-        base_url: 自定义 API 基础 URL（可选）
+        base_url: 自定义 API 基础 URL（可选，用于 NVIDIA NIM / Ollama 等）
     """
 
-    provider: str
-    id: str
-    api: str = ""
     api_key: Optional[str] = None
     base_url: Optional[str] = None
-
-    def __post_init__(self):
-        if not self.api:
-            self.api = self.provider
 
 
 def get_model(provider: str, model_id: str, **kwargs) -> Model:
@@ -87,14 +94,19 @@ def get_model(provider: str, model_id: str, **kwargs) -> Model:
     创建一个 Model 实例。
 
     Args:
-        provider: 提供商标识
+        provider: 提供商标识（同时作为 `api` 的默认值）
         model_id: 模型 ID
-        **kwargs: 额外参数 (api_key, base_url 等)
+        **kwargs: 额外参数 (api_key, base_url 等)；可显式传 `api` 覆盖
 
     Returns:
         Model 实例
     """
-    return Model(provider=provider, id=model_id, **kwargs)
+    return Model(
+        api=kwargs.pop("api", provider),
+        provider=provider,
+        id=model_id,
+        **kwargs,
+    )
 
 
 # =============================================================================

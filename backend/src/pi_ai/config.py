@@ -115,6 +115,7 @@ class LLMConfig:
                 api_key = os.environ.get("GOOGLE_API_KEY", "")
 
         model = Model(
+            api=config.get("api") or config.get("provider", "openai"),
             provider=config.get("provider", "openai"),
             id=config.get("model", "gpt-4o"),
             api_key=api_key or None,
