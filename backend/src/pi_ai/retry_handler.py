@@ -390,7 +390,12 @@ class LLMRateLimiter:
 
     async def release(self, model_id: Optional[str] = None) -> None:
         """释放执行许可"""
-        if model_id:
+        # 與 _get_semaphore_for_model 保持一致：
+        # model_id 在 model_limits 才用 per-model semaphore，否則用全域。
+        # 修復 bug：之前只查 _model_semaphores[model_id]，model 不在 limits 時
+        # acquire 拿全域 semaphore 但 release 找不到 → semaphore 永久洩漏 →
+        # 第 max_concurrent+1 次呼叫起 queue timeout。
+        if model_id and model_id in self.config.model_limits:
             semaphore = self._model_semaphores.get(model_id)
             if semaphore:
                 semaphore.release()
