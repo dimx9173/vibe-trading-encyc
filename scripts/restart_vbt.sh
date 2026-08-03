@@ -115,7 +115,8 @@ log "   args: --start $SYMBOL --interval $INTERVAL --mode $MODE --web --web-port
 log "   log:  $LOG_FILE"
 
 cd "$PROJECT_DIR"
-nohup "$PROJECT_DIR/backend/.venv/bin/vibe-trade" start "$SYMBOL" \
+# 用 setsid 讓 vibe-trade 進入自己的 session，避免 exec session 清理時被 SIGTERM 波及
+setsid nohup "$PROJECT_DIR/backend/.venv/bin/vibe-trade" start "$SYMBOL" \
     --interval "$INTERVAL" \
     --mode "$MODE" \
     --web \
