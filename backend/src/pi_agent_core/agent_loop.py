@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import time
 from collections.abc import AsyncGenerator, AsyncIterator
 from typing import Any
 
@@ -136,6 +137,7 @@ async def _run_loop(
 
             # Stream assistant response
             assistant_msg: AssistantMessage | None = None
+            print(f"[LOOP] ▶ stream_assistant_response 開始 {time.strftime('%H:%M:%S')}", flush=True)
             async for event in _stream_assistant_response(current_context, config, cancel_event, stream_fn):
                 if isinstance(event, MessageEndEvent):
                     assistant_msg = event.message
@@ -146,6 +148,7 @@ async def _run_loop(
                 yield AgentEndEvent(messages=new_messages)
                 return
 
+            print(f"[LOOP] ✓ stream_assistant_response 完成 stop={assistant_msg.stop_reason} {time.strftime('%H:%M:%S')}", flush=True)
             new_messages.append(assistant_msg)
 
             if assistant_msg.stop_reason in ("error", "aborted"):
@@ -156,10 +159,12 @@ async def _run_loop(
             # Check for tool calls
             tool_calls = [c for c in assistant_msg.content if isinstance(c, ToolCall)]
             has_more_tool_calls = len(tool_calls) > 0
+            print(f"[LOOP] tool_calls={len(tool_calls)} {time.strftime('%H:%M:%S')}", flush=True)
 
             tool_results: list[ToolResultMessage] = []
             steering_after_tools: list[Message] | None = None
             if has_more_tool_calls:
+                print(f"[LOOP] ▶ 執行 {len(tool_calls)} 個工具 {time.strftime('%H:%M:%S')}", flush=True)
                 async for tool_result, events, steering in _execute_tool_calls(
                     current_context.tools,
                     assistant_msg,
@@ -179,6 +184,7 @@ async def _run_loop(
 
                     if steering and steering_after_tools is None:
                         steering_after_tools = steering
+                print(f"[LOOP] ✓ 工具執行完成 ({len(tool_results)} 結果) {time.strftime('%H:%M:%S')}", flush=True)
 
             yield TurnEndEvent(message=assistant_msg, tool_results=tool_results)
 
