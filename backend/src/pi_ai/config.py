@@ -7,6 +7,7 @@ LLM 配置管理
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -14,6 +15,28 @@ import yaml
 
 from .llm import Model
 from pi_logger import get_logger
+
+
+# 环境变量插值正则：支持 ${VAR} 与 ${VAR:default} 两种形式
+_ENV_VAR_PATTERN = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)(?::([^}]*))?\}")
+
+
+def _resolve_env_vars(value: str) -> str:
+    """将字符串中的 ${VAR} / ${VAR:default} 替换为对应环境变量值。
+
+    - 未匹配：原样返回
+    - 匹配成功且 env 已设置：返回 env 值
+    - 匹配成功但 env 未设置：返回 default（可为空字符串），若无 default 则返回空串
+    """
+    if not value or "$" not in value:
+        return value
+
+    def _replacer(match: "re.Match[str]") -> str:
+        var_name = match.group(1)
+        default = match.group(2)
+        return os.environ.get(var_name, default if default is not None else "")
+
+    return _ENV_VAR_PATTERN.sub(_replacer, value)
 
 
 class LLMConfig:
@@ -97,22 +120,21 @@ class LLMConfig:
 
         config = llms[name]
 
-        # 环境变量替换
-        api_key = config.get("api_key", "")
-        if api_key and api_key.endswith(":") and "$" in api_key:
-            # 处理 ${VAR:default} 格式
-            var_name = api_key.split("${")[1].split("}")[0].split(":")[0]
-            api_key = os.environ.get(var_name, "")
+        # 环境变量插值：支持 ${VAR} 和 ${VAR:default} 两种语法
+        api_key = _resolve_env_vars(config.get("api_key", ""))
 
-        # 如果 API key 为空，尝试从环境变量获取
+        # 如果 api_key 为空（env 未设置且无 default），尝试按 provider 兜底
         if not api_key:
-            provider = config.get("provider", "")
-            if provider == "openai":
-                api_key = os.environ.get("OPENAI_API_KEY", "")
-            elif provider == "anthropic":
-                api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-            elif provider == "google":
-                api_key = os.environ.get("GOOGLE_API_KEY", "")
+            provider = config.get("provider", "").lower()
+            provider_env = {
+                "openai": "OPENAI_API_KEY",
+                "anthropic": "ANTHROPIC_API_KEY",
+                "google": "GOOGLE_API_KEY",
+                "deepseek": "DEEPSEEK_API_KEY",
+                "opencode": "OPENCODE_API_KEY",
+            }.get(provider)
+            if provider_env:
+                api_key = os.environ.get(provider_env, "")
 
         model = Model(
             api=config.get("api") or config.get("provider", "openai"),

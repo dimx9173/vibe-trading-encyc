@@ -355,7 +355,12 @@ class OpenAIProvider:
                 "请安装 openai 包: pip install openai"
             )
 
-        key = api_key or model.api_key or os.environ.get("OPENAI_API_KEY", "")
+        key = (
+            api_key
+            or model.api_key
+            or os.environ.get(f"{(model.provider or 'openai').upper()}_API_KEY", "")
+            or os.environ.get("OPENAI_API_KEY", "")
+        )
         base_url = model.base_url
 
         return AsyncOpenAI(api_key=key, base_url=base_url)
