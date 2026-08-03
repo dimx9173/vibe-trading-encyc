@@ -187,7 +187,9 @@ class AgentContext(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     system_prompt: str = ""
-    messages: list[Message] = []
+    # 放寬為 list[Any]：pi_ai 和 pi_agent_core 各自定義 Message class，
+    # 跨 package 的 Message 無法通過 Pydantic 驗證（見 MessageStartEvent 註解）。
+    messages: list[Any] = []
     tools: list[AgentTool] = []
 
 

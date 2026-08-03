@@ -149,6 +149,7 @@ async def _run_loop(
                 return
 
             print(f"[LOOP] ✓ stream_assistant_response 完成 stop={assistant_msg.stop_reason} {time.strftime('%H:%M:%S')}", flush=True)
+            print(f"[LOOP] assistant_msg.content 型別數: {len(assistant_msg.content)} 內容: {[type(c).__name__ + ':' + str(getattr(c, 'name', getattr(c, 'text', '')))[:30] for c in assistant_msg.content]}", flush=True)
             new_messages.append(assistant_msg)
 
             if assistant_msg.stop_reason in ("error", "aborted"):
@@ -157,7 +158,9 @@ async def _run_loop(
                 return
 
             # Check for tool calls
-            tool_calls = [c for c in assistant_msg.content if isinstance(c, ToolCall)]
+            # 用 duck typing 判斷：pi_ai 和 pi_agent_core 各自定義 ToolCall class，
+            # isinstance(c, ToolCall) 會因為跨 package 而失敗（content 裡是 pi_ai 的 ToolCall）。
+            tool_calls = [c for c in assistant_msg.content if hasattr(c, "name") and type(c).__name__ == "ToolCall"]
             has_more_tool_calls = len(tool_calls) > 0
             print(f"[LOOP] tool_calls={len(tool_calls)} {time.strftime('%H:%M:%S')}", flush=True)
 
@@ -346,7 +349,8 @@ async def _execute_tool_calls(
     Yields after each tool: (tool_result, events, steering_messages).
     Steering_messages is non-None if the tool execution should stop early.
     """
-    tool_calls = [c for c in assistant_message.content if isinstance(c, ToolCall)]
+    # 用 duck typing：content 裡的 ToolCall 可能是 pi_ai 的（跨 package isinstance 會失敗）
+    tool_calls = [c for c in assistant_message.content if hasattr(c, "name") and type(c).__name__ == "ToolCall"]
 
     tools_by_name: dict[str, AgentTool] = {}
     for t in tools:
