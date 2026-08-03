@@ -50,7 +50,8 @@ def _get_default_stream_fn() -> "StreamFn":
 
     使用 lazy import 避免 pi_agent_core → pi_ai 的循環依賴 (pi_ai 內部有 import pi_agent_core)。
     """
-    from pi_ai import stream_simple
+    from pi_ai.enhanced_stream import stream_simple_with_retry
+    from pi_ai.retry_handler import TimeoutConfig
 
     # agent_loop 呼叫方式：stream_fn(config.model, llm_context, stream_options)
     # stream_options 是 SimpleStreamOptions Pydantic model，所以要收第 3 個 positional 或 kwarg。
@@ -74,7 +75,7 @@ def _get_default_stream_fn() -> "StreamFn":
         else:
             ctx_dict = vars(context)
 
-        # 把 SimpleStreamOptions 攤平為 kwargs（給 stream_simple）。
+        # 把 SimpleStreamOptions 攤平為 kwargs（給 stream_simple_with_retry）。
         # 需要過濾掉 pi_agent_core 特有的欄位（不是 OpenAI API 的合法參數）。
         _PI_AGENT_CORE_ONLY = {
             "transport",
@@ -95,7 +96,14 @@ def _get_default_stream_fn() -> "StreamFn":
                 dumped.pop(k, None)
             merged_opts.update(dumped)
 
-        response = await stream_simple(model, ctx_dict, **merged_opts)
+        # 用帶 retry + timeout 的版本，避免 opencode.ai streaming 連線 hang 時卡死整個決策。
+        # stream_timeout=60s：超過就放棄（StreamRetryHandler 會 retry，最多 3 次）。
+        response = await stream_simple_with_retry(
+            model,
+            ctx_dict,
+            timeout_config=TimeoutConfig(stream_timeout=60.0),
+            **merged_opts,
+        )
         return {"events": response, "result": response.result}
 
     return _stream_fn
