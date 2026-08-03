@@ -40,6 +40,67 @@ def _default_convert_to_llm(messages: list[Message]) -> list[Message]:
     return [m for m in messages if hasattr(m, "role") and m.role in ("user", "assistant", "toolResult")]
 
 
+def _get_default_stream_fn() -> "StreamFn":
+    """Lazy-load pi_ai.stream_simple and wrap it as a StreamFn-compatible callable.
+
+    原因：原本 AgentOptions.stream_fn 預設為 None，導致 agent_loop 內部
+    raise ValueError，被 Agent.run() 的 except 吃掉，產生空內容訊息。
+    這個 helper 提供一個能用的預設 stream_fn，wrap pi_ai.stream_simple 的回傳
+    (StreamResponse) 成為 agent_loop 期望的 {"events": AsyncIterator, "result": async callable} 形狀。
+
+    使用 lazy import 避免 pi_agent_core → pi_ai 的循環依賴 (pi_ai 內部有 import pi_agent_core)。
+    """
+    from pi_ai import stream_simple
+
+    # agent_loop 呼叫方式：stream_fn(config.model, llm_context, stream_options)
+    # stream_options 是 SimpleStreamOptions Pydantic model，所以要收第 3 個 positional 或 kwarg。
+    async def _stream_fn(
+        model: "Model",
+        context: Any,
+        options: Any = None,
+        **kwargs: Any,
+    ) -> dict:
+        # AgentContext 是 Pydantic model，stream_simple 用 .get(...) 取值需要 dict。
+        # 為了避免把 Message 物件序列化掉（會變 dict，後續 provider.stream() 會壞），
+        # 手動組裝 dict 並保留 Message 物件原樣。
+        if hasattr(context, "messages") and not isinstance(context, dict):
+            ctx_dict = {
+                "system_prompt": getattr(context, "system_prompt", ""),
+                "messages": context.messages,
+                "tools": getattr(context, "tools", None),
+            }
+        elif isinstance(context, dict):
+            ctx_dict = context
+        else:
+            ctx_dict = vars(context)
+
+        # 把 SimpleStreamOptions 攤平為 kwargs（給 stream_simple）。
+        # 需要過濾掉 pi_agent_core 特有的欄位（不是 OpenAI API 的合法參數）。
+        _PI_AGENT_CORE_ONLY = {
+            "transport",
+            "thinking_budgets",
+            "max_retry_delay_ms",
+            "cancel_event",
+            # excluded_keys 已含: signal, api_key, session_id, user_id, project_id
+        }
+        merged_opts: dict = dict(kwargs)
+        if options is not None:
+            if hasattr(options, "model_dump"):
+                dumped = options.model_dump(exclude_none=True)
+            elif hasattr(options, "__dict__"):
+                dumped = dict(vars(options))
+            else:
+                dumped = {}
+            for k in _PI_AGENT_CORE_ONLY:
+                dumped.pop(k, None)
+            merged_opts.update(dumped)
+
+        response = await stream_simple(model, ctx_dict, **merged_opts)
+        return {"events": response, "result": response.result}
+
+    return _stream_fn
+
+
 class AgentOptions:
     """Options for creating an Agent."""
 
@@ -108,7 +169,11 @@ class Agent:
         self._follow_up_queue: deque[Message] = deque()
         self._steering_mode = opts.steering_mode
         self._follow_up_mode = opts.follow_up_mode
-        self.stream_fn: StreamFn | None = opts.stream_fn
+        # 如果 opts.stream_fn 是 None，用預設的 wrapper (wrap pi_ai.stream_simple)。
+        # 這樣 agent 不會因為忘了傳 stream_fn 而靜默吞掉 ValueError 產生空內容。
+        self.stream_fn: StreamFn = (
+            opts.stream_fn if opts.stream_fn is not None else _get_default_stream_fn()
+        )
         self._session_id = opts.session_id
         self.get_api_key = opts.get_api_key
         self._thinking_budgets = opts.thinking_budgets

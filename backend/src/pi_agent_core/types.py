@@ -262,7 +262,8 @@ class AgentStartEvent(BaseModel):
 
 class AgentEndEvent(BaseModel):
     type: Literal["agent_end"] = "agent_end"
-    messages: list[Message] = []
+    # 放寬為 list[Any] 以接受來自 pi_ai 的 dataclass 訊息（見 MessageStartEvent 註解）。
+    messages: list[Any] = []
 
 
 class TurnStartEvent(BaseModel):
@@ -272,24 +273,28 @@ class TurnStartEvent(BaseModel):
 class TurnEndEvent(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
     type: Literal["turn_end"] = "turn_end"
-    message: Message | None = None
+    # 放寬為 Any 以接受來自 pi_ai 的 dataclass 訊息（見 MessageStartEvent 註解）。
+    message: Any = None
     tool_results: list[ToolResultMessage] = []
 
 
 class MessageStartEvent(BaseModel):
     type: Literal["message_start"] = "message_start"
-    message: Message | None = None
+    # 放寬為 Any 以接受來自 pi_ai 的 dataclass 訊息（避免 Pydantic discriminator 驗證失敗）。
+    # pi_ai 與 pi_agent_core 兩邊 Message 類別同名但不同，無法互通。
+    # agent.py 都是用 hasattr 存取 .role / .content / .error_message，所以型別變 Any 不影響行為。
+    message: Any = None
 
 
 class MessageUpdateEvent(BaseModel):
     type: Literal["message_update"] = "message_update"
-    message: Message | None = None
+    message: Any = None
     assistant_message_event: Any = None  # AssistantMessageEvent from stream
 
 
 class MessageEndEvent(BaseModel):
     type: Literal["message_end"] = "message_end"
-    message: Message | None = None
+    message: Any = None
 
 
 class ToolExecutionStartEvent(BaseModel):
