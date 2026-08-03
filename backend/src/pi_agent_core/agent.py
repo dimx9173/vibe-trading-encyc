@@ -98,6 +98,9 @@ def _get_default_stream_fn() -> "StreamFn":
 
         # 用帶 retry + timeout 的版本，避免 opencode.ai streaming 連線 hang 時卡死整個決策。
         # stream_timeout=60s：超過就放棄（StreamRetryHandler 會 retry，最多 3 次）。
+        # 同時把 stream_timeout 塞進 options，讓 stream_simple 的 _stream_once 也用它
+        # 保護「消費階段」的 timeout（execute_stream_with_retry 只保護建立階段）。
+        merged_opts.setdefault("stream_timeout", 60.0)
         response = await stream_simple_with_retry(
             model,
             ctx_dict,

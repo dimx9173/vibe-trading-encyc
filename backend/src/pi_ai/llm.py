@@ -641,6 +641,11 @@ class OpenAIProvider:
                         reason=partial.stop_reason, message=partial
                     )
 
+                    # OpenAI 標準行為：收到 finish_reason 即代表 stream 結束。
+                    # 若不 break，opencode.ai 在 finish_reason 後可能不送更多 chunk
+                    # 也不關閉連線，導致 async for 永遠等待 → 決策卡死。
+                    break
+
             # === VBT DEBUG: stream end summary ===
             if os.environ.get("VBT_DEBUG_LLM"):
                 print(
@@ -756,14 +761,24 @@ async def stream_simple(
     tools = context.get("tools", None)
 
     async def _stream_once():
-        async for event in provider.stream(
-            model=model,
-            messages=messages,
-            system_prompt=system_prompt,
-            tools=tools,
-            **options,
-        ):
-            yield event
+        # 用 asyncio.timeout 保護整個 streaming 消費階段：
+        # execute_stream_with_retry 只包了「建立 StreamResponse」，
+        # 真正的 streaming（async for event）在 timeout 範圍外，
+        # opencode.ai 連線中途卡住時會永久等待。
+        # 這裡用 options 裡的 stream_timeout（若無則預設 120s）。
+        _stream_timeout = float(options.pop("stream_timeout", 120.0))
+        try:
+            async with asyncio.timeout(_stream_timeout):
+                async for event in provider.stream(
+                    model=model,
+                    messages=messages,
+                    system_prompt=system_prompt,
+                    tools=tools,
+                    **options,
+                ):
+                    yield event
+        except TimeoutError:
+            raise LLMTimeoutError(_stream_timeout, "流式请求") from None
 
     # 懒加载避免循环导入（retry_handler 也 import llm）
     from .retry_handler import RetryHandler
