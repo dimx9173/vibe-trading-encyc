@@ -482,12 +482,43 @@ class OpenAIProvider:
 
             current_tool_calls: Dict[int, Dict[str, Any]] = {}
 
+            # === VBT DEBUG START (gated by VBT_DEBUG_LLM=1 env var) ===
+            if os.environ.get("VBT_DEBUG_LLM"):
+                _vbt_debug_n_chunks = 0
+                _vbt_debug_n_with_content = 0
+                _vbt_debug_n_with_tool_calls = 0
+                _vbt_debug_total_content_chars = 0
+                _vbt_debug_first_delta_logged = False
+                _vbt_debug_last_finish_reason = None
+                print(
+                    f"[VBT-DEBUG-LLM] stream_open model={model.id} base={model.base_url}",
+                    flush=True,
+                )
+
             async for chunk in response:
                 delta = chunk.choices[0].delta if chunk.choices else None
                 if not delta:
                     continue
 
                 finish_reason = chunk.choices[0].finish_reason if chunk.choices else None
+
+                # === VBT DEBUG: per-chunk stats + first delta dump ===
+                if os.environ.get("VBT_DEBUG_LLM"):
+                    _vbt_debug_n_chunks += 1
+                    if delta.content:
+                        _vbt_debug_n_with_content += 1
+                        _vbt_debug_total_content_chars += len(delta.content)
+                    if delta.tool_calls:
+                        _vbt_debug_n_with_tool_calls += 1
+                    if finish_reason and not _vbt_debug_first_delta_logged:
+                        print(
+                            f"[VBT-DEBUG-LLM] FIRST_DELTA model={model.id} "
+                            f"content={delta.content!r} "
+                            f"tool_calls={bool(delta.tool_calls)} "
+                            f"finish_reason={finish_reason}",
+                            flush=True,
+                        )
+                        _vbt_debug_first_delta_logged = True
 
                 # 处理文本内容
                 if delta.content:
@@ -609,6 +640,18 @@ class OpenAIProvider:
                     yield StreamDoneEvent(
                         reason=partial.stop_reason, message=partial
                     )
+
+            # === VBT DEBUG: stream end summary ===
+            if os.environ.get("VBT_DEBUG_LLM"):
+                print(
+                    f"[VBT-DEBUG-LLM] STREAM_END model={model.id} "
+                    f"chunks={_vbt_debug_n_chunks} "
+                    f"content_chunks={_vbt_debug_n_with_content} "
+                    f"total_content_chars={_vbt_debug_total_content_chars} "
+                    f"tool_call_chunks={_vbt_debug_n_with_tool_calls} "
+                    f"last_finish_reason={_vbt_debug_last_finish_reason}",
+                    flush=True,
+                )
 
         except Exception as e:
             error_str = str(e)
