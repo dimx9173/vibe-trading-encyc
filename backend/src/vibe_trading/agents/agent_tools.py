@@ -760,6 +760,7 @@ def create_submit_trade_order_tool(tool_context: Any) -> AgentTool:
             "根据当前执行器配置提交订单；Paper/Dry-run 模式不会触发真实主网成交。"
         ),
         parameters=_wrap_params(SubmitTradeOrderParams),
+        params_model=SubmitTradeOrderParams,
         execute=execute_submit_trade_order,
     )
 
@@ -782,6 +783,7 @@ def get_all_tools() -> list[AgentTool]:
             label="获取当前价格",
             description="获取指定交易对的当前市场价格",
             parameters=_wrap_params(GetCurrentPriceParams),
+            params_model=GetCurrentPriceParams,
             execute=execute_get_current_price,
         ),
         AgentTool(
@@ -789,6 +791,7 @@ def get_all_tools() -> list[AgentTool]:
             label="获取24小时行情",
             description="获取指定交易对24小时价格变动数据",
             parameters=_wrap_params(Get24hrTickerParams),
+            params_model=Get24hrTickerParams,
             execute=execute_get_24hr_ticker,
         ),
         AgentTool(
@@ -796,6 +799,7 @@ def get_all_tools() -> list[AgentTool]:
             label="获取资金费率",
             description="获取永续合约的资金费率",
             parameters=_wrap_params(GetFundingRateParams),
+            params_model=GetFundingRateParams,
             execute=execute_get_funding_rate,
         ),
         AgentTool(
@@ -803,6 +807,7 @@ def get_all_tools() -> list[AgentTool]:
             label="获取多空比",
             description="获取账户多空持仓比",
             parameters=_wrap_params(GetLongShortRatioParams),
+            params_model=GetLongShortRatioParams,
             execute=execute_get_long_short_ratio,
         ),
         AgentTool(
@@ -810,6 +815,7 @@ def get_all_tools() -> list[AgentTool]:
             label="获取持仓量",
             description="获取合约持仓量",
             parameters=_wrap_params(GetOpenInterestParams),
+            params_model=GetOpenInterestParams,
             execute=execute_get_open_interest,
         ),
 
@@ -819,6 +825,7 @@ def get_all_tools() -> list[AgentTool]:
             label="获取恐惧贪婪指数",
             description="获取加密市场恐惧贪婪指数",
             parameters=_wrap_params(GetFearAndGreedParams),
+            params_model=GetFearAndGreedParams,
             execute=execute_get_fear_and_greed,
         ),
         AgentTool(
@@ -826,6 +833,7 @@ def get_all_tools() -> list[AgentTool]:
             label="获取新闻情绪",
             description="获取最新的加密货币新闻及其情绪分析",
             parameters=_wrap_params(GetNewsSentimentParams),
+            params_model=GetNewsSentimentParams,
             execute=execute_get_news_sentiment,
         ),
         AgentTool(
@@ -833,6 +841,7 @@ def get_all_tools() -> list[AgentTool]:
             label="获取社交媒体情绪",
             description="获取社交媒体上的讨论情绪和提及次数",
             parameters=_wrap_params(GetSocialSentimentParams),
+            params_model=GetSocialSentimentParams,
             execute=execute_get_social_sentiment,
         ),
 
@@ -842,6 +851,7 @@ def get_all_tools() -> list[AgentTool]:
             label="获取订单簿",
             description="获取交易对的订单簿深度数据",
             parameters=_wrap_params(GetOrderBookParams),
+            params_model=GetOrderBookParams,
             execute=execute_get_order_book,
         ),
         AgentTool(
@@ -849,6 +859,7 @@ def get_all_tools() -> list[AgentTool]:
             label="获取主动买卖比例",
             description="获取主动买盘和卖盘的比例",
             parameters=_wrap_params(GetTakerBuySellRatioParams),
+            params_model=GetTakerBuySellRatioParams,
             execute=execute_get_taker_buy_sell_ratio,
         ),
         AgentTool(
@@ -856,6 +867,7 @@ def get_all_tools() -> list[AgentTool]:
             label="获取大户多空比",
             description="获取大户(Top Trader)的多空持仓比例",
             parameters=_wrap_params(GetTopTraderLongShortRatioParams),
+            params_model=GetTopTraderLongShortRatioParams,
             execute=execute_get_top_trader_long_short_ratio,
         ),
         AgentTool(
@@ -863,6 +875,7 @@ def get_all_tools() -> list[AgentTool]:
             label="获取清算订单",
             description="获取最近的清算订单数据",
             parameters=_wrap_params(GetLiquidationOrdersParams),
+            params_model=GetLiquidationOrdersParams,
             execute=execute_get_liquidation_orders,
         ),
 
@@ -872,6 +885,7 @@ def get_all_tools() -> list[AgentTool]:
             label="获取热门交易对",
             description="获取当前热门的交易对列表",
             parameters=_wrap_params(GetTrendingSymbolsParams),
+            params_model=GetTrendingSymbolsParams,
             execute=execute_get_trending_symbols,
         ),
         AgentTool(
@@ -879,6 +893,7 @@ def get_all_tools() -> list[AgentTool]:
             label="获取综合情绪分析",
             description="获取综合情绪评分和信号",
             parameters=_wrap_params(GetComprehensiveSentimentParams),
+            params_model=GetComprehensiveSentimentParams,
             execute=execute_get_comprehensive_sentiment,
         ),
 
@@ -888,6 +903,7 @@ def get_all_tools() -> list[AgentTool]:
             label="获取技术指标",
             description="获取RSI、MACD、布林带等技术指标",
             parameters=_wrap_params(GetTechnicalIndicatorsParams),
+            params_model=GetTechnicalIndicatorsParams,
             execute=execute_get_technical_indicators,
         ),
         AgentTool(
@@ -895,6 +911,7 @@ def get_all_tools() -> list[AgentTool]:
             label="获取K线数据",
             description="获取指定交易对的K线数据",
             parameters=_wrap_params(GetKlineDataParams),
+            params_model=GetKlineDataParams,
             execute=execute_get_kline_data,
         ),
         AgentTool(
@@ -902,6 +919,7 @@ def get_all_tools() -> list[AgentTool]:
             label="获取综合技术分析",
             description="获取综合技术分析包括趋势、信号等",
             parameters=_wrap_params(GetComprehensiveTechnicalAnalysisParams),
+            params_model=GetComprehensiveTechnicalAnalysisParams,
             execute=execute_get_comprehensive_technical_analysis,
         ),
         AgentTool(
@@ -909,6 +927,7 @@ def get_all_tools() -> list[AgentTool]:
             label="分析趋势",
             description="分析当前价格趋势方向和强度",
             parameters=_wrap_params(AnalyzeTrendParams),
+            params_model=AnalyzeTrendParams,
             execute=execute_analyze_trend,
         ),
         AgentTool(
@@ -916,6 +935,7 @@ def get_all_tools() -> list[AgentTool]:
             label="检测支撑阻力",
             description="检测支撑位和阻力位",
             parameters=_wrap_params(DetectSupportResistanceParams),
+            params_model=DetectSupportResistanceParams,
             execute=execute_detect_support_resistance,
         ),
         AgentTool(
@@ -923,6 +943,7 @@ def get_all_tools() -> list[AgentTool]:
             label="计算枢轴点",
             description="计算枢轴点和支撑阻力位",
             parameters=_wrap_params(CalculatePivotsParams),
+            params_model=CalculatePivotsParams,
             execute=execute_calculate_pivots,
         ),
         AgentTool(
@@ -930,6 +951,7 @@ def get_all_tools() -> list[AgentTool]:
             label="检测K线形态",
             description="检测K线形态如十字星、锤子线等",
             parameters=_wrap_params(DetectCandlestickPatternsParams),
+            params_model=DetectCandlestickPatternsParams,
             execute=execute_detect_candlestick_patterns,
         ),
         AgentTool(
@@ -937,6 +959,7 @@ def get_all_tools() -> list[AgentTool]:
             label="检测背离",
             description="检测价格与指标的背离信号",
             parameters=_wrap_params(DetectDivergenceParams),
+            params_model=DetectDivergenceParams,
             execute=execute_detect_divergence,
         ),
         AgentTool(
@@ -944,6 +967,7 @@ def get_all_tools() -> list[AgentTool]:
             label="分析成交量模式",
             description="分析成交量模式和趋势确认",
             parameters=_wrap_params(AnalyzeVolumePatternsParams),
+            params_model=AnalyzeVolumePatternsParams,
             execute=execute_analyze_volume_patterns,
         ),
     ]

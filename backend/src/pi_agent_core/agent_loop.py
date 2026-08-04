@@ -391,6 +391,16 @@ async def _execute_tool_calls(
             # Validate arguments against tool schema (basic validation)
             validated_args = _validate_tool_arguments(tool_call)
 
+            # 把 dict arguments 轉回對應的 Pydantic model（工具 execute 用 args.xxx 屬性存取）。
+            # 若 tool 有註冊 params_model，則用 model_validate 轉換；轉換失敗就保留 dict 並回報錯誤。
+            if tool.params_model is not None and isinstance(validated_args, dict):
+                try:
+                    validated_args = tool.params_model.model_validate(validated_args)
+                except Exception as ve:
+                    raise ValueError(
+                        f"Tool {tool_call.name}: params validation failed: {ve}"
+                    ) from ve
+
             update_events: list[AgentEvent] = []
 
             def on_update(

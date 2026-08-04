@@ -173,6 +173,9 @@ class AgentTool(BaseModel):
     description: str
     label: str = ""
     parameters: AgentToolSchema = Field(default_factory=AgentToolSchema)
+    # 對應的 Pydantic params model class（如 GetCurrentPriceParams）。
+    # 執行時把 LLM 回傳的 dict arguments 轉回這個 model，讓工具 execute 能用 args.xxx 存取。
+    params_model: Any = None
     execute: Callable[..., Awaitable[AgentToolResult]] = Field(exclude=True)
 
 
