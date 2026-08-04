@@ -1167,20 +1167,21 @@ class TradingCoordinator:
         decision_text = pm_response.get("decision_text", "") if isinstance(pm_response, dict) else str(pm_response)
 
         # 解析决策文本
-        # 这里可以添加更复杂的解析逻辑
+        # 统一处理底线/破折号/空格变体：PM 可能输出 WEAK_BUY / WEAK-BUY / WEAK BUY
+        text = decision_text.upper().replace("_", " ").replace("-", " ")
         decision = "HOLD"
-        if "STRONG BUY" in decision_text.upper():
+        if "STRONG BUY" in text:
             decision = "STRONG BUY"
-        elif "BUY" in decision_text.upper() and "WEAK BUY" not in decision_text.upper():
-            decision = "BUY"
-        elif "WEAK BUY" in decision_text.upper():
+        elif "WEAK BUY" in text:
             decision = "WEAK BUY"
-        elif "STRONG SELL" in decision_text.upper():
+        elif "BUY" in text:
+            decision = "BUY"
+        elif "STRONG SELL" in text:
             decision = "STRONG SELL"
-        elif "SELL" in decision_text.upper() and "WEAK SELL" not in decision_text.upper():
-            decision = "SELL"
-        elif "WEAK SELL" in decision_text.upper():
+        elif "WEAK SELL" in text:
             decision = "WEAK SELL"
+        elif "SELL" in text:
+            decision = "SELL"
 
         return {
             "decision": decision,

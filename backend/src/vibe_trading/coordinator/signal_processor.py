@@ -58,6 +58,8 @@ class SignalProcessor:
     # 信号模式（按优先级排序）
     SIGNAL_PATTERNS = {
         TradingSignal.BUY: [
+            r"\bweak[_\-\s]?buy\b",     # WEAK_BUY / WEAK BUY / weak-buy
+            r"\bstrong[_\-\s]?buy\b",   # STRONG_BUY / STRONG BUY / strong-buy
             r"\bbuy\b",
             r"\blong\b",
             r"\benter long\b",
@@ -66,8 +68,14 @@ class SignalProcessor:
             r"\bbullish\b.*\bbuy\b",
             r"\b做多\b",
             r"\b开多\b",
+            r"\b弱买\b",
+            r"\b强买\b",
+            r"\b弱\b.*\b买\b",
+            r"\b强\b.*\b买\b",
         ],
         TradingSignal.SELL: [
+            r"\bweak[_\-\s]?sell\b",    # WEAK_SELL / WEAK SELL / weak-sell
+            r"\bstrong[_\-\s]?sell\b",  # STRONG_SELL / STRONG SELL / strong-sell
             r"\bsell\b",
             r"\bshort\b",
             r"\bexit\b",
@@ -78,6 +86,10 @@ class SignalProcessor:
             r"\b做空\b",
             r"\b开空\b",
             r"\b平仓\b",
+            r"\b弱卖\b",
+            r"\b强卖\b",
+            r"\b弱\b.*\b卖\b",
+            r"\b强\b.*\b卖\b",
         ],
         TradingSignal.HOLD: [
             r"\bhold\b",
@@ -190,27 +202,22 @@ class SignalProcessor:
 
     def _extract_signal_type(self, text: str) -> TradingSignal:
         """提取信号类型"""
-        text_lower = text.lower()
-
-        # 按优先级检查信号（BUY优先于SELL优先于HOLD）
-        for signal, patterns in self.SIGNAL_PATTERNS.items():
-            for pattern in patterns:
-                if re.search(pattern, text_lower, re.IGNORECASE):
-                    return signal
-
-        return TradingSignal.UNKNOWN
+        from vibe_trading.tools.signal_parser import parse_decision, to_signal_enum
+        decision = parse_decision(text)
+        enum_value = to_signal_enum(decision)
+        try:
+            return TradingSignal(enum_value)
+        except ValueError:
+            return TradingSignal.UNKNOWN
 
     def _extract_signal_strength(self, text: str) -> SignalStrength:
         """提取信号强度"""
-        text_lower = text.lower()
-
-        # 检查强度关键词
-        for strength, patterns in self.STRENGTH_PATTERNS.items():
-            for pattern in patterns:
-                if re.search(pattern, text_lower, re.IGNORECASE):
-                    return strength
-
-        return SignalStrength.UNCERTAIN
+        from vibe_trading.tools.signal_parser import detect_strength
+        strength = detect_strength(text)
+        try:
+            return SignalStrength(strength)
+        except ValueError:
+            return SignalStrength.UNCERTAIN
 
     def _calculate_confidence(
         self,
