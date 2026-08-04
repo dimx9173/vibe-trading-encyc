@@ -56,7 +56,10 @@ uv.lock
 # OS
 Thumbs.db
 .DS_Store
+# LLM 配置含明文 API key，禁止提交（仅跟踪 llm.yaml.example）
 backend/src/pi_ai/llm.yaml
+backend/src/vibe_trading/config/llm.yaml
+**/llm.yaml
 cache/
 
 test_*
@@ -70,3 +73,4 @@ docs/node_modules/*
 docs/INTRO_ZHIHU*
 checkpoints/
 backtest_results/
+.zcode/

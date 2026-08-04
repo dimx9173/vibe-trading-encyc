@@ -7,7 +7,7 @@ import asyncio
 from typing import Any, Dict, List, Optional
 
 from pi_agent_core import Agent, AgentOptions
-from pi_ai.config import get_model_from_config
+from vibe_trading.config.llm_config import get_model_from_config, make_get_api_key
 from pi_logger import get_logger
 
 from vibe_trading.config.agent_config import AgentConfig, AgentRole
@@ -318,13 +318,10 @@ class PortfolioManagerAgent:
         self._tool_context = tool_context
         self._memory = memory
 
-        # ========== 改进: 使用模型路由器和工具 ==========
+        # ========== 模型 + 工具（pi-py：无 ModelRouter） ==========
         settings = get_settings()
         model = get_model_from_config(settings.llm_config_name)
-
-        # 获取模型路由器
-        from pi_ai.model_router import create_model_router_from_config
-        model_router = create_model_router_from_config()
+        get_api_key = make_get_api_key()
 
         # 获取tools - 使用角色特定的工具集合
         agent_tools = []
@@ -359,15 +356,15 @@ class PortfolioManagerAgent:
         if memory_context:
             system_prompt += "\n\n" + memory_context
 
-        # 创建Agent并设置tools和model_router
+        # 创建Agent（pi-py：model + tools + get_api_key）
         self._agent = Agent(
             AgentOptions(
                 initial_state={
                     "system_prompt": system_prompt,
                     "model": model,
-                    "model_router": model_router,  # ========== 添加模型路由器 ==========
                     "tools": agent_tools,
-                }
+                },
+                get_api_key=get_api_key,
             )
         )
 
@@ -377,7 +374,7 @@ class PortfolioManagerAgent:
 
         logger.info(f"Portfolio Manager Agent initialized for {tool_context.symbol}")
 
-    def _track_execution_tool_event(self, event: Any) -> None:
+    def _track_execution_tool_event(self, event: Any, cancel_event=None) -> None:
         """Persist PM execution tool calls for per-bar web tracing."""
         event_type = getattr(event, "type", None)
         if getattr(event, "tool_name", None) == "submit_trade_order" and event_type == "tool_execution_start":

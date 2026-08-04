@@ -1,0 +1,4 @@
+interface:
+  display_name: "Integrate InsForge"
+  short_description: "Connect an Agent platform to external InsForge services"
+  default_prompt: "Use -insforge to add an external InsForge-backed Production profile."

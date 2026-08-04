@@ -11,7 +11,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from pi_agent_core import Agent, AgentOptions, AgentMessage as CoreAgentMessage
-from pi_ai import TextContent
+from pi_ai import TextContent, UserMessage
 from pi_logger import get_logger, info, success, warning, error
 
 from vibe_trading.agents.messaging import AgentMessage, MessageType
@@ -67,11 +67,17 @@ class PrimeAgent(Agent):
             config: Prime Agent配置
         """
         # 创建AgentOptions
+        # pi-py: model 不能为 None（AgentState 默认 _DEFAULT_MODEL，但显式 None 会破坏流式调用）。
+        # Prime Agent 使用 llm.yaml 默认模型；api_key 通过 get_api_key 注入。
+        # 注：enable_credit_tracking 在 pi-py 中被 **extra 捕获但不再消费（credit tracking 未移植）。
+        from vibe_trading.config.llm_config import get_model_from_config, make_get_api_key
+
         agent_options = AgentOptions(
             initial_state={
                 "system_prompt": config.system_prompt,
-                "model": None,  # 使用默认模型
+                "model": get_model_from_config(),
             },
+            get_api_key=make_get_api_key(),
             enable_credit_tracking=config.enable_credit_tracking,
         )
 
@@ -617,13 +623,14 @@ class PrimeAgent(Agent):
         Args:
             message: Subagent消息
         """
-        steering_msg = CoreAgentMessage(
-            role="steering",
+        # pi-py: Message 联合仅允许 user/assistant/toolResult 角色（extra="forbid"）。
+        # steering 的语义是"运行中注入提示"，用 UserMessage 表达即可。
+        steering_msg = UserMessage(
             content=[TextContent(text=self._format_message_as_prompt(message))]
         )
         self.steer(steering_msg)
 
-    async def _handle_agent_event(self, event) -> None:
+    async def _handle_agent_event(self, event, cancel_event=None) -> None:
         """
         处理Agent事件
 
@@ -880,9 +887,8 @@ class PrimeAgent(Agent):
             tag="PRIME|HARNESS",
         )
 
-        # 通过steer通知Agent
-        steering_msg = CoreAgentMessage(
-            role="steering",
+        # 通过steer通知Agent（pi-py: UserMessage）
+        steering_msg = UserMessage(
             content=[TextContent(
                 text=f"约束违规警告: {message.message_type.value} from {message.sender} 被约束系统阻止"
             )]
@@ -1005,11 +1011,11 @@ class PrimeAgent(Agent):
             "constraint_statuses": await self.harness.get_all_constraint_statuses(),
         }
 
-        # 添加Agent状态
+        # 添加Agent状态（pi-py: AgentState.error_message，旧版叫 error）
         base_status["agent_state"] = {
             "is_streaming": self.state.is_streaming,
-            "has_error": self.state.error is not None,
-            "error": self.state.error,
+            "has_error": self.state.error_message is not None,
+            "error": self.state.error_message,
             "message_count": len(self.state.messages),
         }
 

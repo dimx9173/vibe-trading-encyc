@@ -61,10 +61,11 @@ uv run mypy backend/src/
 - `DATABASE_URL`: SQLite database path
 - `LOG_LEVEL`: DEBUG, INFO, WARNING, ERROR
 
-**LLM Configuration (backend/src/pi_ai/llm.yaml):**
+**LLM Configuration (backend/src/vibe_trading/config/llm.yaml):**
 - Contains multiple model configurations (glm_4_7, iflow, longcat, etc.)
 - `use_llm`: Default model to use
-- `model_router`: Automatic model selection based on task type
+- Loaded via `vibe_trading/config/llm_config.py` (`get_model_from_config`); api_key injected via `AgentOptions(get_api_key=...)`.
+- (Note: pi-py removed the `ModelRouter` / `model_router` / `agent_model_mapping` features; model selection is now by explicit `Model` instance.)
 
 **Agent Configuration (backend/src/vibe_trading/config/agent_config.py):**
 - `AgentRole`: Enum of all 12 agent roles

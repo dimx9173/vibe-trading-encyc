@@ -7,8 +7,9 @@ import logging
 import sys
 from typing import List, Optional
 from pi_agent_core import Agent, AgentOptions, AgentEvent
-from pi_agent_core.types import TextContent, ThinkingContent
-from pi_ai.config import get_model_from_config
+from pi_ai import ThinkingContent
+from pi_agent_core.types import TextContent
+from vibe_trading.config.llm_config import get_model_from_config, make_get_api_key
 from pi_logger import get_logger
 
 from vibe_trading.config.agent_config import AgentConfig
@@ -31,7 +32,7 @@ class StreamPrinter:
         self._is_thinking = False
         self._started = False
 
-    def on_event(self, event: AgentEvent):
+    def on_event(self, event: AgentEvent, cancel_event=None):
         """处理 Agent 事件"""
         if event.type == "message_start":
             self._buffer = ""
@@ -140,11 +141,9 @@ async def create_trading_agent(
     """
     settings = get_settings()
 
-    # ========== 改进: 使用模型路由器，工具调用时使用iflow模型 ==========
-    from pi_ai.model_router import create_model_router_from_config
-
-    model_router = create_model_router_from_config()
+    # pi-py 移除了 ModelRouter；模型由 llm.yaml 直接选定，api_key 通过 get_api_key 注入。
     model = get_model_from_config(settings.llm_config_name)
+    get_api_key = make_get_api_key()
 
     # 获取 System Prompt
     system_prompt = get_agent_prompt(config.role)
@@ -168,15 +167,15 @@ async def create_trading_agent(
     if additional_tools:
         agent_tools.extend(additional_tools)
 
-    # 创建 Agent（使用模型路由器）
+    # 创建 Agent（pi-py：model + tools + get_api_key）
     agent = Agent(
         AgentOptions(
             initial_state={
                 "system_prompt": system_prompt,
                 "model": model,
-                "model_router": model_router,  # ========== 设置模型路由器 ==========
                 "tools": agent_tools,  # ========== 设置tools ==========
-            }
+            },
+            get_api_key=get_api_key,
         )
     )
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deploy Agent Platform"
+  short_description: "Prepare nginx and Compose deployment for an Agent platform"
+  default_prompt: "Use -agent-platform to prepare and validate this Agent platform deployment."

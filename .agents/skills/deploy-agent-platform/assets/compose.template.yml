@@ -1,0 +1,32 @@
+services:
+  agent-server:
+    image: ${AGENT_SERVER_IMAGE}
+    env_file: .env
+    expose:
+      - "7140"
+    networks: [application, egress]
+    restart: unless-stopped
+
+  web-bff:
+    image: ${WEB_BFF_IMAGE}
+    env_file: .env
+    expose:
+      - "9120"
+    networks: [application, egress]
+    depends_on: [agent-server]
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "${EDGE_PORT:-443}:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks: [application]
+    depends_on: [web-bff]
+    restart: unless-stopped
+
+networks:
+  application:
+    internal: true
+  egress: {}

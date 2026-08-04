@@ -1,43 +1,29 @@
-"""
-Agent 类
+"""有状态 Agent 封装。
 
-对应 TypeScript 版本的 agent.ts。
-提供有状态的高层 Agent 封装，管理整个 Agent 生命周期。
+对应上游 ``packages/agent/src/agent.ts``。维护 transcript、消息队列、生命周期，
+内部委托给 ``agent_loop`` / ``agent_loop_continue``。
+
+关键机制：
+- 每次 prompt/continue 给 loop 一个 context 快照（messages/tools 都 copy）。
+- steering（工作中注入）vs follow-up（完成后追加）两个队列，QueueMode 控制。
+- 事件经 process_events 归约到 _state，并串行广播给订阅者。
+- prompt 期间不能再次 prompt（用 steer/follow_up 排队）。
 """
 
 from __future__ import annotations
 
 import asyncio
-import copy
 import inspect
-import time
-from dataclasses import dataclass, field
-from typing import (
-    Any,
-    Awaitable,
-    Callable,
-    Dict,
-    List,
-    Literal,
-    Optional,
-    Set,
-    Union,
-)
+from typing import Any
 
 from pi_ai import (
-    Model,
-    get_model,
-    stream_simple,
     AssistantMessage,
-    ImageContent,
-    Message,
     TextContent,
-    ThinkingContent,
-    ThinkingLevel,
-    ToolCall,
     UserMessage,
+    stream_simple,
 )
-from .agent_loop import agent_loop, agent_loop_continue
+
+from .agent_loop import _run_agent_loop, _run_agent_loop_continue
 from .types import (
     AgentContext,
     AgentEndEvent,
@@ -45,610 +31,334 @@ from .types import (
     AgentLoopConfig,
     AgentMessage,
     AgentState,
-    AgentTool,
-    AgentToolResult,
+    MessageEndEvent,
+    MessageStartEvent,
+    MessageUpdateEvent,
+    QueueMode,
     StreamFn,
+    ToolExecutionEndEvent,
+    ToolExecutionMode,
+    ToolExecutionStartEvent,
+    TurnEndEvent,
 )
 
 
-@dataclass
+class _PendingMessageQueue:
+    """消息队列（all 或 one-at-a-time 模式）。"""
+
+    def __init__(self, mode: QueueMode = "one-at-a-time") -> None:
+        self.mode = mode
+        self._messages: list[AgentMessage] = []
+
+    def enqueue(self, message: AgentMessage) -> None:
+        self._messages.append(message)
+
+    def has_items(self) -> bool:
+        return len(self._messages) > 0
+
+    def drain(self) -> list[AgentMessage]:
+        if self.mode == "all":
+            drained = list(self._messages)
+            self._messages.clear()
+            return drained
+        if not self._messages:
+            return []
+        first = self._messages[0]
+        self._messages = self._messages[1:]
+        return [first]
+
+    def clear(self) -> None:
+        self._messages.clear()
+
+
 class AgentOptions:
-    """
-    Agent 构造选项。
+    """Agent 配置。对应上游 ``AgentOptions``。
 
-    Attributes:
-        initial_state: 初始状态（部分）
-        convert_to_llm: 转换 AgentMessage 到 LLM Message
-        transform_context: 上下文转换（裁剪/注入）
-        steering_mode: Steering 消息模式
-        follow_up_mode: Follow-up 消息模式
-        stream_fn: 自定义流式函数
-        session_id: 会话 ID
-        get_api_key: 动态 API Key 获取
-        thinking_budgets: 思考预算
-        # Credit tracking 配置
-        enable_credit_tracking: 是否启用 credit 计费追踪
-        user_id: 用户 ID（用于计费）
-        project_id: 项目 ID（用于计费）
-        agent_role: Agent 角色（用于计费）
-        model_config_name: 模型配置名称（用于计费，如 "glm_4_7"）
+    所有字段可选；initial_state 含 system_prompt/model/tools 等。
     """
 
-    initial_state: Optional[Dict[str, Any]] = None
-    convert_to_llm: Optional[
-        Callable[[List[AgentMessage]], Union[List[Message], Awaitable[List[Message]]]]
-    ] = None
-    transform_context: Optional[
-        Callable[[List[AgentMessage], Optional[Any]], Awaitable[List[AgentMessage]]]
-    ] = None
-    steering_mode: Literal["all", "one-at-a-time"] = "one-at-a-time"
-    follow_up_mode: Literal["all", "one-at-a-time"] = "one-at-a-time"
-    stream_fn: Optional[StreamFn] = None
-    session_id: Optional[str] = None
-    get_api_key: Optional[
-        Callable[[str], Union[Optional[str], Awaitable[Optional[str]]]]
-    ] = None
-    thinking_budgets: Optional[Dict[str, int]] = None
-    max_retry_delay_ms: Optional[int] = None
-    # Credit tracking
-    enable_credit_tracking: bool = False
-    user_id: Optional[str] = None
-    project_id: Optional[str] = None
-    agent_role: Optional[str] = None
-    model_config_name: Optional[str] = None
+    def __init__(
+        self,
+        initial_state: dict[str, Any] | AgentState | None = None,
+        *,
+        convert_to_llm: Any = None,
+        transform_context: Any = None,
+        stream_fn: StreamFn | None = None,
+        get_api_key: Any = None,
+        before_tool_call: Any = None,
+        after_tool_call: Any = None,
+        prepare_next_turn: Any = None,
+        steering_mode: QueueMode = "one-at-a-time",
+        follow_up_mode: QueueMode = "one-at-a-time",
+        tool_execution: ToolExecutionMode = "parallel",
+        **extra: Any,
+    ) -> None:
+        # 初始状态
+        if isinstance(initial_state, AgentState):
+            self.initial_state = initial_state
+        else:
+            self.initial_state = AgentState()
+            if initial_state:
+                for k, v in initial_state.items():
+                    setattr(self.initial_state, k, v)
 
-
-def _default_convert_to_llm(messages: List[AgentMessage]) -> List[Message]:
-    """
-    默认的 convertToLlm: 只保留 LLM 兼容的消息。
-
-    过滤掉自定义消息类型，只保留 user/assistant/toolResult。
-    """
-    return [
-        m
-        for m in messages
-        if getattr(m, "role", None) in ("user", "assistant", "toolResult")
-    ]
+        self.convert_to_llm = convert_to_llm
+        self.transform_context = transform_context
+        self.stream_fn = stream_fn or stream_simple
+        self.get_api_key = get_api_key
+        self.before_tool_call = before_tool_call
+        self.after_tool_call = after_tool_call
+        self.prepare_next_turn = prepare_next_turn
+        self.steering_mode = steering_mode
+        self.follow_up_mode = follow_up_mode
+        self.tool_execution = tool_execution
+        self.extra = extra
 
 
 class Agent:
-    """
-    有状态的 Agent 类。
+    """有状态 Agent。"""
 
-    管理 Agent 生命周期，提供以下核心能力:
-    - 状态管理 (system prompt, model, tools, messages)
-    - 事件订阅和发布
-    - Prompt 发送和流式处理
-    - Steering/Follow-up 消息队列
-    - 取消和重置
-
-    对应 TypeScript 版本的 Agent 类。
-
-    Usage:
-        agent = Agent(AgentOptions(
-            initial_state={"system_prompt": "你是一个助手", "model": get_model("openai", "gpt-4o")},
-        ))
-
-        agent.subscribe(lambda event: print(event.type))
-        await agent.prompt("你好！")
-    """
-
-    def __init__(self, opts: Optional[AgentOptions] = None):
-        if opts is None:
-            opts = AgentOptions()
-
-        # 初始化状态
-        self._state = AgentState()
-        if opts.initial_state:
-            for key, value in opts.initial_state.items():
-                if hasattr(self._state, key):
-                    setattr(self._state, key, value)
-
-        # 配置
-        self._convert_to_llm = opts.convert_to_llm or _default_convert_to_llm
+    def __init__(self, options: AgentOptions | None = None) -> None:
+        opts = options or AgentOptions()
+        self._state = opts.initial_state
+        self._convert_to_llm = opts.convert_to_llm
         self._transform_context = opts.transform_context
-        self._steering_mode = opts.steering_mode
-        self._follow_up_mode = opts.follow_up_mode
-        self._stream_fn: StreamFn = opts.stream_fn or stream_simple
-        self._session_id = opts.session_id
+        self._stream_fn = opts.stream_fn
         self._get_api_key = opts.get_api_key
-        self._thinking_budgets = opts.thinking_budgets
-        self._max_retry_delay_ms = opts.max_retry_delay_ms
-        # Credit tracking
-        self._enable_credit_tracking = opts.enable_credit_tracking
-        self._user_id = opts.user_id
-        self._project_id = opts.project_id
-        self._agent_role = opts.agent_role
-        self._model_config_name = opts.model_config_name
-        # Model routing (from initial_state)
-        self._model_router = getattr(self._state, 'model_router', None)
+        self._before_tool_call = opts.before_tool_call
+        self._after_tool_call = opts.after_tool_call
+        self._prepare_next_turn = opts.prepare_next_turn
+        self._tool_execution = opts.tool_execution
 
-        # 事件监听器
-        self._listeners: Set[Callable[[AgentEvent], None]] = set()
+        self.steering_queue = _PendingMessageQueue(opts.steering_mode)
+        self.follow_up_queue = _PendingMessageQueue(opts.follow_up_mode)
 
-        # 取消控制
-        self._cancel_event: Optional[asyncio.Event] = None
+        self._listeners: list[Any] = []  # Callable[[AgentEvent, asyncio.Event|None], Any]
+        self._active_run: dict[str, Any] | None = None
 
-        # 消息队列
-        self._steering_queue: List[AgentMessage] = []
-        self._follow_up_queue: List[AgentMessage] = []
-
-        # 运行状态
-        self._running_prompt: Optional[asyncio.Future] = None
-        self._resolve_running_prompt: Optional[Callable] = None
-
-    # =========================================================================
-    # 属性
-    # =========================================================================
+    # ---- 状态 ----
 
     @property
     def state(self) -> AgentState:
-        """获取当前状态"""
         return self._state
 
-    @property
-    def session_id(self) -> Optional[str]:
-        """获取会话 ID"""
-        return self._session_id
+    # ---- 订阅 ----
 
-    @session_id.setter
-    def session_id(self, value: Optional[str]):
-        """设置会话 ID"""
-        self._session_id = value
+    def subscribe(self, listener: Any) -> Any:
+        """订阅事件。返回取消订阅函数。"""
+        self._listeners.append(listener)
 
-    @property
-    def thinking_budgets(self) -> Optional[Dict[str, int]]:
-        """获取思考预算"""
-        return self._thinking_budgets
+        def _unsubscribe() -> None:
+            if listener in self._listeners:
+                self._listeners.remove(listener)
 
-    @thinking_budgets.setter
-    def thinking_budgets(self, value: Optional[Dict[str, int]]):
-        """设置思考预算"""
-        self._thinking_budgets = value
+        return _unsubscribe
 
-    @property
-    def stream_fn(self) -> StreamFn:
-        """获取流式函数"""
-        return self._stream_fn
-
-    @stream_fn.setter
-    def stream_fn(self, value: StreamFn):
-        """设置流式函数"""
-        self._stream_fn = value
-
-    # =========================================================================
-    # 事件订阅
-    # =========================================================================
-
-    def subscribe(self, fn: Callable[[AgentEvent], None]) -> Callable[[], None]:
-        """
-        订阅 Agent 事件。
-
-        Args:
-            fn: 事件处理函数
-
-        Returns:
-            取消订阅的函数
-        """
-        self._listeners.add(fn)
-
-        def unsubscribe():
-            self._listeners.discard(fn)
-
-        return unsubscribe
-
-    def _emit(self, event: AgentEvent) -> None:
-        """发送事件给所有监听器"""
-        for listener in self._listeners:
-            try:
-                listener(event)
-            except Exception:
-                pass  # 不让监听器错误影响 Agent
-
-    # =========================================================================
-    # 状态操作
-    # =========================================================================
-
-    def set_system_prompt(self, prompt: str) -> None:
-        """设置系统提示词"""
-        self._state.system_prompt = prompt
-
-    def set_model(self, model: Model) -> None:
-        """设置 LLM 模型"""
-        self._state.model = model
-
-    def set_thinking_level(self, level: ThinkingLevel) -> None:
-        """设置思考级别"""
-        self._state.thinking_level = level
-
-    def set_tools(self, tools: List[AgentTool]) -> None:
-        """设置可用工具"""
-        self._state.tools = tools
-
-    def replace_messages(self, messages: List[AgentMessage]) -> None:
-        """替换全部消息历史"""
-        self._state.messages = list(messages)
-
-    def append_message(self, message: AgentMessage) -> None:
-        """追加一条消息"""
-        self._state.messages = [*self._state.messages, message]
-
-    def clear_messages(self) -> None:
-        """清空消息历史"""
-        self._state.messages = []
-
-    # =========================================================================
-    # Steering / Follow-up 消息
-    # =========================================================================
-
-    def set_steering_mode(self, mode: Literal["all", "one-at-a-time"]) -> None:
-        """设置 steering 模式"""
-        self._steering_mode = mode
-
-    def get_steering_mode(self) -> str:
-        """获取 steering 模式"""
-        return self._steering_mode
-
-    def set_follow_up_mode(self, mode: Literal["all", "one-at-a-time"]) -> None:
-        """设置 follow-up 模式"""
-        self._follow_up_mode = mode
-
-    def get_follow_up_mode(self) -> str:
-        """获取 follow-up 模式"""
-        return self._follow_up_mode
+    # ---- 队列 ----
 
     def steer(self, message: AgentMessage) -> None:
-        """
-        排队一条 steering 消息来中断 Agent 运行。
-
-        在当前工具执行完成后交付，跳过剩余工具。
-        """
-        self._steering_queue.append(message)
+        """入 steering 队列（工作中注入）。"""
+        self.steering_queue.enqueue(message)
 
     def follow_up(self, message: AgentMessage) -> None:
-        """
-        排队一条 follow-up 消息，在 Agent 完成后处理。
-
-        仅当 Agent 没有更多工具调用或 steering 消息时交付。
-        """
-        self._follow_up_queue.append(message)
+        """入 follow-up 队列（完成后追加）。"""
+        self.follow_up_queue.enqueue(message)
 
     def clear_steering_queue(self) -> None:
-        """清空 steering 队列"""
-        self._steering_queue = []
+        self.steering_queue.clear()
 
     def clear_follow_up_queue(self) -> None:
-        """清空 follow-up 队列"""
-        self._follow_up_queue = []
+        self.follow_up_queue.clear()
 
     def clear_all_queues(self) -> None:
-        """清空所有队列"""
-        self._steering_queue = []
-        self._follow_up_queue = []
+        self.steering_queue.clear()
+        self.follow_up_queue.clear()
 
     def has_queued_messages(self) -> bool:
-        """是否有排队的消息"""
-        return len(self._steering_queue) > 0 or len(self._follow_up_queue) > 0
+        return self.steering_queue.has_items() or self.follow_up_queue.has_items()
 
-    def _dequeue_steering_messages(self) -> List[AgentMessage]:
-        """出队 steering 消息"""
-        if self._steering_mode == "one-at-a-time":
-            if self._steering_queue:
-                first = self._steering_queue[0]
-                self._steering_queue = self._steering_queue[1:]
-                return [first]
-            return []
-        else:
-            steering = list(self._steering_queue)
-            self._steering_queue = []
-            return steering
+    # ---- 生命周期 ----
 
-    def _dequeue_follow_up_messages(self) -> List[AgentMessage]:
-        """出队 follow-up 消息"""
-        if self._follow_up_mode == "one-at-a-time":
-            if self._follow_up_queue:
-                first = self._follow_up_queue[0]
-                self._follow_up_queue = self._follow_up_queue[1:]
-                return [first]
-            return []
-        else:
-            follow_up = list(self._follow_up_queue)
-            self._follow_up_queue = []
-            return follow_up
+    @property
+    def is_running(self) -> bool:
+        return self._active_run is not None
 
-    # =========================================================================
-    # 控制
-    # =========================================================================
+    @property
+    def cancel_event(self) -> asyncio.Event | None:
+        return self._active_run["cancel_event"] if self._active_run else None
 
     def abort(self) -> None:
-        """取消当前操作"""
-        if self._cancel_event:
-            self._cancel_event.set()
+        if self._active_run and self._active_run["cancel_event"]:
+            self._active_run["cancel_event"].set()
 
     async def wait_for_idle(self) -> None:
-        """等待 Agent 完成当前操作"""
-        if self._running_prompt:
-            await self._running_prompt
+        if self._active_run:
+            await self._active_run["promise"]
 
     def reset(self) -> None:
-        """重置 Agent 状态"""
         self._state.messages = []
-        self._state.is_streaming = False
-        self._state.stream_message = None
+        self._state.streaming_message = None
+        self._state.error_message = None
         self._state.pending_tool_calls = set()
-        self._state.error = None
-        self._steering_queue = []
-        self._follow_up_queue = []
+        self.clear_all_queues()
 
-    # =========================================================================
-    # Prompt
-    # =========================================================================
+    # ---- prompt / continue ----
 
-    async def prompt(
-        self,
-        input_data: Union[str, AgentMessage, List[AgentMessage]],
-        images: Optional[List[ImageContent]] = None,
-    ) -> None:
-        """
-        发送 prompt 给 Agent。
-
-        支持三种输入形式:
-        1. 文本字符串（可附带图片）
-        2. 单个 AgentMessage
-        3. AgentMessage 列表
-
-        Args:
-            input_data: 输入数据
-            images: 可选的图片列表
-
-        Raises:
-            RuntimeError: Agent 正在处理另一个 prompt
-        """
-        if self._state.is_streaming:
+    async def prompt(self, message: AgentMessage | list[AgentMessage] | str) -> None:
+        """发送用户输入，启动循环。运行中调用会报错（用 steer/follow_up 排队）。"""
+        if self._active_run:
             raise RuntimeError(
-                "Agent is already processing a prompt. "
-                "Use steer() or follow_up() to queue messages, "
-                "or wait for completion."
+                "Agent is already processing. Use steer() or follow_up() to queue messages."
             )
-
-        model = self._state.model
-        if not model:
-            raise RuntimeError("No model configured")
-
-        # 构建消息
-        msgs: List[AgentMessage]
-        if isinstance(input_data, list):
-            msgs = input_data
-        elif isinstance(input_data, str):
-            from .types import UserMessage
-
-            content = [TextContent(text=input_data)]
-            if images:
-                content.extend(images)
-            msgs = [UserMessage(content=content)]
-        else:
-            msgs = [input_data]
-
-        await self._run_loop(msgs)
+        messages = self._normalize_input(message)
+        await self._run_prompt_messages(messages)
 
     async def continue_(self) -> None:
-        """
-        从当前上下文继续（用于重试和恢复排队消息）。
-
-        Raises:
-            RuntimeError: Agent 正在处理或无法继续
-        """
-        if self._state.is_streaming:
-            raise RuntimeError(
-                "Agent is already processing. Wait for completion before continuing."
-            )
-
-        messages = self._state.messages
-        if not messages:
+        """从已有 context 继续。末尾须是 user/toolResult，或有排队消息。"""
+        if self._active_run:
+            raise RuntimeError("Agent is already processing.")
+        last = self._state.messages[-1] if self._state.messages else None
+        if not last:
             raise RuntimeError("No messages to continue from")
-
-        last_msg = messages[-1]
-        if getattr(last_msg, "role", None) == "assistant":
-            # 尝试从队列中获取消息
-            queued_steering = self._dequeue_steering_messages()
-            if queued_steering:
-                await self._run_loop(
-                    queued_steering, skip_initial_steering_poll=True
-                )
+        if isinstance(last, AssistantMessage):
+            # 末尾是 assistant：尝试消费排队消息作为 prompt
+            queued = self.steering_queue.drain()
+            if queued:
+                await self._run_prompt_messages(queued)
                 return
-
-            queued_follow_up = self._dequeue_follow_up_messages()
-            if queued_follow_up:
-                await self._run_loop(queued_follow_up)
+            queued = self.follow_up_queue.drain()
+            if queued:
+                await self._run_prompt_messages(queued)
                 return
-
             raise RuntimeError("Cannot continue from message role: assistant")
+        await self._run_continuation()
 
-        await self._run_loop(None)
+    # ---- 内部 ----
 
-    # =========================================================================
-    # 内部循环
-    # =========================================================================
+    def _normalize_input(self, message: Any) -> list[AgentMessage]:
+        if isinstance(message, str):
+            return [
+                UserMessage(
+                    content=[TextContent(text=message)],
+                    timestamp=int(asyncio.get_event_loop().time() * 1000),
+                )
+            ]
+        if isinstance(message, list):
+            return message
+        return [message]
 
-    async def _run_loop(
-        self,
-        messages: Optional[List[AgentMessage]],
-        skip_initial_steering_poll: bool = False,
-    ) -> None:
-        """运行 Agent 循环"""
-        model = self._state.model
-        if not model:
-            raise RuntimeError("No model configured")
-
-        # 创建运行 Promise
-        loop = asyncio.get_event_loop()
-        self._running_prompt = loop.create_future()
-
-        # 创建取消事件
-        self._cancel_event = asyncio.Event()
-        self._state.is_streaming = True
-        self._state.stream_message = None
-        self._state.error = None
-
-        reasoning = (
-            None
-            if self._state.thinking_level == ThinkingLevel.OFF
-            else self._state.thinking_level.value
-        )
-
-        context = AgentContext(
+    def _create_context_snapshot(self) -> AgentContext:
+        return AgentContext(
             system_prompt=self._state.system_prompt,
             messages=list(self._state.messages),
-            tools=self._state.tools,
+            tools=list(self._state.tools) if self._state.tools else None,
         )
 
-        _skip_initial = skip_initial_steering_poll
-
-        config = AgentLoopConfig(
-            model=model,
-            reasoning=reasoning,
-            session_id=self._session_id,
-            max_retry_delay_ms=self._max_retry_delay_ms,
+    def _create_loop_config(self, skip_initial_steering: bool = False) -> AgentLoopConfig:
+        cfg = AgentLoopConfig(
+            model=self._state.model,
+            tool_execution=self._tool_execution,
             convert_to_llm=self._convert_to_llm,
             transform_context=self._transform_context,
             get_api_key=self._get_api_key,
-            get_steering_messages=self._make_steering_callback(_skip_initial),
-            get_follow_up_messages=self._make_follow_up_callback(),
-            # Credit tracking
-            enable_credit_tracking=self._enable_credit_tracking,
-            user_id=self._user_id,
-            project_id=self._project_id,
-            agent_role=self._agent_role,
-            model_config_name=self._model_config_name,
-            # Model routing
-            model_router=self._model_router,
+            before_tool_call=self._before_tool_call,
+            after_tool_call=self._after_tool_call,
+        )
+        cfg.reasoning = self._state.thinking_level or None
+        # 用闭包接 steering/follow-up 队列
+        _skip = [skip_initial_steering]
+
+        async def _get_steering() -> list[AgentMessage]:
+            if _skip[0]:
+                _skip[0] = False
+                return []
+            return self.steering_queue.drain()
+
+        async def _get_follow_up() -> list[AgentMessage]:
+            return self.follow_up_queue.drain()
+
+        cfg.get_steering_messages = _get_steering
+        cfg.get_follow_up_messages = _get_follow_up
+        return cfg
+
+    async def _run_prompt_messages(
+        self, messages: list[AgentMessage], skip_initial_steering: bool = False
+    ) -> None:
+        await self._run_with_lifetime(
+            lambda cancel_event: _run_agent_loop(
+                messages,
+                self._create_context_snapshot(),
+                self._create_loop_config(skip_initial_steering),
+                self._process_events,
+                cancel_event,
+                self._stream_fn,
+            )
         )
 
-        partial: Optional[AgentMessage] = None
-
-        try:
-            if messages is not None:
-                event_stream = agent_loop(
-                    messages, context, config, self._cancel_event, self._stream_fn
-                )
-            else:
-                event_stream = agent_loop_continue(
-                    context, config, self._cancel_event, self._stream_fn
-                )
-
-            async for event in event_stream:
-                # 根据事件更新内部状态
-                if event.type == "message_start":
-                    partial = event.message
-                    self._state.stream_message = event.message
-
-                elif event.type == "message_update":
-                    partial = event.message
-                    self._state.stream_message = event.message
-
-                elif event.type == "message_end":
-                    partial = None
-                    self._state.stream_message = None
-                    self.append_message(event.message)
-
-                elif event.type == "tool_execution_start":
-                    self._state.pending_tool_calls = (
-                        self._state.pending_tool_calls | {event.tool_call_id}
-                    )
-
-                elif event.type == "tool_execution_end":
-                    self._state.pending_tool_calls = (
-                        self._state.pending_tool_calls - {event.tool_call_id}
-                    )
-
-                elif event.type == "turn_end":
-                    if (
-                        event.message
-                        and getattr(event.message, "role", None) == "assistant"
-                        and getattr(event.message, "error_message", None)
-                    ):
-                        self._state.error = event.message.error_message
-
-                elif event.type == "agent_end":
-                    self._state.is_streaming = False
-                    self._state.stream_message = None
-
-                # 发送事件给监听器
-                self._emit(event)
-
-            # 处理剩余的 partial 消息
-            if (
-                partial
-                and getattr(partial, "role", None) == "assistant"
-                and getattr(partial, "content", None)
-            ):
-                has_content = any(
-                    (isinstance(c, ThinkingContent) and c.thinking.strip())
-                    or (isinstance(c, TextContent) and c.text.strip())
-                    or (isinstance(c, ToolCall) and c.name.strip())
-                    for c in partial.content
-                )
-                if has_content:
-                    self.append_message(partial)
-                else:
-                    if self._cancel_event and self._cancel_event.is_set():
-                        raise RuntimeError("Request was aborted")
-
-        except Exception as err:
-            error_msg = AssistantMessage(
-                content=[TextContent(text="")],
-                api=model.api if hasattr(model, "api") else "",
-                provider=model.provider,
-                model=model.id,
-                usage={
-                    "input": 0,
-                    "output": 0,
-                    "cache_read": 0,
-                    "cache_write": 0,
-                    "total_tokens": 0,
-                    "cost": {"input": 0, "output": 0, "total": 0},
-                },
-                stop_reason=(
-                    "aborted"
-                    if self._cancel_event and self._cancel_event.is_set()
-                    else "error"
-                ),
-                error_message=str(err),
+    async def _run_continuation(self) -> None:
+        await self._run_with_lifetime(
+            lambda cancel_event: _run_agent_loop_continue(
+                self._create_context_snapshot(),
+                self._create_loop_config(),
+                self._process_events,
+                cancel_event,
+                self._stream_fn,
             )
+        )
 
-            self.append_message(error_msg)
-            self._state.error = str(err)
-            self._emit(AgentEndEvent(messages=[error_msg]))
-
+    async def _run_with_lifetime(self, executor: Any) -> None:
+        if self._active_run:
+            raise RuntimeError("Agent is already processing.")
+        cancel_event = asyncio.Event()
+        future: asyncio.Future[None] = asyncio.get_event_loop().create_future()
+        self._active_run = {"promise": future, "cancel_event": cancel_event}
+        self._state.is_streaming = True
+        self._state.streaming_message = None
+        self._state.error_message = None
+        try:
+            await executor(cancel_event)
+        except Exception as exc:  # noqa: BLE001
+            # 补发完整生命周期的事件（保证监听器看到一致序列）
+            err_msg = AssistantMessage(
+                stop_reason="error",
+                error_message=str(exc),
+                api="",
+                provider="",
+                model="",
+            )
+            await self._process_events(MessageStartEvent(message=err_msg))
+            await self._process_events(MessageEndEvent(message=err_msg))
+            await self._process_events(TurnEndEvent(message=err_msg, tool_results=[]))
+            await self._process_events(AgentEndEvent(messages=[err_msg]))
         finally:
             self._state.is_streaming = False
-            self._state.stream_message = None
-            self._state.pending_tool_calls = set()
-            self._cancel_event = None
-            if self._running_prompt and not self._running_prompt.done():
-                self._running_prompt.set_result(None)
-            self._running_prompt = None
+            self._state.streaming_message = None
+            self._active_run = None
+            if not future.done():
+                future.set_result(None)
 
-    def _make_steering_callback(
-        self, skip_initial: bool
-    ) -> Callable[[], Awaitable[List[AgentMessage]]]:
-        """创建 steering 消息的回调"""
-        skipped = [skip_initial]  # 用列表包装实现闭包可变
+    async def _process_events(self, event: AgentEvent) -> None:
+        """状态归约 + 串行广播。"""
+        if isinstance(event, (MessageStartEvent, MessageUpdateEvent)):
+            self._state.streaming_message = event.message
+        elif isinstance(event, MessageEndEvent):
+            self._state.streaming_message = None
+            self._state.messages.append(event.message)
+        elif isinstance(event, ToolExecutionStartEvent):
+            self._state.pending_tool_calls = self._state.pending_tool_calls | {event.tool_call_id}
+        elif isinstance(event, ToolExecutionEndEvent):
+            self._state.pending_tool_calls = self._state.pending_tool_calls - {event.tool_call_id}
+        elif isinstance(event, TurnEndEvent):
+            if isinstance(event.message, AssistantMessage) and event.message.error_message:
+                self._state.error_message = event.message.error_message
+        elif isinstance(event, AgentEndEvent):
+            self._state.streaming_message = None
 
-        async def callback() -> List[AgentMessage]:
-            if skipped[0]:
-                skipped[0] = False
-                return []
-            return self._dequeue_steering_messages()
+        # 串行广播
+        for listener in self._listeners:
+            result = listener(event, self.cancel_event)
+            if inspect.isawaitable(result):
+                await result
 
-        return callback
 
-    def _make_follow_up_callback(
-        self,
-    ) -> Callable[[], Awaitable[List[AgentMessage]]]:
-        """创建 follow-up 消息的回调"""
-
-        async def callback() -> List[AgentMessage]:
-            return self._dequeue_follow_up_messages()
-
-        return callback
+__all__ = ["Agent", "AgentOptions"]

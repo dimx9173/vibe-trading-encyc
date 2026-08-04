@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from pi_agent_core import Agent, AgentOptions
-from pi_ai.config import get_model_from_config
+from vibe_trading.config.llm_config import get_model_from_config, make_get_api_key
 
 from vibe_trading.config.agent_config import AgentConfig, AgentRole
 from vibe_trading.config.prompts import (
@@ -120,13 +120,14 @@ Provide your assessment in a clear, structured format."""
         
         # Get model
         model = get_model_from_config(self.config.model)
-        
+
         # Create agent with emergency prompt
         agent_options = AgentOptions(
             initial_state={
                 "system_prompt": self._system_prompt,
                 "model": model,
-            }
+            },
+            get_api_key=make_get_api_key(),
         )
         
         self._agent = Agent(agent_options)
