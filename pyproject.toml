@@ -1,12 +1,10 @@
 [project]
 name = "vibe-trading"
 version = "0.1.0"
-description = "Multi-agent cryptocurrency trading system using pi_agent_core"
+description = "Multi-agent cryptocurrency trading system using pi-py (pi_agent_core + pi_ai)"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    # Local packages
-    "pi-agent-core",
     # Data sources
     "python-binance>=1.0.19",
     "websockets>=12.0",
@@ -33,6 +31,9 @@ dependencies = [
     "structlog>=24.1.0",
     "greenlet>=3.3.2",
     "openai>=2.30.0",
+    # pi-py (pi_ai + pi_agent_core) runtime deps
+    "anthropic>=0.39",
+    "json-repair>=0.30",
     "fastapi>=0.135.3",
     "uvicorn>=0.42.0",
 ]

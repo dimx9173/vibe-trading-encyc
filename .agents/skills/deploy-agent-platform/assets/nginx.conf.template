@@ -1,0 +1,25 @@
+server {
+  listen 443 ssl;
+  server_name ${PUBLIC_HOST};
+
+  ssl_certificate ${TLS_CERTIFICATE};
+  ssl_certificate_key ${TLS_CERTIFICATE_KEY};
+
+  location / {
+    proxy_pass http://web-bff:9120;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Request-ID $request_id;
+  }
+
+  location /api/ {
+    proxy_pass http://web-bff:9120;
+    proxy_http_version 1.1;
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Request-ID $request_id;
+  }
+}

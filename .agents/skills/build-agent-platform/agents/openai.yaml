@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build Agent Platform"
+  short_description: "Design and build a pi-based TypeScript Agent platform"
+  default_prompt: "Use -agent-platform to design and build an Agent platform in this repository."
