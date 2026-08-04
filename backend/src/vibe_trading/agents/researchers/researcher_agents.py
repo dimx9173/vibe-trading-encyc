@@ -95,29 +95,49 @@ class ResearcherAgent:
             # 构建提示
             prompt = self._build_debate_prompt(context, debate_history, opponent_argument)
 
-            await self._agent.prompt(prompt)
+            # ========== 改进: 空响应/LLM错误重试 ==========
+            import asyncio
+            max_attempts = 3
+            last_detail = ""
+            for attempt in range(1, max_attempts + 1):
+                await self._agent.prompt(prompt)
 
-            # 获取响应
-            messages = self._agent.state.messages
-            if messages:
-                last_assistant = [m for m in messages if getattr(m, "role", None) == "assistant"]
-                if last_assistant:
-                    content = last_assistant[-1].content
-                    if isinstance(content, list):
-                        response = "".join(getattr(c, "text", str(c)) for c in content)
-                    else:
-                        response = str(content)
+                # 获取响应
+                messages = self._agent.state.messages
+                response = ""
+                if messages:
+                    last_assistant = [m for m in messages if getattr(m, "role", None) == "assistant"]
+                    if last_assistant:
+                        content = last_assistant[-1].content
+                        if isinstance(content, list):
+                            response = "".join(getattr(c, "text", str(c)) for c in content)
+                        else:
+                            response = str(content)
 
+                agent_error = getattr(getattr(self._agent, "state", None), "error", None)
+                if agent_error:
+                    last_detail = str(agent_error)
+                elif response and response.strip():
                     # 提取论点
                     if extract_arguments:
                         self._my_arguments = self._argument_extractor.extract_arguments(
                             response,
-                            "bull" if "bull" in self.config.role.value.lower() else "bear"
+                            "bull" if "bull" in self.config.role.value.lower() else "bear",
                         )
-
                     return response
+                else:
+                    last_detail = "empty response"
 
-            return "Response failed - no response from agent"
+                logger.warning(
+                    f"{self.config.name} 回應失敗 (attempt {attempt}/{max_attempts}): {last_detail}",
+                    tag="Debate",
+                )
+                if attempt < max_attempts:
+                    await asyncio.sleep(1.0 * attempt)
+
+            raise RuntimeError(
+                f"{self.config.name} 連續 {max_attempts} 次失敗 (最後: {last_detail})"
+            )
 
     def _build_debate_prompt(
         self,

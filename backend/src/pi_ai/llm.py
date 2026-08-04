@@ -692,10 +692,12 @@ class OpenAIProvider:
                 yield StreamErrorEvent(reason="error", error=partial)
                 raise LLMAuthenticationError(provider=model.provider)
             
-            # 其他错误
+            # 其他错误 — 一律 raise，讓 retry handler 能攔截並重試
+            # （原本只 yield StreamErrorEvent 不 raise，導致上層拿到 stop=error + 空內容卻以為成功）
             partial.stop_reason = "error"
             partial.error_message = error_str
             yield StreamErrorEvent(reason="error", error=partial)
+            raise LLMStreamError(message=error_str)
 
 
 # =============================================================================

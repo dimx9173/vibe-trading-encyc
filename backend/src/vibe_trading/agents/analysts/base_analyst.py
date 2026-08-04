@@ -62,26 +62,52 @@ class BaseAnalystAgent:
         # 构建分析提示
         prompt = self._build_prompt(context_data)
 
-        # 执行分析
-        await self._agent.prompt(prompt)
+        # ========== 改进: 空响应/LLM错误重试 ==========
+        # LLM stream 可能以 stop=error + 空內容結束（卻不拋異常），
+        # 重試 3 次，仍失敗才 raise，讓上層能看到錯誤而非靜默空報告。
+        import asyncio
+        max_attempts = 3
+        last_detail = ""
+        for attempt in range(1, max_attempts + 1):
+            # 执行分析
+            await self._agent.prompt(prompt)
 
-        # 获取响应
-        messages = self._agent.state.messages
-        if messages:
-            last_assistant = [m for m in messages if getattr(m, "role", None) == "assistant"]
-            if last_assistant:
-                content = last_assistant[-1].content
-                if isinstance(content, list):
-                    response = "".join(getattr(c, "text", str(c)) for c in content)
-                else:
-                    response = str(content)
-                
+            # 获取响应
+            messages = self._agent.state.messages
+            response = ""
+            if messages:
+                last_assistant = [m for m in messages if getattr(m, "role", None) == "assistant"]
+                if last_assistant:
+                    content = last_assistant[-1].content
+                    if isinstance(content, list):
+                        response = "".join(getattr(c, "text", str(c)) for c in content)
+                    else:
+                        response = str(content)
+
+            agent_error = getattr(getattr(self._agent, "state", None), "error", None)
+            if agent_error:
+                last_detail = str(agent_error)
+                logger.warning(
+                    f"{self.config.name} LLM錯誤 (attempt {attempt}/{max_attempts}): {last_detail}",
+                    tag="Analyst",
+                )
+            elif response and response.strip():
                 # 记录分析结果到日志
                 logger.info(f"{self.config.name} Analysis: {response}", tag="Analyst")
-                
                 return response
+            else:
+                last_detail = "empty response"
+                logger.warning(
+                    f"{self.config.name} 空響應 (attempt {attempt}/{max_attempts})",
+                    tag="Analyst",
+                )
 
-        return "Analysis failed - no response from agent"
+            if attempt < max_attempts:
+                await asyncio.sleep(1.0 * attempt)
+
+        raise RuntimeError(
+            f"{self.config.name} 連續 {max_attempts} 次失敗 (最後: {last_detail})"
+        )
 
     async def analyze_with_tools(self) -> str:
         """使用工具执行分析（不预取数据，让Agent自己调用工具）

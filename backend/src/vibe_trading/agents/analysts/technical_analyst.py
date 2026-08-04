@@ -69,26 +69,43 @@ Provide your technical analysis including:
 4. Short-term outlook (4-8 hours)
 """
 
-        # 执行分析
-        await self._agent.prompt(prompt)
+        # 执行分析（空回应/LLM错误重试）
+        import asyncio
+        max_attempts = 3
+        last_detail = ""
+        for attempt in range(1, max_attempts + 1):
+            await self._agent.prompt(prompt)
 
-        # 获取响应
-        messages = self._agent.state.messages
-        if messages:
-            last_assistant = [m for m in messages if getattr(m, "role", None) == "assistant"]
-            if last_assistant:
-                content = last_assistant[-1].content
-                if isinstance(content, list):
-                    response = "".join(getattr(c, "text", str(c)) for c in content)
-                else:
-                    response = str(content)
-                
+            # 获取响应
+            messages = self._agent.state.messages
+            response = ""
+            if messages:
+                last_assistant = [m for m in messages if getattr(m, "role", None) == "assistant"]
+                if last_assistant:
+                    content = last_assistant[-1].content
+                    if isinstance(content, list):
+                        response = "".join(getattr(c, "text", str(c)) for c in content)
+                    else:
+                        response = str(content)
+
+            agent_error = getattr(getattr(self._agent, "state", None), "error", None)
+            if agent_error:
+                last_detail = str(agent_error)
+            elif response and response.strip():
                 # 记录技术分析结果到日志
                 logger.info(f"Technical Analysis: {response}", tag="Technical")
-                
                 return response
+            else:
+                last_detail = "empty response"
 
-        return "Analysis failed - no response from agent"
+            logger.warning(
+                f"Technical Analyst 回應失敗 (attempt {attempt}/{max_attempts}): {last_detail}",
+                tag="Technical",
+            )
+            if attempt < max_attempts:
+                await asyncio.sleep(1.0 * attempt)
+
+        raise RuntimeError(f"Technical Analyst 連續 {max_attempts} 次失敗 (最後: {last_detail})")
 
     async def analyze_with_tools(self) -> str:
         """使用工具执行技术分析（不预取数据，让Agent自己调用工具）"""
@@ -111,21 +128,41 @@ Provide your technical analysis including:
 4. 短期展望 (4-8小时)
 """
 
-        await self._agent.prompt(prompt)
+        # 执行分析（空回应/LLM错误重试）
+        import asyncio
+        max_attempts = 3
+        last_detail = ""
+        for attempt in range(1, max_attempts + 1):
+            await self._agent.prompt(prompt)
 
-        # 获取响应
-        messages = self._agent.state.messages
-        if messages:
-            last_assistant = [m for m in messages if getattr(m, "role", None) == "assistant"]
-            if last_assistant:
-                content = last_assistant[-1].content
-                if isinstance(content, list):
-                    return "".join(getattr(c, "text", str(c)) for c in content)
-                return str(content)
+            # 获取响应
+            messages = self._agent.state.messages
+            response = ""
+            if messages:
+                last_assistant = [m for m in messages if getattr(m, "role", None) == "assistant"]
+                if last_assistant:
+                    content = last_assistant[-1].content
+                    if isinstance(content, list):
+                        response = "".join(getattr(c, "text", str(c)) for c in content)
+                    else:
+                        response = str(content)
 
-        return "Analysis failed - no response from agent"
+            agent_error = getattr(getattr(self._agent, "state", None), "error", None)
+            if agent_error:
+                last_detail = str(agent_error)
+            elif response and response.strip():
+                return response
+            else:
+                last_detail = "empty response"
 
-    async def analyze_with_indicators(self, indicators_data: Dict) -> str:
+            logger.warning(
+                f"Technical Analyst (tools) 回應失敗 (attempt {attempt}/{max_attempts}): {last_detail}",
+                tag="Technical",
+            )
+            if attempt < max_attempts:
+                await asyncio.sleep(1.0 * attempt)
+
+        raise RuntimeError(f"Technical Analyst (tools) 連續 {max_attempts} 次失敗 (最後: {last_detail})")
         """使用指标数据进行分析"""
         if not self._agent:
             raise RuntimeError("Agent not initialized. Call initialize() first.")
@@ -161,19 +198,41 @@ Provide your technical analysis including:
 5. Short-term trading recommendation
 """
 
-        await self._agent.prompt(prompt)
+        # 执行分析（空回应/LLM错误重试）
+        import asyncio
+        max_attempts = 3
+        last_detail = ""
+        for attempt in range(1, max_attempts + 1):
+            await self._agent.prompt(prompt)
 
-        # 获取响应
-        messages = self._agent.state.messages
-        if messages:
-            last_assistant = [m for m in messages if getattr(m, "role", None) == "assistant"]
-            if last_assistant:
-                content = last_assistant[-1].content
-                if isinstance(content, list):
-                    return "".join(getattr(c, "text", str(c)) for c in content)
-                return str(content)
+            # 获取响应
+            messages = self._agent.state.messages
+            response = ""
+            if messages:
+                last_assistant = [m for m in messages if getattr(m, "role", None) == "assistant"]
+                if last_assistant:
+                    content = last_assistant[-1].content
+                    if isinstance(content, list):
+                        response = "".join(getattr(c, "text", str(c)) for c in content)
+                    else:
+                        response = str(content)
 
-        return "Analysis failed - no response from agent"
+            agent_error = getattr(getattr(self._agent, "state", None), "error", None)
+            if agent_error:
+                last_detail = str(agent_error)
+            elif response and response.strip():
+                return response
+            else:
+                last_detail = "empty response"
+
+            logger.warning(
+                f"Technical Analyst (indicators) 回應失敗 (attempt {attempt}/{max_attempts}): {last_detail}",
+                tag="Technical",
+            )
+            if attempt < max_attempts:
+                await asyncio.sleep(1.0 * attempt)
+
+        raise RuntimeError(f"Technical Analyst (indicators) 連續 {max_attempts} 次失敗 (最後: {last_detail})")
 
 
 async def create_technical_analyst(tool_context: ToolContext) -> TechnicalAnalystAgent:
