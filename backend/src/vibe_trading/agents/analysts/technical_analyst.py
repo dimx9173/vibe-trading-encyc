@@ -163,6 +163,8 @@ Provide your technical analysis including:
                 await asyncio.sleep(1.0 * attempt)
 
         raise RuntimeError(f"Technical Analyst (tools) 連續 {max_attempts} 次失敗 (最後: {last_detail})")
+
+    async def analyze_with_indicators(self, indicators_data: Dict) -> str:
         """使用指标数据进行分析"""
         if not self._agent:
             raise RuntimeError("Agent not initialized. Call initialize() first.")

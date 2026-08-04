@@ -71,6 +71,7 @@ test_*.py
 !tests/test_decision_journal_persistence.py
 !tests/test_backtest_engine.py
 !tests/integration/test_cycle_deadlock.py
+!backend/tests/test_agent_retry.py
 backend/test_*.py
 node_modules/*
 docs/node_modules/*
