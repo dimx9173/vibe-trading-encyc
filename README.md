@@ -36,9 +36,10 @@
 ## 📦 安装
 
 ```bash
-cd backend
 uv pip install -e .
 ```
+
+依赖 `pi-py-ai` 和 `pi-py-agent-core`（[pi-py](https://github.com/encyc/pi-py) 的 PyPI 包，原生 TS [pi](https://github.com/earendil-works/pi) 的 Python 复刻）会自动从 PyPI 安装。
 
 ## ⚙️ 配置
 
@@ -53,9 +54,10 @@ cp backend/.env.example backend/.env
 ```bash
 BINANCE_TESTNET_API_KEY=your_key
 BINANCE_TESTNET_API_SECRET=your_secret
+LLM_MODEL=deepseek_v4_flash_free   # 默认模型，可在 llm.yaml 里选其他
 ```
 
-3. 配置LLM（在 `backend/src/pi_ai/llm.yaml`）
+3. 配置LLM（在 `backend/src/vibe_trading/config/llm.yaml`，定义所有可选模型与 API key）
 
 ## 🚀 使用
 
@@ -91,18 +93,18 @@ vibe-trading/
 │       │   ├── threads/        # 线程实现
 │       │   ├── tools/          # 交易工具
 │       │   ├── prime/          # Prime Agent监控
-│       │   └── config/         # 配置
-│       ├── pi_ai/              # LLM抽象层
-│       ├── pi_agent_core/     # Agent框架
+│       │   └── config/         # 配置（含 llm.yaml / llm_config.py）
 │       └── pi_logger/         # 日志系统
-└── docs/                      # 文档
+├── docs/                      # 文档
+└── pyproject.toml             # pi-py-ai / pi-py-agent-core 从 PyPI 安装
 ```
+
+> `pi_ai`（LLM 抽象层）和 `pi_agent_core`（Agent 框架）不再 vendored 在仓库内，改由 PyPI 包 [`pi-py-ai`](https://pypi.org/project/pi-py-ai/) / [`pi-py-agent-core`](https://pypi.org/project/pi-py-agent-core/) 提供。
 
 ## 🧪 测试
 
 ```bash
 # 运行所有测试
-cd backend
 uv run pytest
 
 # 运行特定测试
@@ -134,11 +136,9 @@ uv run test_historical.py  # 访问 http://localhost:8000
 - 风控Trigger：VaR超标、连续亏损、保证金不足
 - 用户可自定义Trigger
 
-### 双模型架构
+### 模型配置
 
-- **deep_thinking_model**: 复杂推理、工具调用
-- **quick_thinking_model**: 数据获取、简单分析
-- 模型路由器自动选择合适的模型
+在 `backend/src/vibe_trading/config/llm.yaml` 中定义所有可用模型（OpenAI / Anthropic / 各类 OpenAI 兼容端点），通过 `use_llm:` 或环境变量 `LLM_MODEL` 选择默认模型。模型加载逻辑在 `llm_config.py`，api_key 在运行时注入 Agent。
 
 ## 📖 详细文档
 
@@ -158,8 +158,8 @@ uv run test_historical.py  # 访问 http://localhost:8000
 本项目从以下项目汲取灵感：
 
 - [TradeAgents](https://github.com/TauricResearch/TradingAgents) - Agent协作架构
-- [pi_mono](https://github.com/badlogic/pi-mono) - Agent框架
-- [py_mono](https://github.com/encyc/py_mono) - Agent框架(个人Python复刻)
+- [pi](https://github.com/earendil-works/pi) - 原生 TS Agent 框架
+- [pi-py](https://github.com/encyc/pi-py) - pi 的 Python 复刻（本项目通过 PyPI 包 `pi-py-ai` / `pi-py-agent-core` 使用）
 
 ## ⚠️ 免责声明
 
