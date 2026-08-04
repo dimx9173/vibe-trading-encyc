@@ -12,7 +12,7 @@ import pytest
 from vibe_trading.agents.analysts.base_analyst import BaseAnalystAgent
 from vibe_trading.config.agent_config import AgentConfig, AgentRole
 from vibe_trading.coordinator.signal_processor import SignalProcessor
-from vibe_trading.tools.signal_parser import parse_decision
+from vibe_trading.tools.signal_parser import detect_strength, parse_decision, to_signal_enum
 
 
 # ---------------------------------------------------------------------------
@@ -36,7 +36,7 @@ from vibe_trading.tools.signal_parser import parse_decision
         ("Decision: STRONG_SELL\nRationale: x", "STRONG SELL"),
         ("Decision: SELL\nRationale: x", "SELL"),
         ("Decision: HOLD\nRationale: x", "HOLD"),
-        ("", "HOLD"),
+        # Empty string → UNKNOWN (covered by test_parse_decision_none_empty)
     ],
 )
 def test_parse_decision(text, expected):
@@ -181,6 +181,60 @@ def test_pm_weak_buy_no_longer_unknown(sp):
         f"PM WEAK_BUY must parse as BUY, got {result.signal.value!r}"
     )
     assert result.strength.value == "weak"
+
+
+# ---------------------------------------------------------------------------
+# Coverage gaps from claude review (NEEDS_FIX follow-ups)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("text", [None, ""])
+def test_parse_decision_none_empty(text):
+    """Empty/None input must return UNKNOWN sentinel (not HOLD), so the
+    signal_processor dead-code guard at _extract_signal_type becomes live."""
+    assert parse_decision(text) == "UNKNOWN"
+
+
+def test_parse_decision_strong_sell_hyphen():
+    assert parse_decision("Decision: STRONG-SELL") == "STRONG SELL"
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("保持不动，等突破", "HOLD"),
+        ("不确定，继续观察", "HOLD"),
+        ("保持仓位", "HOLD"),
+        ("觀望中", "HOLD"),
+    ],
+)
+def test_parse_decision_chinese_hold(text, expected):
+    assert parse_decision(text) == expected
+
+
+def test_parse_decision_multi_signal_ordering():
+    """When text mentions BUY before SELL, BUY must win (priority order)."""
+    assert parse_decision("BUY but reconsider SELL") == "BUY"
+
+
+def test_to_signal_enum_unknown_pass_through():
+    assert to_signal_enum("UNKNOWN") == "UNKNOWN"
+
+
+def test_detect_strength_hedge_plain_buy():
+    """Hedge words on plain BUY should downgrade to WEAK (regression for HIGH)."""
+    assert detect_strength("BUY but might be wrong") == "weak"
+    assert detect_strength("SELL possibly overreaction") == "weak"
+
+
+def test_detect_strength_strong_hedge_plain():
+    assert detect_strength("BUY clearly the right move") == "strong"
+    assert detect_strength("SELL strongly recommended") == "strong"
+
+
+def test_detect_strength_none_returns_uncertain():
+    assert detect_strength(None) == "uncertain"
+    assert detect_strength("") == "uncertain"
 
 
 # Avoid unused-import warning while keeping imports readable

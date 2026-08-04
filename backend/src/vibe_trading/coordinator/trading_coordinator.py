@@ -1166,22 +1166,9 @@ class TradingCoordinator:
         # 从响应中提取决策文本
         decision_text = pm_response.get("decision_text", "") if isinstance(pm_response, dict) else str(pm_response)
 
-        # 解析决策文本
-        # 统一处理底线/破折号/空格变体：PM 可能输出 WEAK_BUY / WEAK-BUY / WEAK BUY
-        text = decision_text.upper().replace("_", " ").replace("-", " ")
-        decision = "HOLD"
-        if "STRONG BUY" in text:
-            decision = "STRONG BUY"
-        elif "WEAK BUY" in text:
-            decision = "WEAK BUY"
-        elif "BUY" in text:
-            decision = "BUY"
-        elif "STRONG SELL" in text:
-            decision = "STRONG SELL"
-        elif "WEAK SELL" in text:
-            decision = "WEAK SELL"
-        elif "SELL" in text:
-            decision = "SELL"
+        # 解析决策文本 — 走共享 parser，与 signal_processor 保持一致
+        from vibe_trading.tools.signal_parser import parse_decision
+        decision = parse_decision(decision_text)
 
         return {
             "decision": decision,

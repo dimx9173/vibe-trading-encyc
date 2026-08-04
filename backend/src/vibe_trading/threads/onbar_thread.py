@@ -374,7 +374,11 @@ class OnBarThread:
             )
 
             # Execute trade if needed
-            if decision.decision in ["BUY", "SELL", "STRONG_BUY", "STRONG_SELL"]:
+            if decision.decision in [
+                "BUY", "SELL",
+                "STRONG BUY", "STRONG SELL",
+                "WEAK BUY", "WEAK SELL",
+            ]:
                 await self._execute_trade(decision)
 
         except Exception as e:
