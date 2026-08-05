@@ -679,6 +679,21 @@ class TradingCoordinator:
             logger.info(f"[信号处理] 提取信号: {processed_signal.signal.value} "
                        f"(置信度: {processed_signal.confidence:.2f}, 强度: {processed_signal.strength.value})")
 
+            # ========== 一致性防護：PM 明確聲明的決策欄位 vs parse 結果 ==========
+            try:
+                from vibe_trading.tools.signal_parser import _parse_field, to_signal_enum
+                declared = _parse_field(final_decision.get("rationale", ""))
+                if declared:
+                    declared_enum = to_signal_enum(declared)
+                    recorded_enum = processed_signal.signal.value
+                    if declared_enum != recorded_enum:
+                        logger.warning(
+                            f"[一致性] PM 明確聲明 {declared!r} ({declared_enum}) "
+                            f"但 parse 記錄 {recorded_enum} — 決策記錄可能不正確！"
+                        )
+            except Exception as _e:
+                logger.warning(f"[一致性] 檢查失敗: {_e}")
+
             # 2. 计算Agent贡献度
             # 转换 trading_plan 为字符串（可能是 TradingPlan 对象）
             trading_plan_str = str(trading_plan) if trading_plan else ""

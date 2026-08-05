@@ -374,12 +374,17 @@ class OnBarThread:
             )
 
             # Execute trade if needed
+            # 單一下單路徑：PM agent 在 LLM 回合內透過 submit_trade_order tool 下單
+            # （decision_agents prompt 明示 HOLD/WEAK_BUY/WEAK_SELL 不得呼叫下單 tool）。
+            # onbar 層只記錄，不再重複執行，避免雙路徑重複下單。
             if decision.decision in [
                 "BUY", "SELL",
                 "STRONG BUY", "STRONG SELL",
                 "WEAK BUY", "WEAK SELL",
             ]:
-                await self._execute_trade(decision)
+                logger.info(
+                    f"[執行層] 決策={decision.decision} — 下單由 PM agent 的 submit_trade_order tool 執行"
+                )
 
         except Exception as e:
             logger.error(f"Error in decision flow: {e}", exc_info=True)
