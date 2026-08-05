@@ -138,7 +138,7 @@ BINANCE_TESTNET_API_SECRET=your_testnet_api_secret_here
 BINANCE_API_KEY=your_mainnet_api_key_here
 BINANCE_API_SECRET=your_mainnet_api_secret_here
 
-# LLM 配置：名称对应 backend/src/pi_ai/llm.yaml
+# LLM 配置：名称对应 backend/src/vibe_trading/config/llm.yaml
 LLM_MODEL=glm_4_7
 OPENAI_API_KEY=your_openai_api_key_here
 
@@ -251,7 +251,7 @@ make start SYMBOL=BTCUSDT INTERVAL=30m
 <details>
 <summary><strong>LLM API 调用失败</strong></summary>
 
-检查 `.env` 文件中的 API Key 配置是否正确，或切换到 `backend/src/pi_ai/llm.yaml` 中已有的模型配置：
+检查 `.env` 文件中的 API Key 配置是否正确，或切换到 `backend/src/vibe_trading/config/llm.yaml` 中已有的模型配置：
 
 ```env
 # 选择 llm.yaml 中存在的配置

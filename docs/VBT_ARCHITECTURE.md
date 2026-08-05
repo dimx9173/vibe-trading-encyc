@@ -161,7 +161,7 @@ pi_agent_core (agent loop)  →  stream_fn  →  pi_ai (stream_simple_with_retry
 - ⚠️ 兩邊**各自定義同名的 `ToolCall` / `Message` / `AssistantMessage`**（一個 dataclass、一個 Pydantic）→ 跨 package `isinstance` 永遠 False（2026-08-04 修復：duck typing）
 - ⚠️ site-packages 的 pi_agent_core 是 copy 安裝 → 已 symlink 到 backend/src
 
-### 模型設定（`backend/src/pi_ai/llm.yaml`）
+### 模型設定（`backend/src/vibe_trading/config/llm.yaml`）
 - `use_llm: opencode_zen_deepseek_v4_flash`
 - base_url: `https://opencode.ai/zen/go/v1`（AsyncOpenAI 自動加 `/chat/completions`）
 - 多 config：openai_gpt4o、claude_sonnet4、gemini_pro、ollama、deepseek、opencode_zen 等
@@ -291,7 +291,7 @@ PENDING → ANALYZING → DEBATING → ASSESSING_RISK → PLANNING → EXECUTING
 
 | 配置 | 位置 | 說明 |
 |------|------|------|
-| LLM 模型 | `backend/src/pi_ai/llm.yaml` | use_llm + 多 config |
+| LLM 模型 | `backend/src/vibe_trading/config/llm.yaml` | use_llm + 多 config |
 | 環境變數 | `.env`（gitignored） | API keys、LLM_MODEL、BINANCE_* |
 | 系統設定 | `config/settings.py` | 讀 LLM_MODEL、debate_rounds 等 |
 | Agent 設定 | `config/agent_config.py` | AgentRole / AgentConfig |

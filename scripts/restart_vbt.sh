@@ -96,7 +96,7 @@ log "📦 .env loaded"
 LLM_MODEL_NAME="${LLM_MODEL:-}"
 [[ -n "$LLM_MODEL_NAME" ]] || die "LLM_MODEL 未設置於 .env" 2
 
-LLM_YAML="$PROJECT_DIR/backend/src/pi_ai/llm.yaml"
+LLM_YAML="$PROJECT_DIR/backend/src/vibe_trading/config/llm.yaml"
 if [[ ! -f "$LLM_YAML" ]]; then
     die "llm.yaml 不存在於 $LLM_YAML" 2
 fi

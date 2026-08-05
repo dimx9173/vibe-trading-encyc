@@ -32,7 +32,7 @@ DEBATE_ROUNDS=2
 ENABLE_MEMORY=true
 MEMORY_TOP_K=3
 
-# LLM 配置名称：对应 backend/src/pi_ai/llm.yaml
+# LLM 配置名称：对应 backend/src/vibe_trading/config/llm.yaml
 LLM_MODEL=glm_4_7
 
 # 按所选模型需要配置对应 API Key
@@ -61,11 +61,11 @@ DEBUG=false
 
 ## LLM 配置
 
-`LLM_MODEL` 不是直接填写供应商名称，而是填写 `backend/src/pi_ai/llm.yaml` 中的配置名，例如 `glm_4_7`、`iflow`、`longcat`、`gemini3_flash` 等。
+`LLM_MODEL` 不是直接填写供应商名称，而是填写 `backend/src/vibe_trading/config/llm.yaml` 中的配置名，例如 `glm_4_7`、`iflow`、`longcat`、`gemini3_flash` 等。
 
 切换模型时：
 
-1. 在 `backend/src/pi_ai/llm.yaml` 中确认配置名存在。
+1. 在 `backend/src/vibe_trading/config/llm.yaml` 中确认配置名存在。
 2. 在 `.env` 中设置 `LLM_MODEL=<配置名>`。
 3. 按该配置需要设置对应 API Key，例如 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GOOGLE_API_KEY`。
 
@@ -181,7 +181,7 @@ make web
 
 如果 LLM 调用失败，优先检查：
 
-1. `LLM_MODEL` 是否存在于 `backend/src/pi_ai/llm.yaml`。
+1. `LLM_MODEL` 是否存在于 `backend/src/vibe_trading/config/llm.yaml`。
 2. 该模型配置对应的 API Key 是否已经在 `.env` 中设置。
 3. 供应商额度、网络和 endpoint 是否正常。
 
