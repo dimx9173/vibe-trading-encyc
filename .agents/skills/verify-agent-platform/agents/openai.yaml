@@ -1,0 +1,4 @@
+interface:
+  display_name: "Verify Agent Platform"
+  short_description: "Verify Agent platform capabilities with concrete evidence"
+  default_prompt: "Use -agent-platform to verify this Agent platform and produce an evidence report."

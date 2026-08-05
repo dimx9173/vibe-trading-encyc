@@ -1,29 +1,76 @@
 """
 Pi Agent Core Tools 包装器
 
-将现有的tools函数包装成pi_agent_core框架的AgentTool格式
+将现有的tools函数包装成pi_agent_core框架的AgentTool格式（pi-py v0.83 Protocol）。
+
+pi-py 的 ``AgentTool`` 是一个 Protocol：类需提供 ``name`` / ``description`` /
+``parameters``(JSON Schema dict) / ``label`` / ``execution_mode`` 以及
+``async execute(self, tool_call_id, params, cancel_event, on_update) -> AgentToolResult``。
+
+本项目沿用既有的 (Pydantic 参数类, 异步 execute 函数) 写法，通过下方 ``_PyTool``
+适配器在运行时转换为 pi-py Protocol 工具。这样 24 个工具的业务逻辑零改动。
 """
+import asyncio
 import logging
-from typing import Any, Optional
+from typing import Any, Awaitable, Callable, Optional, Type
 from pydantic import BaseModel, Field
 
-from pi_agent_core import AgentTool, AgentToolResult
-from pi_agent_core.types import AgentToolSchema, TextContent
+from pi_agent_core import AgentToolResult
+from pi_ai import TextContent
 
 from vibe_trading.tools import market_data_tools, technical_tools, fundamental_tools, sentiment_tools
 
 logger = logging.getLogger(__name__)
 
 
-def _wrap_params(params_class: type[BaseModel]) -> AgentToolSchema:
-    """
-    Wrap a Pydantic BaseModel class as AgentToolSchema.
+class _PyTool:
+    """适配器：把 (Pydantic 参数类 + 异步 execute 函数) 包装为 pi-py AgentTool Protocol。
 
-    Installed pi_agent_core (now also vendored via sync) requires
-    `AgentTool.parameters` to be an `AgentToolSchema` instance, not a Pydantic
-    class. Convert via JSON schema + model_validate.
+    pi-py 在 agent_loop 中会把 LLM 返回的 dict 参数传给 ``execute`` 的 ``params``。
+    这里先用 Pydantic 类校验/解析，再委托给原 execute 函数（其签名仍为
+    ``(name, args: <Pydantic>, extra, callback) -> AgentToolResult``）。
     """
-    return AgentToolSchema.model_validate(params_class.model_json_schema())
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        description: str,
+        parameters: Type[BaseModel],
+        execute: Callable[..., Awaitable[AgentToolResult]],
+        label: str = "",
+    ) -> None:
+        self.name = name
+        self.label = label or name
+        self.description = description
+        # JSON Schema dict（pi-py 期望 dict，不是 Pydantic 类）
+        self.parameters = parameters.model_json_schema()
+        self.execution_mode = None
+        self._params_cls = parameters
+        self._execute_fn = execute
+
+    async def execute(
+        self,
+        tool_call_id: str,
+        params: Any,
+        cancel_event: Optional[asyncio.Event] = None,
+        on_update: Optional[Callable[[AgentToolResult], None]] = None,
+    ) -> AgentToolResult:
+        # params 来自 LLM（dict）；用 Pydantic 类做校验与默认值填充
+        if isinstance(params, dict):
+            args = self._params_cls(**params)
+        elif isinstance(params, self._params_cls):
+            args = params
+        else:
+            # 兜底：尝试强制构造，让 Pydantic 报错
+            args = self._params_cls.model_validate(params)
+        # 原 execute 签名：(name, args, extra, callback)
+        return await self._execute_fn(self.name, args, None, on_update)
+
+
+# 兼容别名：调用点仍可写 AgentTool(...)，实际构造 _PyTool。
+# （pi-py 的 AgentTool 是 Protocol，不能直接实例化。）
+AgentTool = _PyTool
 
 
 # =============================================================================

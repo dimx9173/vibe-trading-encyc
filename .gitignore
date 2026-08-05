@@ -32,7 +32,6 @@ env/
 *.sqlite
 *.sqlite3
 vibe_trading.db
-data/
 
 # Logs
 *.log
@@ -57,7 +56,10 @@ uv.lock
 # OS
 Thumbs.db
 .DS_Store
+# LLM 配置含明文 API key，禁止提交（仅跟踪 llm.yaml.example）
 backend/src/pi_ai/llm.yaml
+backend/src/vibe_trading/config/llm.yaml
+**/llm.yaml
 cache/
 
 test_*
@@ -65,23 +67,10 @@ docs/TECHNICAL_DOCUMENTATION.md
 test_*.py
 !tests/test_binance_trading.py
 !tests/test_execution_safety.py
-!tests/test_indicators.py
-!tests/test_risk_manager.py
-!tests/test_state_machine.py
-!tests/test_decision_journal_persistence.py
-!tests/test_backtest_engine.py
-!tests/integration/test_cycle_deadlock.py
-!backend/tests/test_agent_retry.py
-!backend/tests/test_negation_parser.py
-!backend/tests/test_paper_executor.py
 backend/test_*.py
 node_modules/*
 docs/node_modules/*
 docs/INTRO_ZHIHU*
 checkpoints/
 backtest_results/
-.worktree/
-
-# MemPalace per-project files (issue #185)
-mempalace.yaml
-entities.json
+.zcode/

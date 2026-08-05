@@ -1,0 +1,4 @@
+interface:
+  display_name: "Add MCP Profile"
+  short_description: "Add optional MCP Tools to an Agent platform"
+  default_prompt: "Use -mcp-profile to add an optional MCP integration to this Agent platform."

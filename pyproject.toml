@@ -1,14 +1,13 @@
 [project]
 name = "vibe-trading"
 version = "0.1.0"
-description = "Multi-agent cryptocurrency trading system using pi_agent_core"
-readme = "../README.md"
+description = "Multi-agent cryptocurrency trading system using pi-py (pi_agent_core + pi_ai)"
+readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    # Local packages
-    # (pi-agent-core removed — vendored at src/pi_agent_core/ is now in sync
-    #  with installed PyPI version. To avoid double-install/version drift,
-    #  vendored is the source of truth and shipped via the wheel.)
+    # pi-py (PyPI) — replaces the former vendored backend/src/pi_ai + pi_agent_core
+    "pi-py-ai>=0.83.0",
+    "pi-py-agent-core>=0.83.0",
     # Data sources
     "python-binance>=1.0.19",
     "websockets>=12.0",
@@ -44,7 +43,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/vibe_trading", "src/pi_agent_core", "src/pi_ai", "src/pi_logger"]
+packages = ["src/pi_logger", "src/vibe_trading"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src/"]

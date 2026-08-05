@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 from datetime import datetime
 
 from pi_agent_core import Agent, AgentOptions
-from pi_ai.config import get_model_from_config
+from vibe_trading.config.llm_config import get_model_from_config, make_get_api_key
 from pi_logger import get_logger
 
 from vibe_trading.config.agent_config import AgentConfig, AgentRole
@@ -106,13 +106,14 @@ Your analysis should help guide trading decisions by providing context about the
         
         # Get model
         model = get_model_from_config(self.config.model)
-        
+
         # Create agent with macro prompt
         agent_options = AgentOptions(
             initial_state={
                 "system_prompt": self._system_prompt,
                 "model": model,
-            }
+            },
+            get_api_key=make_get_api_key(),
         )
         
         self._agent = Agent(agent_options)

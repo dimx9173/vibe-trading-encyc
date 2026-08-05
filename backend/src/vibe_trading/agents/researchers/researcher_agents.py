@@ -7,7 +7,7 @@ import asyncio
 from typing import Dict, List, Optional
 
 from pi_agent_core import Agent, AgentOptions
-from pi_ai.config import get_model_from_config
+from vibe_trading.config.llm_config import get_model_from_config, make_get_api_key
 from pi_logger import get_logger
 
 from vibe_trading.config.agent_config import AgentConfig, AgentRole

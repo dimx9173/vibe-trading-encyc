@@ -490,20 +490,25 @@ except RuntimeError as e:
         raise
 ```
 
-### 5. 模型路由
+### 5. 模型选择
+
+> **迁移说明**：pi-py v0.83 移除了 `ModelRouter` / `pi_ai.model_router`。模型选择改为
+> 直接在构造 Agent 时传入 `Model` 实例（通过 `vibe_trading/config/llm_config.py` 的
+> `get_model_from_config(name)` 从 `llm.yaml` 加载）。api_key 通过
+> `AgentOptions(get_api_key=make_get_api_key())` 注入。
 
 ```python
-from pi_ai.model_router import ModelRouter
+from vibe_trading.config.llm_config import get_model_from_config, make_get_api_key
 
-router = ModelRouter()
-router.register("tools", get_model("openai", "gpt-4o"))
-router.register("no-tools", get_model("anthropic", "claude-haiku"))
+model = get_model_from_config("aliyun_glm_5")  # 从 llm.yaml 按名取 Model
 
 agent = Agent(AgentOptions(
     initial_state={
-        "model_router": router,
-        "model": router.get_model(has_tools=True)
-    }
+        "model": model,
+        "system_prompt": "...",
+        "tools": [...],
+    },
+    get_api_key=make_get_api_key(),
 ))
 ```
 
