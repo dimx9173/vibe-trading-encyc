@@ -4,6 +4,8 @@
 提供订单执行的抽象层，支持 Paper Trading 和 Binance 实盘。
 """
 import logging
+import json
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
@@ -110,12 +112,81 @@ class OrderExecutor(ABC):
 class PaperOrderExecutor(OrderExecutor):
     """Paper Trading 订单执行器"""
 
-    def __init__(self, initial_balance: float = 10000.0):
+    def __init__(
+        self,
+        initial_balance: float = 10000.0,
+        state_file: Optional[str] = None,
+        reset: bool = False,
+    ):
         self._positions: Dict[str, PaperPosition] = {}
         self._balance = initial_balance
         self._realized_pnl = 0.0  # 累計已實現盈虧（跨平倉保留，避免 del 後丟失）
         self._orders: Dict[str, OrderResult] = {}
         self._current_prices: Dict[str, float] = {}
+        self._state_file = state_file
+        if state_file and os.path.exists(state_file) and not reset:
+            self._load_state()
+        elif state_file and reset:
+            logger.info(
+                f"Paper account reset requested; starting fresh (balance={initial_balance})"
+            )
+
+    # ------------------------------------------------------------------
+    # 持久化：balance + positions + realized_pnl 跨重啟保留
+    # ------------------------------------------------------------------
+    def _load_state(self) -> None:
+        """從 state 檔還原帳戶狀態（balance / positions / realized_pnl）。"""
+        try:
+            with open(self._state_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self._balance = float(data.get("balance", self._balance))
+            self._realized_pnl = float(data.get("realized_pnl", 0.0))
+            for p in data.get("positions", []):
+                pos = PaperPosition(
+                    symbol=p["symbol"],
+                    position_side=PositionSide(p["position_side"]),
+                    entry_price=float(p["entry_price"]),
+                    quantity=float(p["quantity"]),
+                    leverage=int(p.get("leverage", 5)),
+                    realized_pnl=float(p.get("realized_pnl", 0.0)),
+                )
+                self._positions[f"{pos.symbol}_{pos.position_side.value}"] = pos
+            logger.info(
+                f"Paper state restored: balance={self._balance:.2f}, "
+                f"positions={len(self._positions)}, realized_pnl={self._realized_pnl:.2f}"
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to load paper state from {self._state_file}: {e}; starting fresh"
+            )
+
+    def _save_state(self) -> None:
+        """序列化帳戶狀態到 state 檔（atomic write）。"""
+        if not self._state_file:
+            return
+        try:
+            state = {
+                "balance": self._balance,
+                "realized_pnl": self._realized_pnl,
+                "positions": [
+                    {
+                        "symbol": pos.symbol,
+                        "position_side": pos.position_side.value,
+                        "entry_price": pos.entry_price,
+                        "quantity": pos.quantity,
+                        "leverage": pos.leverage,
+                        "realized_pnl": pos.realized_pnl,
+                    }
+                    for pos in self._positions.values()
+                ],
+            }
+            os.makedirs(os.path.dirname(self._state_file) or ".", exist_ok=True)
+            tmp = f"{self._state_file}.tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(state, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, self._state_file)
+        except Exception as e:
+            logger.warning(f"Failed to save paper state to {self._state_file}: {e}")
 
     def update_price(self, symbol: str, price: float) -> None:
         """更新当前价格（模拟市场价格）"""
@@ -254,6 +325,9 @@ class PaperOrderExecutor(OrderExecutor):
 
         self._orders[order_id] = result
         logger.info(f"Paper order placed: {side.value} {quantity} {symbol} @ {execution_price}")
+
+        # 每次成交後持久化帳戶狀態（跨重啟保留）
+        self._save_state()
 
         return result
 
@@ -418,18 +492,28 @@ class BinanceOrderExecutor(OrderExecutor):
         await self._client.close()
 
 
-def create_executor(mode: TradingMode = TradingMode.PAPER, dry_run: bool = False) -> OrderExecutor:
+def create_executor(
+    mode: TradingMode = TradingMode.PAPER,
+    dry_run: bool = False,
+    paper_state_file: Optional[str] = None,
+    reset_paper: bool = False,
+) -> OrderExecutor:
     """创建订单执行器
 
     Args:
         mode: 交易模式 (PAPER 或 LIVE)
         dry_run: 是否为dry-run模式 (仅打印订单不执行，仅适用于LIVE模式)
+        paper_state_file: paper 模式帳戶狀態檔路徑（跨重啟保留 balance/positions）
+        reset_paper: 為 True 時忽略 state 檔，從初始餘額重新開始
     """
     settings = get_settings()
 
     if mode == TradingMode.PAPER:
         logger.info("Creating Paper Trading executor")
-        return PaperOrderExecutor()
+        return PaperOrderExecutor(
+            state_file=paper_state_file,
+            reset=reset_paper,
+        )
     elif mode == TradingMode.TESTNET:
         if not settings.binance_testnet_api_key or not settings.binance_testnet_api_secret:
             raise ValueError("BINANCE_TESTNET_API_KEY and BINANCE_TESTNET_API_SECRET are required for testnet trading")

@@ -25,6 +25,8 @@ SYMBOL="${SYMBOL:-BTCUSDT}"
 INTERVAL="${INTERVAL:-30m}"
 MODE="${MODE:-testnet}"
 WEB_PORT="${WEB_PORT:-8001}"
+PAPER_STATE="${PAPER_STATE:-}"
+RESET_PAPER="${RESET_PAPER:-0}"
 GRACEFUL_TIMEOUT="${GRACEFUL_TIMEOUT:-10}"
 
 # --- helpers ---
@@ -111,8 +113,20 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 LOG_FILE="$LOG_DIR/vbt_restart_${TIMESTAMP}.log"
 
 log "🚀 啟動新 vibe-trade..."
-log "   args: --start $SYMBOL --interval $INTERVAL --mode $MODE --web --web-port $WEB_PORT"
+log "   args: --start $SYMBOL --interval $INTERVAL --mode $MODE --web --web-port $WEB_PORT $([ "$RESET_PAPER" = 1 ] && echo '--reset-paper') $([ -n "$PAPER_STATE" ] && echo "--paper-state $PAPER_STATE")"
 log "   log:  $LOG_FILE"
+
+# 組 paper 持久化參數
+PAPER_ARGS=()
+if [[ -n "$PAPER_STATE" ]]; then
+    PAPER_ARGS+=(--paper-state "$PAPER_STATE")
+fi
+if [[ "$RESET_PAPER" == "1" ]]; then
+    PAPER_ARGS+=(--reset-paper)
+    log "♻️  RESET_PAPER=1: 將重置 paper 帳戶（忽略狀態檔）"
+else
+    log "💾 Paper 帳戶狀態將自動還原（帶 RESET_PAPER=1 才重置）"
+fi
 
 cd "$PROJECT_DIR"
 # 用 setsid 讓 vibe-trade 進入自己的 session，避免 exec session 清理時被 SIGTERM 波及
@@ -121,6 +135,7 @@ setsid nohup "$PROJECT_DIR/backend/.venv/bin/vibe-trade" start "$SYMBOL" \
     --mode "$MODE" \
     --web \
     --web-port "$WEB_PORT" \
+    "${PAPER_ARGS[@]}" \
     > "$LOG_FILE" 2>&1 &
 
 NEW_PID=$!

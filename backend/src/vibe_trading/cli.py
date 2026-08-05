@@ -10,6 +10,8 @@ import asyncio
 from enum import Enum
 from typing import List
 
+from pathlib import Path
+
 import typer
 from rich.console import Console
 from rich.panel import Panel
@@ -75,6 +77,12 @@ def start(
     save_logs: bool = typer.Option(True, help="--save-logs/--no-save-logs: 是否保存日志到文件 (默认保存到 logs/ 目录)"),
     web: bool = typer.Option(False, help="--web: 启动 Web 监控界面 (默认端口 8000)"),
     web_port: int = typer.Option(8000, help="--web-port: Web 监控界面端口"),
+    paper_state: str = typer.Option(
+        "", help="paper 模式账户状态文件路径 (默认 data/paper_account.json，跨重启保留 balance/持仓)"
+    ),
+    reset_paper: bool = typer.Option(
+        False, "--reset-paper", help="重置 paper 账户 (忽略状态文件，从初始余额重新开始)"
+    ),
 ):
     """
     启动三线程交易系统
@@ -160,7 +168,7 @@ def start(
     if len(symbols) > 1:
         warning(f"多交易对模式: 使用 {primary_symbol} 作为主symbol，其他symbol暂不支持", tag="INFO")
 
-    executor = create_execution_executor(trading_mode, execute)
+    executor = create_execution_executor(trading_mode, execute, paper_state, reset_paper)
 
     # 运行三线程系统
     asyncio.run(run_multi_thread_system(
@@ -175,10 +183,24 @@ def start(
     ))
 
 
-def create_execution_executor(mode: TradingMode, execute: bool):
+def create_execution_executor(
+    mode: TradingMode,
+    execute: bool,
+    paper_state: str = "",
+    reset_paper: bool = False,
+):
     """Create the executor bound to Portfolio Manager tools."""
     if mode == TradingMode.PAPER:
-        return create_executor(ExecutorTradingMode.PAPER)
+        state_file = paper_state or str(
+            Path(__file__).resolve().parent.parent.parent.parent
+            / "data"
+            / "paper_account.json"
+        )
+        return create_executor(
+            ExecutorTradingMode.PAPER,
+            paper_state_file=state_file,
+            reset_paper=reset_paper,
+        )
     if mode == TradingMode.TESTNET:
         return create_executor(ExecutorTradingMode.TESTNET, dry_run=False)
     if not execute:
