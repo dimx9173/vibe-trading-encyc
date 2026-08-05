@@ -179,11 +179,17 @@ pi_agent_core (agent loop)  →  stream_fn  →  pi_ai (stream_simple_with_retry
 ### OrderExecutor 抽象（`order_executor.py`）
 ```
 OrderExecutor (ABC)
-├── PaperOrderExecutor      # 模擬交易，order_id 前綴 paper_，寫入 DB
+├── PaperOrderExecutor      # 模擬交易，order_id 前綴 paper_，寫入 DB + JSON state 檔
 └── BinanceOrderExecutor    # 真交易所（testnet/live），dry_run 可只印
 ```
-- `create_executor(mode, dry_run)`：paper → PaperOrderExecutor；testnet → Binance(testnet=True, dry_run)；live → Binance(dry_run)
+- `create_executor(mode, dry_run, paper_state_file, reset_paper)`：paper → PaperOrderExecutor；testnet → Binance(testnet=True, dry_run)；live → Binance(dry_run)
 - ⚠️ testnet 沒 `--execute` 時 dry_run=True → **只印不執行**（之前 5 根 BUY 沒成交的原因）
+
+### Paper 帳本（2026-08-05 起，`d140d36` `8abb462`）
+- **真實保證金帳本**：BUY 扣保證金（notional/leverage）、SELL 退還原保證金 + 結算 realized_pnl
+- **realized_pnl 在 executor 層級累計**：全平倉 `del` 後不丟失
+- **跨重啟持久化**：state 檔（預設 `data/paper_account.json`）存 balance/positions/realized_pnl，啟動自動還原；`--reset-paper`（或 `RESET_PAPER=1`）才重置
+- 詳見 `docs/VBT_PAPER_LEDGER_FIX_2026-08-05.md`
 
 ### PositionManager（`position_manager.py`）
 - 持倉追蹤：update_positions / get_positions / close_position
