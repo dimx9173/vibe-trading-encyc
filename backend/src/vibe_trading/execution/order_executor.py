@@ -113,6 +113,7 @@ class PaperOrderExecutor(OrderExecutor):
     def __init__(self, initial_balance: float = 10000.0):
         self._positions: Dict[str, PaperPosition] = {}
         self._balance = initial_balance
+        self._realized_pnl = 0.0  # 累計已實現盈虧（跨平倉保留，避免 del 後丟失）
         self._orders: Dict[str, OrderResult] = {}
         self._current_prices: Dict[str, float] = {}
 
@@ -161,31 +162,79 @@ class PaperOrderExecutor(OrderExecutor):
             pos_key = f"{symbol}_{position_side.value}"
 
             if side == OrderSide.BUY:
-                if pos_key in self._positions:
-                    # 加仓
+                if position_side == PositionSide.SHORT and pos_key in self._positions:
+                    # 平空仓：BUY + SHORT
+                    pos = self._positions[pos_key]
+                    close_qty = min(quantity, pos.quantity)
+                    realized = (pos.entry_price - execution_price) * close_qty
+                    pos.realized_pnl += realized
+                    self._realized_pnl += realized
+                    self._balance += (
+                        pos.entry_price * close_qty / pos.leverage + realized
+                    )
+                    pos.quantity -= close_qty
+                    if pos.quantity <= 0:
+                        del self._positions[pos_key]
+                else:
+                    # 开/加多仓：BUY + LONG
+                    if pos_key in self._positions:
+                        # 加仓
+                        self._positions[pos_key].quantity += quantity
+                        avg_price = (
+                            self._positions[pos_key].entry_price * (self._positions[pos_key].quantity - quantity)
+                            + execution_price * quantity
+                        ) / self._positions[pos_key].quantity
+                        self._positions[pos_key].entry_price = avg_price
+                    else:
+                        # 新建仓位
+                        self._positions[pos_key] = PaperPosition(
+                            symbol=symbol,
+                            position_side=position_side,
+                            entry_price=execution_price,
+                            quantity=quantity,
+                        )
+                    # 扣保证金（名义价值 / 杠杆）
+                    self._balance -= (
+                        execution_price * quantity / self._positions[pos_key].leverage
+                    )
+            else:
+                # SELL
+                if position_side == PositionSide.LONG and pos_key in self._positions:
+                    # 平多仓：SELL + LONG
+                    pos = self._positions[pos_key]
+                    close_qty = min(quantity, pos.quantity)
+                    realized = (execution_price - pos.entry_price) * close_qty
+                    pos.realized_pnl += realized
+                    self._realized_pnl += realized
+                    # 退回原保证金（按开仓价计算）+ 已实现盈亏入账
+                    self._balance += (
+                        pos.entry_price * close_qty / pos.leverage + realized
+                    )
+                    pos.quantity -= close_qty
+                    if pos.quantity <= 0:
+                        del self._positions[pos_key]
+                elif pos_key in self._positions:
+                    # 空仓加仓：SELL + SHORT
                     self._positions[pos_key].quantity += quantity
                     avg_price = (
                         self._positions[pos_key].entry_price * (self._positions[pos_key].quantity - quantity)
                         + execution_price * quantity
                     ) / self._positions[pos_key].quantity
                     self._positions[pos_key].entry_price = avg_price
-                else:
-                    # 新建仓位
+                    self._balance -= (
+                        execution_price * quantity / self._positions[pos_key].leverage
+                    )
+                elif position_side == PositionSide.SHORT:
+                    # 新建空仓：SELL + SHORT
                     self._positions[pos_key] = PaperPosition(
                         symbol=symbol,
                         position_side=position_side,
                         entry_price=execution_price,
                         quantity=quantity,
                     )
-            else:
-                # 平仓
-                if pos_key in self._positions:
-                    pos = self._positions[pos_key]
-                    pos.realized_pnl += pos.unrealized_pnl
-                    pos.quantity -= quantity
-
-                    if pos.quantity <= 0:
-                        del self._positions[pos_key]
+                    self._balance -= (
+                        execution_price * quantity / self._positions[pos_key].leverage
+                    )
                 else:
                     logger.warning(f"No position to close for {pos_key}")
 
@@ -241,16 +290,15 @@ class PaperOrderExecutor(OrderExecutor):
         return positions
 
     async def get_balance(self) -> Dict[str, float]:
-        """获取余额"""
+        """获取余额（真实账本：现金余额已含已实现盈亏，realized 跨平仓保留）"""
         total_unrealized_pnl = sum(pos.unrealized_pnl for pos in self._positions.values())
-        total_realized_pnl = sum(pos.realized_pnl for pos in self._positions.values())
 
         return {
             "USDT": {
-                "balance": self._balance + total_realized_pnl,
-                "available": self._balance + total_realized_pnl + total_unrealized_pnl,
+                "balance": self._balance,
+                "available": self._balance + total_unrealized_pnl,
                 "unrealized_pnl": total_unrealized_pnl,
-                "realized_pnl": total_realized_pnl,
+                "realized_pnl": self._realized_pnl,
             }
         }
 

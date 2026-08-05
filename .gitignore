@@ -73,6 +73,7 @@ test_*.py
 !tests/integration/test_cycle_deadlock.py
 !backend/tests/test_agent_retry.py
 !backend/tests/test_negation_parser.py
+!backend/tests/test_paper_executor.py
 backend/test_*.py
 node_modules/*
 docs/node_modules/*
