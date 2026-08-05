@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from pi_agent_core.types import AssistantMessage, TextContent
+from pi_ai import AssistantMessage, TextContent
 
 from vibe_trading.agents.analysts.base_analyst import BaseAnalystAgent
 from vibe_trading.agents.analysts.technical_analyst import TechnicalAnalystAgent
