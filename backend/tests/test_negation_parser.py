@@ -67,3 +67,29 @@ def test_negation_pm_full_decision_flow(sp):
     assert result.signal.value == "HOLD", (
         f"PM 最終決策 HOLD 被誤判成 {result.signal.value!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# 審查邊界案例（claude review NEEDS_FIX round 2）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        # 誤傷防護：否定詞不該誤遮罩真 BUY
+        ("avoiding risk, BUY at 64k is my call", "BUY"),
+        ("I see no upside. BUY signal is strong though", "BUY"),
+        ("The risk is avoidable and BUY at 64k is my call", "BUY"),
+        # 中文否定詞補齊
+        ("不用买入", "HOLD"),
+        ("不做空", "HOLD"),
+        ("不买", "HOLD"),
+        ("不能开多", "HOLD"),
+        # 欄位優先 + 貪婪跨度防護
+        ("Final Decision: HOLD despite SELL pressure", "HOLD"),
+        ("最终决策：BUY。虽然有人看空，但我否决SELL建议。", "BUY"),
+    ],
+)
+def test_review_edge_cases(sp, text, expected):
+    assert parse_decision(text) == expected, f"text={text!r}"

@@ -679,10 +679,13 @@ class TradingCoordinator:
             logger.info(f"[信号处理] 提取信号: {processed_signal.signal.value} "
                        f"(置信度: {processed_signal.confidence:.2f}, 强度: {processed_signal.strength.value})")
 
-            # ========== 一致性防護：PM 明確聲明的決策欄位 vs parse 結果 ==========
+            # ========== 一致性防護：PM 明確聲明 vs 全文掃描（Fix C 重寫） ==========
+            # parse_decision 優先回傳明確欄位，若欄位存在則恆等 — 必須用
+            # 「不含欄位短路的全文掃描」比對，才能抓到欄位-missing 時的誤判。
             try:
-                from vibe_trading.tools.signal_parser import _parse_field, to_signal_enum
-                declared = _parse_field(final_decision.get("rationale", ""))
+                from vibe_trading.tools.signal_parser import _parse_field, _scan_full, to_signal_enum
+                rationale = final_decision.get("rationale", "")
+                declared = _parse_field(rationale)
                 if declared:
                     declared_enum = to_signal_enum(declared)
                     recorded_enum = processed_signal.signal.value
@@ -690,6 +693,14 @@ class TradingCoordinator:
                         logger.warning(
                             f"[一致性] PM 明確聲明 {declared!r} ({declared_enum}) "
                             f"但 parse 記錄 {recorded_enum} — 決策記錄可能不正確！"
+                        )
+                else:
+                    # 無明確欄位 → 檢查全文掃描結果與記錄是否一致
+                    full = to_signal_enum(_scan_full(rationale))
+                    if full != processed_signal.signal.value:
+                        logger.warning(
+                            f"[一致性] 無明確欄位，全文掃描={full} 但記錄="
+                            f"{processed_signal.signal.value} — 可能漏判！"
                         )
             except Exception as _e:
                 logger.warning(f"[一致性] 檢查失敗: {_e}")
@@ -716,6 +727,22 @@ class TradingCoordinator:
             )
 
             logger.info(f"[质量跟踪] 决策已记录: {decision_id}")
+
+            # ========== 執行對帳（Fix B 安全網）：決策=BUY/SELL 但該 bar 無訂單 → warning ==========
+            # 下單單一路徑是 PM agent 呼叫 submit_trade_order tool；若 LLM 漏呼叫，
+            # 這裡會抓出來（避免「PM 說買但靜默沒單」）。
+            try:
+                trade_decision = processed_signal.signal.value in ("BUY", "SELL")
+                if trade_decision and self._tool_context.order_audit is not None:
+                    trace = await self._tool_context.order_audit.get_trace(decision_id)
+                    has_order = bool(trace and trace.get("orders"))
+                    if not has_order:
+                        logger.warning(
+                            f"[執行對帳] 決策={processed_signal.signal.value} 但 decision_id={decision_id} "
+                            f"無任何訂單 — PM agent 可能漏呼叫 submit_trade_order tool！"
+                        )
+            except Exception as _e:
+                logger.warning(f"[執行對帳] 檢查失敗: {_e}")
 
             # 5. 保存决策ID和信号供后续反思使用
             self._last_decision_id = decision_id
