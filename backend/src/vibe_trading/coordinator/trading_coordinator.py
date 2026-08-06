@@ -728,18 +728,26 @@ class TradingCoordinator:
 
             logger.info(f"[质量跟踪] 决策已记录: {decision_id}")
 
-            # ========== 執行對帳（Fix B 安全網）：決策=BUY/SELL 但該 bar 無訂單 → warning ==========
-            # 下單單一路徑是 PM agent 呼叫 submit_trade_order tool；若 LLM 漏呼叫，
-            # 這裡會抓出來（避免「PM 說買但靜默沒單」）。
+            # ========== 執行對帳 + 保險（Fix B 安全網升級）：決策=BUY/SELL 但該 bar 無訂單 → coordinator 自動執行 ==========
+            # 下單優先路徑是 PM agent 呼叫 submit_trade_order tool；若 LLM 漏呼叫，
+            # coordinator 保險在 code 層補執行（避免「PM 說買但靜默沒單」）。
+            # 查詢 key 用 current_trace_id（與 submit_trade_order 記錄一致），
+            # 避免 decision_id 格式不同導致誤報。
             try:
                 trade_decision = processed_signal.signal.value in ("BUY", "SELL")
                 if trade_decision and self._tool_context.order_audit is not None:
-                    trace = await self._tool_context.order_audit.get_trace(decision_id)
+                    trace_id = self._tool_context.current_trace_id or decision_id
+                    trace = await self._tool_context.order_audit.get_trace(trace_id)
                     has_order = bool(trace and trace.get("orders"))
                     if not has_order:
                         logger.warning(
-                            f"[執行對帳] 決策={processed_signal.signal.value} 但 decision_id={decision_id} "
-                            f"無任何訂單 — PM agent 可能漏呼叫 submit_trade_order tool！"
+                            f"[執行對帳] 決策={processed_signal.signal.value} 但 trace_id={trace_id} "
+                            f"無任何訂單 — PM agent 可能漏呼叫 submit_trade_order tool，啟動 coordinator 保險..."
+                        )
+                        await self._auto_execute_insurance(
+                            decision_id=decision_id,
+                            signal_value=processed_signal.signal.value,
+                            trading_plan=trading_plan,
                         )
             except Exception as _e:
                 logger.warning(f"[執行對帳] 檢查失敗: {_e}")
@@ -1227,6 +1235,76 @@ class TradingCoordinator:
     def get_decision_history(self) -> List[TradingDecision]:
         """获取决策历史"""
         return self._decision_history.copy()
+
+    async def _auto_execute_insurance(
+        self,
+        decision_id: str,
+        signal_value: str,
+        trading_plan: Optional[TradingPlan],
+    ) -> Optional[dict]:
+        """coordinator 層保險：PM 決策 BUY/SELL 但未呼叫 submit_trade_order tool 時自動執行。
+
+        重用 submit_trade_order tool 的完整執行鏈（風控 → exchange filter → executor → audit），
+        確保與 PM 主動呼叫走同一路徑、風控仍是最終把關。
+
+        Returns:
+            order details dict（含 status/order_id）；無法執行時回傳 None。
+        """
+        try:
+            if trading_plan is None:
+                logger.warning(f"[執行保險] trading_plan 為 None，無法自動執行 decision={decision_id}")
+                return None
+
+            entry_orders = getattr(trading_plan, "entry_orders", None) or []
+            if not entry_orders:
+                logger.warning(f"[執行保險] trading_plan 無 entry_orders，無法自動執行 decision={decision_id}")
+                return None
+
+            entry = entry_orders[0]
+            order_type = str(entry.get("order_type", "market")).upper()
+            quantity = entry.get("size_coin") or getattr(trading_plan, "total_position_coin", None)
+            if not quantity:
+                logger.warning(f"[執行保險] 無法取得 quantity，跳過自動執行 decision={decision_id}")
+                return None
+
+            position_side = getattr(trading_plan, "position_side", None)
+            position_side_str = getattr(position_side, "value", None) or str(position_side or "BOTH")
+
+            stop_price = None
+            stop_loss_orders = getattr(trading_plan, "stop_loss_orders", None) or []
+            if stop_loss_orders:
+                stop_price = stop_loss_orders[0].get("trigger_price")
+
+            from vibe_trading.agents.agent_tools import (
+                create_submit_trade_order_tool,
+                SubmitTradeOrderParams,
+            )
+
+            params = SubmitTradeOrderParams(
+                symbol=self.symbol,
+                side=signal_value,
+                order_type=order_type,
+                quantity=quantity,
+                position_side=position_side_str,
+                price=entry.get("price") if order_type == "LIMIT" else None,
+                reference_price=entry.get("price"),
+                stop_price=stop_price,
+                reduce_only=False,
+                rationale=f"coordinator 保險自動執行（PM 未呼叫 submit_trade_order tool, decision={decision_id}）",
+            )
+
+            tool = create_submit_trade_order_tool(self._tool_context)
+            result = await tool.execute(f"insurance_{decision_id}", params)
+            details = getattr(result, "details", None) or {}
+            status = details.get("status", "UNKNOWN")
+            logger.info(
+                f"[執行保險] 自動執行完成 decision={decision_id} status={status} "
+                f"order_id={details.get('order_id')}"
+            )
+            return details
+        except Exception as e:
+            logger.warning(f"[執行保險] 自動執行失敗 decision={decision_id}: {e}", exc_info=True)
+            return None
 
     async def on_new_kline(self, kline) -> None:
         """
