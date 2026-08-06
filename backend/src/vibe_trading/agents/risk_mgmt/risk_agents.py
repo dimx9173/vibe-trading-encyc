@@ -16,6 +16,7 @@ from vibe_trading.config.prompts import (
     CONSERVATIVE_DEBATOR_PROMPT,
 )
 from vibe_trading.config.settings import get_settings
+from vibe_trading.agents.llm_content import extract_text
 from vibe_trading.agents.agent_factory import ToolContext, setup_streaming
 
 logger = get_logger(__name__)
@@ -45,6 +46,7 @@ class RiskAnalystAgent:
         self._tool_context = tool_context
 
         # ========== 改进: 使用create_trading_agent以获得tools支持 ==========
+        from vibe_trading.agents.llm_content import extract_text
         from vibe_trading.agents.agent_factory import create_trading_agent
 
         self._agent = await create_trading_agent(
@@ -107,7 +109,7 @@ As a {self.config.name}, please provide:
             if last_assistant:
                 content = last_assistant[-1].content
                 if isinstance(content, list):
-                    response = "".join(getattr(c, "text", str(c)) for c in content)
+                    response = extract_text(content)
                 else:
                     response = str(content)
                 

@@ -790,9 +790,12 @@ class TradingCoordinator:
                 if inner is None:
                     continue
                 try:
-                    inner._state.is_streaming = False
+                    inner.reset()
                 except Exception:
-                    pass
+                    try:
+                        inner._state.is_streaming = False
+                    except Exception:
+                        pass
         for attr in ("_trader", "_portfolio_manager"):
             wrapper = getattr(self, attr, None)
             if wrapper is None:
@@ -801,9 +804,12 @@ class TradingCoordinator:
             if inner is None:
                 continue
             try:
-                inner._state.is_streaming = False
+                inner.reset()
             except Exception:
-                pass
+                try:
+                    inner._state.is_streaming = False
+                except Exception:
+                    pass
 
     def _log_improvements_stats(self, elapsed: float, stats: dict) -> None:
         """输出改进工具统计信息"""

@@ -16,6 +16,7 @@ from vibe_trading.config.prompts import (
     SENTIMENT_ANALYST_PROMPT,
 )
 from vibe_trading.config.settings import get_settings
+from vibe_trading.agents.llm_content import extract_text, get_agent_error, RETRY_COMPENSATORY_PROMPT
 from vibe_trading.agents.agent_factory import ToolContext
 
 logger = get_logger(__name__)
@@ -44,6 +45,7 @@ class BaseAnalystAgent:
         self._tool_context = tool_context
 
         # ========== 改进: 使用create_trading_agent以获得tools支持 ==========
+        from vibe_trading.agents.llm_content import extract_text, get_agent_error, RETRY_COMPENSATORY_PROMPT
         from vibe_trading.agents.agent_factory import create_trading_agent
 
         self._agent = await create_trading_agent(
@@ -69,8 +71,16 @@ class BaseAnalystAgent:
         max_attempts = 3
         last_detail = ""
         for attempt in range(1, max_attempts + 1):
+            # P1: 重試時重置 state（防 context 累積）+ 注入補償 prompt
+            attempt_prompt = prompt
+            if attempt > 1:
+                try:
+                    self._agent.reset()
+                except Exception:
+                    pass
+                attempt_prompt = prompt + RETRY_COMPENSATORY_PROMPT
             # 执行分析
-            await self._agent.prompt(prompt)
+            await self._agent.prompt(attempt_prompt)
 
             # 获取响应
             messages = self._agent.state.messages
@@ -80,11 +90,11 @@ class BaseAnalystAgent:
                 if last_assistant:
                     content = last_assistant[-1].content
                     if isinstance(content, list):
-                        response = "".join(getattr(c, "text", str(c)) for c in content)
+                        response = extract_text(content)
                     else:
                         response = str(content)
 
-            agent_error = getattr(getattr(self._agent, "state", None), "error", None)
+            agent_error = get_agent_error(self._agent)
             if agent_error:
                 last_detail = str(agent_error)
                 logger.warning(
@@ -96,7 +106,7 @@ class BaseAnalystAgent:
                 logger.info(f"{self.config.name} Analysis: {response}", tag="Analyst")
                 return response
             else:
-                last_detail = "empty response"
+                last_detail = last_detail or "empty response"
                 logger.warning(
                     f"{self.config.name} 空響應 (attempt {attempt}/{max_attempts})",
                     tag="Analyst",
@@ -182,7 +192,7 @@ class BaseAnalystAgent:
             if last_assistant:
                 content = last_assistant[-1].content
                 if isinstance(content, list):
-                    return "".join(getattr(c, "text", str(c)) for c in content)
+                    return extract_text(content)
                 return str(content)
 
         return "Analysis failed - no response from agent"

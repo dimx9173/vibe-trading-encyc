@@ -13,6 +13,7 @@ from pi_logger import get_logger
 from vibe_trading.config.agent_config import AgentConfig, AgentRole
 from vibe_trading.config.prompts import PORTFOLIO_MANAGER_PROMPT
 from vibe_trading.config.settings import get_settings
+from vibe_trading.agents.llm_content import extract_text, get_agent_error
 from vibe_trading.agents.agent_factory import ToolContext, setup_streaming
 from vibe_trading.agents.decision.trading_tools import (
     PositionSizeCalculator,
@@ -52,6 +53,7 @@ class TraderAgent:
         self._tool_context = tool_context
 
         # ========== 改进: 使用create_trading_agent以获得tools支持 ==========
+        from vibe_trading.agents.llm_content import extract_text, get_agent_error
         from vibe_trading.agents.agent_factory import create_trading_agent
         from vibe_trading.config.agent_config import AgentConfig
 
@@ -205,7 +207,7 @@ class TraderAgent:
             if last_assistant:
                 content = last_assistant[-1].content
                 if isinstance(content, list):
-                    llm_response = "".join(getattr(c, "text", str(c)) for c in content)
+                    llm_response = extract_text(content)
                 else:
                     llm_response = str(content)
                 trading_plan.execution_notes.append(f"\nLLM分析:\n{llm_response}")
@@ -487,7 +489,7 @@ class PortfolioManagerAgent:
             if last_assistant:
                 content = last_assistant[-1].content
                 if isinstance(content, list):
-                    decision_text = "".join(getattr(c, "text", str(c)) for c in content)
+                    decision_text = extract_text(content)
                 else:
                     decision_text = str(content)
                 

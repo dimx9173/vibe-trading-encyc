@@ -237,9 +237,12 @@ class SimplifiedTradingCoordinator:
             if inner is None:
                 continue
             try:
-                inner._state.is_streaming = False
+                inner.reset()
             except Exception:
-                pass
+                try:
+                    inner._state.is_streaming = False
+                except Exception:
+                    pass
 
     async def _prepare_context(self, current_price: float) -> TradingContext:
         """Prepare trading context"""

@@ -17,6 +17,7 @@ from vibe_trading.config.prompts import (
     RESEARCH_MANAGER_PROMPT,
 )
 from vibe_trading.config.settings import get_settings
+from vibe_trading.agents.llm_content import extract_text, get_agent_error, RETRY_COMPENSATORY_PROMPT
 from vibe_trading.agents.agent_factory import ToolContext, setup_streaming
 from vibe_trading.agents.researchers.debate_analyzer import (
     ArgumentExtractor,
@@ -53,6 +54,7 @@ class ResearcherAgent:
         self._tool_context = tool_context
 
         # ========== 改进: 使用create_trading_agent以获得tools支持 ==========
+        from vibe_trading.agents.llm_content import extract_text, get_agent_error, RETRY_COMPENSATORY_PROMPT
         from vibe_trading.agents.agent_factory import create_trading_agent
         from vibe_trading.config.agent_config import AgentConfig
 
@@ -100,7 +102,16 @@ class ResearcherAgent:
             max_attempts = 3
             last_detail = ""
             for attempt in range(1, max_attempts + 1):
-                await self._agent.prompt(prompt)
+                # P1: 重試時重置 state（防 context 累積）+ 注入補償 prompt
+                attempt_prompt = prompt
+                if attempt > 1:
+                    try:
+                        self._agent.reset()
+                    except Exception:
+                        pass
+                    attempt_prompt = prompt + RETRY_COMPENSATORY_PROMPT
+
+                await self._agent.prompt(attempt_prompt)
 
                 # 获取响应
                 messages = self._agent.state.messages
@@ -110,11 +121,11 @@ class ResearcherAgent:
                     if last_assistant:
                         content = last_assistant[-1].content
                         if isinstance(content, list):
-                            response = "".join(getattr(c, "text", str(c)) for c in content)
+                            response = extract_text(content)
                         else:
                             response = str(content)
 
-                agent_error = getattr(getattr(self._agent, "state", None), "error", None)
+                agent_error = get_agent_error(self._agent)
                 if agent_error:
                     last_detail = str(agent_error)
                 elif response and response.strip():
@@ -126,7 +137,7 @@ class ResearcherAgent:
                         )
                     return response
                 else:
-                    last_detail = "empty response"
+                    last_detail = last_detail or "empty response"
 
                 logger.warning(
                     f"{self.config.name} 回應失敗 (attempt {attempt}/{max_attempts}): {last_detail}",
@@ -254,6 +265,7 @@ class ResearchManagerAgent:
         self._tool_context = tool_context
 
         # ========== 改进: 使用create_trading_agent以获得tools支持 ==========
+        from vibe_trading.agents.llm_content import extract_text, get_agent_error, RETRY_COMPENSATORY_PROMPT
         from vibe_trading.agents.agent_factory import create_trading_agent
 
         self._agent = await create_trading_agent(
@@ -327,7 +339,7 @@ class ResearchManagerAgent:
                 if last_assistant:
                     content = last_assistant[-1].content
                     if isinstance(content, list):
-                        decision_text = "".join(getattr(c, "text", str(c)) for c in content)
+                        decision_text = extract_text(content)
                     else:
                         decision_text = str(content)
 

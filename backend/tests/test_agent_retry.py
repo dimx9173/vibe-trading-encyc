@@ -32,7 +32,8 @@ _SLEEP_PATCH = patch("asyncio.sleep", new=AsyncMock(return_value=None))
 class FakeState:
     def __init__(self, error=None):
         self.messages = []
-        self.error = error
+        # 真实 AgentState 的字段是 error_message（state.error 不存在）
+        self.error_message = error
 
 
 class FakeAgent:
@@ -42,6 +43,11 @@ class FakeAgent:
         self._responses = list(responses)
         self.state = FakeState(error=error)
         self.prompt_calls = 0
+
+    def reset(self):
+        """P1: 重試時重置 state（清 messages）。"""
+        self.state.messages = []
+        self.state.error_message = None
 
     async def prompt(self, prompt):
         self.prompt_calls += 1

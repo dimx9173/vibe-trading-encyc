@@ -12,6 +12,7 @@ from pi_logger import get_logger
 from vibe_trading.config.agent_config import AgentConfig, AgentRole
 from vibe_trading.config.prompts import TECHNICAL_ANALYST_PROMPT
 from vibe_trading.config.settings import get_settings
+from vibe_trading.agents.llm_content import extract_text, get_agent_error, RETRY_COMPENSATORY_PROMPT
 from vibe_trading.agents.agent_factory import ToolContext, format_market_data_for_agent, setup_streaming
 
 logger = get_logger(__name__)
@@ -34,6 +35,7 @@ class TechnicalAnalystAgent:
         self._tool_context = tool_context
 
         # ========== 改进: 使用create_trading_agent以获得tools支持 ==========
+        from vibe_trading.agents.llm_content import extract_text, get_agent_error, RETRY_COMPENSATORY_PROMPT
         from vibe_trading.agents.agent_factory import create_trading_agent
         from vibe_trading.config.agent_config import AgentConfig
 
@@ -74,7 +76,15 @@ Provide your technical analysis including:
         max_attempts = 3
         last_detail = ""
         for attempt in range(1, max_attempts + 1):
-            await self._agent.prompt(prompt)
+            # P1: 重試時重置 state（防 context 累積）+ 注入補償 prompt
+            attempt_prompt = prompt
+            if attempt > 1:
+                try:
+                    self._agent.reset()
+                except Exception:
+                    pass
+                attempt_prompt = prompt + RETRY_COMPENSATORY_PROMPT
+            await self._agent.prompt(attempt_prompt)
 
             # 获取响应
             messages = self._agent.state.messages
@@ -84,11 +94,11 @@ Provide your technical analysis including:
                 if last_assistant:
                     content = last_assistant[-1].content
                     if isinstance(content, list):
-                        response = "".join(getattr(c, "text", str(c)) for c in content)
+                        response = extract_text(content)
                     else:
                         response = str(content)
 
-            agent_error = getattr(getattr(self._agent, "state", None), "error", None)
+            agent_error = get_agent_error(self._agent)
             if agent_error:
                 last_detail = str(agent_error)
             elif response and response.strip():
@@ -96,7 +106,7 @@ Provide your technical analysis including:
                 logger.info(f"Technical Analysis: {response}", tag="Technical")
                 return response
             else:
-                last_detail = "empty response"
+                last_detail = last_detail or "empty response"
 
             logger.warning(
                 f"Technical Analyst 回應失敗 (attempt {attempt}/{max_attempts}): {last_detail}",
@@ -133,7 +143,15 @@ Provide your technical analysis including:
         max_attempts = 3
         last_detail = ""
         for attempt in range(1, max_attempts + 1):
-            await self._agent.prompt(prompt)
+            # P1: 重試時重置 state（防 context 累積）+ 注入補償 prompt
+            attempt_prompt = prompt
+            if attempt > 1:
+                try:
+                    self._agent.reset()
+                except Exception:
+                    pass
+                attempt_prompt = prompt + RETRY_COMPENSATORY_PROMPT
+            await self._agent.prompt(attempt_prompt)
 
             # 获取响应
             messages = self._agent.state.messages
@@ -143,17 +161,17 @@ Provide your technical analysis including:
                 if last_assistant:
                     content = last_assistant[-1].content
                     if isinstance(content, list):
-                        response = "".join(getattr(c, "text", str(c)) for c in content)
+                        response = extract_text(content)
                     else:
                         response = str(content)
 
-            agent_error = getattr(getattr(self._agent, "state", None), "error", None)
+            agent_error = get_agent_error(self._agent)
             if agent_error:
                 last_detail = str(agent_error)
             elif response and response.strip():
                 return response
             else:
-                last_detail = "empty response"
+                last_detail = last_detail or "empty response"
 
             logger.warning(
                 f"Technical Analyst (tools) 回應失敗 (attempt {attempt}/{max_attempts}): {last_detail}",
@@ -205,7 +223,15 @@ Provide your technical analysis including:
         max_attempts = 3
         last_detail = ""
         for attempt in range(1, max_attempts + 1):
-            await self._agent.prompt(prompt)
+            # P1: 重試時重置 state（防 context 累積）+ 注入補償 prompt
+            attempt_prompt = prompt
+            if attempt > 1:
+                try:
+                    self._agent.reset()
+                except Exception:
+                    pass
+                attempt_prompt = prompt + RETRY_COMPENSATORY_PROMPT
+            await self._agent.prompt(attempt_prompt)
 
             # 获取响应
             messages = self._agent.state.messages
@@ -215,17 +241,17 @@ Provide your technical analysis including:
                 if last_assistant:
                     content = last_assistant[-1].content
                     if isinstance(content, list):
-                        response = "".join(getattr(c, "text", str(c)) for c in content)
+                        response = extract_text(content)
                     else:
                         response = str(content)
 
-            agent_error = getattr(getattr(self._agent, "state", None), "error", None)
+            agent_error = get_agent_error(self._agent)
             if agent_error:
                 last_detail = str(agent_error)
             elif response and response.strip():
                 return response
             else:
-                last_detail = "empty response"
+                last_detail = last_detail or "empty response"
 
             logger.warning(
                 f"Technical Analyst (indicators) 回應失敗 (attempt {attempt}/{max_attempts}): {last_detail}",
