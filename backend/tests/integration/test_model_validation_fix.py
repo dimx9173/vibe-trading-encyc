@@ -96,7 +96,7 @@ async def test_T1_agent_state_model_is_agent_loop_model_type(
     )
     # sanity: provider/id carried through
     assert agent._state.model.provider == "openai"
-    assert agent._state.model.id == "deepseek-ai/deepseek-v4-flash"
+    assert agent._state.model.id == "deepseek-v4-flash"
 
 
 @pytest.mark.asyncio
