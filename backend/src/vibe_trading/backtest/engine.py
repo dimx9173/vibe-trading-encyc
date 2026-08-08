@@ -1,14 +1,9 @@
-"""Backtest engine facade.
+"""Backtest engine — MA-crossover strategy + order simulator.
 
-Phase 1 implementation: a minimal order simulator that walks a list of
-historical OHLCV bars, applies a simple MA-crossover signal, and tracks
-round-trip trades. The goal is to produce real P&L numbers (win rate, drawdown,
-avg win/loss) so callers can evaluate strategy behavior offline.
+Walks historical OHLCV bars, computes SMA crossover signals, simulates
+round-trip trades, and produces aggregate P&L statistics.
 
-The interface is intentionally minimal: callers pass a sequence of K-line
-dicts (`{"open_time_ms", "open", "high", "low", "close", "volume"}`) and the
-engine returns a `BacktestResult`. LLM integration is intentionally out of
-scope for this phase — see llm_optimizer.py for the planned extension.
+Callers pass a list of K-line dicts and receive a BacktestResult.
 """
 from __future__ import annotations
 
@@ -39,10 +34,19 @@ class BacktestEngine:
     # "LONG" / "FLAT" for each bar's close.
 
     @staticmethod
-    def _sma(values: List[float], period: int) -> Optional[float]:
-        if len(values) < period or period <= 0:
-            return None
-        return sum(values[-period:]) / period
+    def _sma_series(values: List[float], period: int) -> List[Optional[float]]:
+        """Sliding-window SMA — O(N) total instead of O(N·P)."""
+        n = len(values)
+        if period <= 0 or n < period:
+            return [None] * n
+
+        out: List[Optional[float]] = [None] * (period - 1)
+        window_sum = sum(values[:period])
+        out.append(window_sum / period)
+        for i in range(period, n):
+            window_sum += values[i] - values[i - period]
+            out.append(window_sum / period)
+        return out
 
     @staticmethod
     def _signals_from_klines(
@@ -50,23 +54,37 @@ class BacktestEngine:
         fast_period: int = 10,
         slow_period: int = 30,
     ) -> List[str]:
-        """Return a list of "LONG" / "FLAT" signals, one per bar at close time."""
-        closes: List[float] = []
-        signals: List[str] = []
-        for bar in klines:
-            close = float(bar["close"])
-            closes.append(close)
-            fast = BacktestEngine._sma(closes, fast_period)
-            slow = BacktestEngine._sma(closes, slow_period)
-            if fast is None or slow is None:
-                signals.append("FLAT")
-            elif fast > slow:
-                signals.append("LONG")
-            else:
-                signals.append("FLAT")
-        return signals
+        """Compute MA-crossover signals: LONG when fast > slow, else FLAT."""
+        closes = [float(bar["close"]) for bar in klines]
+        fast_sma = BacktestEngine._sma_series(closes, fast_period)
+        slow_sma = BacktestEngine._sma_series(closes, slow_period)
+        return [
+            "LONG" if f is not None and s is not None and f > s else "FLAT"
+            for f, s in zip(fast_sma, slow_sma)
+        ]
 
     # === Order simulator ===
+
+    @staticmethod
+    def _make_trade(
+        entry_price: float, exit_price: float,
+        entry_time_ms: int, exit_time_ms: int,
+        position_size: float, bars_held: int,
+    ) -> Trade:
+        """Build a Trade with computed P&L fields."""
+        pnl = (exit_price - entry_price) * position_size
+        pnl_pct = (exit_price - entry_price) / entry_price if entry_price else 0.0
+        return Trade(
+            entry_time=_ms_to_dt(entry_time_ms),
+            exit_time=_ms_to_dt(exit_time_ms),
+            side="LONG",
+            entry_price=entry_price,
+            exit_price=exit_price,
+            position_size=position_size,
+            pnl=pnl,
+            pnl_pct=pnl_pct,
+            bars_held=bars_held,
+        )
 
     @staticmethod
     def _simulate(
@@ -74,70 +92,41 @@ class BacktestEngine:
         signals: List[str],
         position_size: float,
     ) -> List[Trade]:
-        """Walk bars, convert signals into round-trip trades.
+        """Convert signals into round-trip trades.
 
-        Conventions: when signal is "LONG" and we are flat, open a long at next
-        bar's open. When signal becomes "FLAT" while we hold long, close at next
-        bar's open. This 1-bar delay is a simplification — a real backtest would
-        model slippage and the actual fill price.
+        Entry/exit at next bar's open (1-bar delay simplification).
         """
         trades: List[Trade] = []
         in_position = False
-        entry_price: float = 0.0
-        entry_time_ms: int = 0
-        entry_idx: int = 0
+        entry_price = 0.0
+        entry_time_ms = 0
+        entry_idx = 0
 
         for i in range(len(klines) - 1):
-            next_bar = klines[i + 1]
-            nxt_open_time = int(next_bar["open_time_ms"])
-            nxt_open = float(next_bar["open"])
+            nxt_open = float(klines[i + 1]["open"])
+            nxt_time = int(klines[i + 1]["open_time_ms"])
 
             if not in_position and signals[i] == "LONG":
                 in_position = True
                 entry_price = nxt_open
-                entry_time_ms = nxt_open_time
+                entry_time_ms = nxt_time
                 entry_idx = i + 1
             elif in_position and signals[i] == "FLAT":
-                exit_price = nxt_open
-                exit_time_ms = nxt_open_time
-                bars_held = (i + 1) - entry_idx
-                pnl = (exit_price - entry_price) * position_size
-                pnl_pct = (exit_price - entry_price) / entry_price if entry_price else 0.0
-                trades.append(
-                    Trade(
-                        entry_time=_ms_to_dt(entry_time_ms),
-                        exit_time=_ms_to_dt(exit_time_ms),
-                        side="LONG",
-                        entry_price=entry_price,
-                        exit_price=exit_price,
-                        position_size=position_size,
-                        pnl=pnl,
-                        pnl_pct=pnl_pct,
-                        bars_held=bars_held,
-                    )
-                )
+                trades.append(BacktestEngine._make_trade(
+                    entry_price, nxt_open,
+                    entry_time_ms, nxt_time,
+                    position_size, (i + 1) - entry_idx,
+                ))
                 in_position = False
 
-        # Force-close at the last bar if still holding
+        # Force-close at last bar if still holding
         if in_position:
             last = klines[-1]
-            exit_price = float(last["close"])
-            bars_held = (len(klines) - 1) - entry_idx
-            pnl = (exit_price - entry_price) * position_size
-            pnl_pct = (exit_price - entry_price) / entry_price if entry_price else 0.0
-            trades.append(
-                Trade(
-                    entry_time=_ms_to_dt(entry_time_ms),
-                    exit_time=_ms_to_dt(int(last["open_time_ms"])),
-                    side="LONG",
-                    entry_price=entry_price,
-                    exit_price=exit_price,
-                    position_size=position_size,
-                    pnl=pnl,
-                    pnl_pct=pnl_pct,
-                    bars_held=bars_held,
-                )
-            )
+            trades.append(BacktestEngine._make_trade(
+                entry_price, float(last["close"]),
+                entry_time_ms, int(last["open_time_ms"]),
+                position_size, (len(klines) - 1) - entry_idx,
+            ))
 
         return trades
 
@@ -148,39 +137,29 @@ class BacktestEngine:
         trades: List[Trade],
         initial_balance: float,
     ) -> Dict[str, float]:
+        """Single-pass statistics: P&L, win rate, drawdown, Sharpe."""
         if not trades:
             return {
-                "total_pnl": 0.0,
-                "total_pnl_pct": 0.0,
-                "winning_trades": 0,
-                "losing_trades": 0,
-                "win_rate": 0.0,
-                "avg_pnl": 0.0,
-                "avg_win": 0.0,
-                "avg_loss": 0.0,
-                "max_drawdown": 0.0,
-                "max_drawdown_pct": 0.0,
-                "sharpe_ratio": 0.0,
-                "final_balance": initial_balance,
+                "total_pnl": 0.0, "total_pnl_pct": 0.0,
+                "winning_trades": 0, "losing_trades": 0, "win_rate": 0.0,
+                "avg_pnl": 0.0, "avg_win": 0.0, "avg_loss": 0.0,
+                "max_drawdown": 0.0, "max_drawdown_pct": 0.0,
+                "sharpe_ratio": 0.0, "final_balance": initial_balance,
             }
 
-        pnls = [t.pnl for t in trades]
-        winning = [t for t in trades if t.pnl > 0]
-        losing = [t for t in trades if t.pnl <= 0]
-
-        total_pnl = sum(pnls)
-        total_pnl_pct = total_pnl / initial_balance if initial_balance else 0.0
-        win_rate = len(winning) / len(trades)
-        avg_pnl = total_pnl / len(trades)
-        avg_win = (sum(t.pnl for t in winning) / len(winning)) if winning else 0.0
-        avg_loss = (sum(t.pnl for t in losing) / len(losing)) if losing else 0.0
-
-        # Drawdown: walk equity curve, track peak, compute max dip from peak
+        # Single pass: collect pnls + equity-curve drawdown simultaneously
+        pnls: List[float] = []
         equity = initial_balance
         peak = initial_balance
         max_dd = 0.0
         max_dd_pct = 0.0
+        sum_wins = 0.0
+        sum_losses = 0.0
+        n_wins = 0
+        n_losses = 0
+
         for t in trades:
+            pnls.append(t.pnl)
             equity += t.pnl
             if equity > peak:
                 peak = equity
@@ -188,23 +167,33 @@ class BacktestEngine:
             if dd > max_dd:
                 max_dd = dd
                 max_dd_pct = dd / peak if peak else 0.0
+            if t.pnl > 0:
+                n_wins += 1
+                sum_wins += t.pnl
+            else:
+                n_losses += 1
+                sum_losses += t.pnl
 
-        # Sharpe: assume each trade is a return observation, no time weighting
-        if len(pnls) > 1:
-            mean = sum(pnls) / len(pnls)
-            var = sum((p - mean) ** 2 for p in pnls) / (len(pnls) - 1)
-            std = math.sqrt(var) if var > 0 else 0.0
-            sharpe = (mean / std) if std > 0 else 0.0
+        n = len(trades)
+        total_pnl = sum(pnls)
+        avg_win = sum_wins / n_wins if n_wins else 0.0
+        avg_loss = sum_losses / n_losses if n_losses else 0.0
+
+        # Sharpe: per-trade return, sample std
+        if n > 1:
+            mean = total_pnl / n
+            var = sum((p - mean) ** 2 for p in pnls) / (n - 1)
+            sharpe = (mean / math.sqrt(var)) if var > 0 else 0.0
         else:
             sharpe = 0.0
 
         return {
             "total_pnl": total_pnl,
-            "total_pnl_pct": total_pnl_pct,
-            "winning_trades": len(winning),
-            "losing_trades": len(losing),
-            "win_rate": win_rate,
-            "avg_pnl": avg_pnl,
+            "total_pnl_pct": total_pnl / initial_balance if initial_balance else 0.0,
+            "winning_trades": n_wins,
+            "losing_trades": n_losses,
+            "win_rate": n_wins / n,
+            "avg_pnl": total_pnl / n,
             "avg_win": avg_win,
             "avg_loss": avg_loss,
             "max_drawdown": max_dd,
