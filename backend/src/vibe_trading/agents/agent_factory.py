@@ -21,7 +21,13 @@ log = get_logger("AgentFactory")
 
 
 class StreamPrinter:
-    """流式打印器 - 实时打印 LLM 输出"""
+    """流式打印器 - 实时打印 LLM 输出
+    
+    Class-level `enabled` flag allows batch disable (e.g. replay --quiet).
+    When disabled, on_event becomes a no-op — no stdout writes at all.
+    """
+
+    enabled: bool = True  # class-level kill switch
 
     def __init__(self, agent_name: str, color: str = "cyan"):
         self.agent_name = agent_name
@@ -34,6 +40,8 @@ class StreamPrinter:
 
     def on_event(self, event: AgentEvent, cancel_event=None):
         """处理 Agent 事件"""
+        if not StreamPrinter.enabled:
+            return
         if event.type == "message_start":
             self._buffer = ""
             self._last_printed_len = 0

@@ -6,6 +6,7 @@
 import logging
 import sys
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Dict
 
@@ -18,6 +19,8 @@ def configure_logging(
     log_file: str = "./vibe_trading.log",
     json_output: bool = True,
     enable_file_logging: bool = True,
+    max_bytes: int = 50 * 1024 * 1024,
+    backup_count: int = 5,
 ):
     """
     配置结构化日志
@@ -75,9 +78,14 @@ def configure_logging(
         level=getattr(logging, log_level),
     )
 
-    # 文件日志处理器
+    # 文件日志处理器 (Rotating — 50 MB/file, 5 backups)
     if enable_file_logging:
-        file_handler = logging.FileHandler(log_file)
+        file_handler = RotatingFileHandler(
+            log_file,
+            maxBytes=max_bytes,
+            backupCount=backup_count,
+            encoding="utf-8",
+        )
         file_handler.setLevel(getattr(logging, log_level))
 
         if json_output:

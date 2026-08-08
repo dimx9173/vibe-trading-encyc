@@ -117,6 +117,7 @@ class TradingCoordinator:
         memory: Optional[PersistentMemory] = None,
         agent_config: Optional[AgentTeamConfig] = None,
         executor: Optional[OrderExecutor] = None,
+        enable_streaming: bool = True,
     ):
         self.symbol = symbol
         self.interval = interval
@@ -124,6 +125,7 @@ class TradingCoordinator:
         self.memory = memory
         self.agent_config = agent_config or AgentTeamConfig()
         self.executor = executor or PaperOrderExecutor()
+        self.enable_streaming = enable_streaming
 
         # 决策级反思快照队列（仅在启用记忆时工作）
         self._snapshot_store: Optional[DecisionSnapshotStore] = (
@@ -277,6 +279,10 @@ class TradingCoordinator:
     async def initialize(self) -> None:
         """初始化所有 Agent"""
         await self._initialize_exchange_filters()
+
+        # 控制 streaming output (replay mode can disable via --quiet)
+        from vibe_trading.agents.agent_factory import StreamPrinter
+        StreamPrinter.enabled = self.enable_streaming
 
         # 初始化分析师
         if self.agent_config.technical_analyst.enabled:
