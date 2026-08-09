@@ -1251,12 +1251,63 @@ class TradingCoordinator:
         from vibe_trading.tools.signal_parser import parse_decision
         decision = parse_decision(decision_text)
 
+        # Fix ② (2026-08-09 SWDA P0): 決策 UNKNOWN/HOLD 但 audit 已顯示成交訂單 → 回填實際執行。
+        # bar 2 案例：PM 在 45s timeout 前已 submit_trade_order 成交（FILLED），
+        # 但 timeout 切斷決策輸出 → 記錄 UNKNOWN 卻實際有倉。
+        # 這裡用訂單 rationale 提取 PM 原決策（如 WEAK BUY），找不到再 fallback 到 side。
+        if decision in ("UNKNOWN", "HOLD") or not decision_text.strip():
+            fallback = await self._decision_fallback_from_audit()
+            if fallback:
+                logger.warning(
+                    f"[決策回填] 決策={decision!r} 但 audit 有成交訂單，回填為 "
+                    f"{fallback['decision']!r} (order_id={fallback['order_id']})"
+                )
+                decision_text = fallback["text"]
+                decision = fallback["decision"]
+
         return {
             "decision": decision,
             "rationale": decision_text,
             "confidence": pm_confidence,
             "execution_instructions": None,  # 可以从 decision_text 中解析
         }
+
+    async def _decision_fallback_from_audit(self) -> Optional[Dict[str, Any]]:
+        """audit 已成交訂單存在但決策 UNKNOWN/HOLD 時，依實際執行回填。
+
+        Returns:
+            {"decision": str, "text": str, "order_id": str} 或 None（無成交訂單）。
+        """
+        try:
+            audit = getattr(self._tool_context, "order_audit", None)
+            trace_id = getattr(self._tool_context, "current_trace_id", None)
+            if not audit or not trace_id:
+                return None
+            trace = await audit.get_trace(trace_id)
+            orders = trace.get("orders", []) or []
+            filled = [o for o in orders if o.get("status") == "FILLED"]
+            if not filled:
+                return None
+            last = filled[-1]
+            result = last.get("result") or {}
+            rationale = result.get("rationale", "") or ""
+            # 優先從訂單 rationale 提取 PM 原決策（如 WEAK BUY）
+            from vibe_trading.tools.signal_parser import parse_decision
+            parsed = parse_decision(rationale) if rationale else "UNKNOWN"
+            if parsed in ("UNKNOWN", "HOLD"):
+                side = str(last.get("side", "")).upper()
+                parsed = "BUY" if side == "BUY" else ("SELL" if side == "SELL" else "HOLD")
+            qty = last.get("quantity")
+            oid = last.get("order_id")
+            text = (
+                f"Decision: {parsed}\n"
+                f"Rationale: PM LLM timeout/決策缺失 — audit 顯示訂單已成交 "
+                f"{qty} {self.symbol} (order_id={oid})，決策由實際執行回填。"
+            )
+            return {"decision": parsed, "text": text, "order_id": oid}
+        except Exception as e:
+            logger.warning(f"[決策回填] audit 檢查失敗: {e}")
+            return None
 
     def get_decision_history(self) -> List[TradingDecision]:
         """获取决策历史"""

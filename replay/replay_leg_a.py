@@ -116,6 +116,12 @@ async def main() -> None:
         state_file=str(Path(args.state)),
         reset=True,
     )
+    # Fix 2026-08-09 (SWDA P0): replay 禁 live tools — 消除 look-ahead 污染。
+    # agents 原本會呼叫 get_current_price 等 live API 混入當下市場數據；
+    # 此 patch 讓所有 tools 改從 replay storage 讀 bar 內數據或回傳「不可用」。
+    from replay_tool_isolation import install_replay_tool_isolation
+    install_replay_tool_isolation(storage, interval="30m")
+
     coordinator = TradingCoordinator(
         symbol="BTCUSDT",
         interval="30m",
