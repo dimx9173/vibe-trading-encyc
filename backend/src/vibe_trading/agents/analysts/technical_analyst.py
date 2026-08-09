@@ -278,8 +278,8 @@ Provide your technical analysis including:
         raise RuntimeError(f"Technical Analyst (indicators) 連續 {max_attempts} 次失敗 (最後: {last_detail})")
 
 
-async def create_technical_analyst(tool_context: ToolContext) -> TechnicalAnalystAgent:
+async def create_technical_analyst(tool_context: ToolContext, enable_streaming: bool = False) -> TechnicalAnalystAgent:
     """创建并初始化技术分析师"""
     analyst = TechnicalAnalystAgent()
-    await analyst.initialize(tool_context)
+    await analyst.initialize(tool_context, enable_streaming=enable_streaming)
     return analyst

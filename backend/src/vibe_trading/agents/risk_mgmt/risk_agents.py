@@ -177,6 +177,7 @@ async def create_risk_analyst(
     role: AgentRole,
     tool_context: ToolContext,
     config: Optional[AgentConfig] = None,
+    enable_streaming: bool = False,
 ) -> RiskAnalystAgent:
     """创建并初始化风控分析师"""
     if config is None:
@@ -187,5 +188,5 @@ async def create_risk_analyst(
         )
 
     analyst = RiskAnalystAgent(config)
-    await analyst.initialize(tool_context)
+    await analyst.initialize(tool_context, enable_streaming=enable_streaming)
     return analyst

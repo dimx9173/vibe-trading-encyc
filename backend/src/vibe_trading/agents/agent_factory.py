@@ -182,6 +182,10 @@ async def create_trading_agent(
                 "system_prompt": system_prompt,
                 "model": model,
                 "tools": agent_tools,  # ========== 设置tools ==========
+                # Fix 2026-08-09: 限制 reasoning 思考級別（DeepSeek V4 Flash 是
+                # reasoning model，預設會無限 thinking（>120s）。設 low 讓它
+                # 4-6s 就回覆，避免 thinking loop + timeout。
+                "thinking_level": "low",
             },
             get_api_key=get_api_key,
         )

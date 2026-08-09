@@ -116,16 +116,12 @@ class ResearcherAgent:
                         pass
 
                 logger.info(f"[DEBUG] {self.config.name} attempt {attempt} calling agent.prompt()...", tag="DebateDebug")
-                # Fix 2: 加 timeout 防止 thinking loop（45s per attempt）
-                try:
-                    await asyncio.wait_for(
-                        self._agent.prompt(prompt),
-                        timeout=45.0,
-                    )
-                except asyncio.TimeoutError:
+                # Fix 2b: 統一用 prompt_with_timeout（120s — DeepSeek V4 Flash reasoning 需要較長思考）
+                ok = await prompt_with_timeout(self._agent, prompt, timeout=120.0)
+                if not ok:
                     prompt_elapsed = time.monotonic() - attempt_start
                     logger.warning(f"[DEBUG] {self.config.name} TIMEOUT after {prompt_elapsed:.1f}s", tag="DebateDebug")
-                    last_detail = f"timeout (45s)"
+                    last_detail = f"timeout (120s)"
                     if attempt < max_attempts:
                         await asyncio.sleep(1.0 * attempt)
                     continue

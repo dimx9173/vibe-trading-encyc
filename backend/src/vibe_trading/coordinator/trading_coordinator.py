@@ -286,31 +286,31 @@ class TradingCoordinator:
 
         # 初始化分析师
         if self.agent_config.technical_analyst.enabled:
-            self._analysts["technical"] = await create_technical_analyst(self._tool_context)
+            self._analysts["technical"] = await create_technical_analyst(self._tool_context, enable_streaming=self.enable_streaming)
 
         if self.agent_config.fundamental_analyst.enabled:
             self._analysts["fundamental"] = await create_analyst(
-                AgentRole.FUNDAMENTAL_ANALYST, self._tool_context
+                AgentRole.FUNDAMENTAL_ANALYST, self._tool_context, enable_streaming=self.enable_streaming
             )
 
         if self.agent_config.news_analyst.enabled:
             self._analysts["news"] = await create_analyst(
-                AgentRole.NEWS_ANALYST, self._tool_context
+                AgentRole.NEWS_ANALYST, self._tool_context, enable_streaming=self.enable_streaming
             )
 
         if self.agent_config.sentiment_analyst.enabled:
             self._analysts["sentiment"] = await create_analyst(
-                AgentRole.SENTIMENT_ANALYST, self._tool_context
+                AgentRole.SENTIMENT_ANALYST, self._tool_context, enable_streaming=self.enable_streaming
             )
 
         # 初始化研究员
         if self.agent_config.bull_researcher.enabled:
             self._researchers["bull"] = BullResearcherAgent()
-            await self._researchers["bull"].initialize(self._tool_context)
+            await self._researchers["bull"].initialize(self._tool_context, enable_streaming=self.enable_streaming)
 
         if self.agent_config.bear_researcher.enabled:
             self._researchers["bear"] = BearResearcherAgent()
-            await self._researchers["bear"].initialize(self._tool_context)
+            await self._researchers["bear"].initialize(self._tool_context, enable_streaming=self.enable_streaming)
 
         if self.agent_config.research_manager.enabled:
             self._researchers["manager"] = ResearchManagerAgent()
@@ -319,26 +319,26 @@ class TradingCoordinator:
         # 初始化风控
         if self.agent_config.aggressive_debator.enabled:
             self._risk_analysts["aggressive"] = await create_risk_analyst(
-                AgentRole.AGGRESSIVE_DEBATOR, self._tool_context
+                AgentRole.AGGRESSIVE_DEBATOR, self._tool_context, enable_streaming=self.enable_streaming
             )
 
         if self.agent_config.neutral_debator.enabled:
             self._risk_analysts["neutral"] = await create_risk_analyst(
-                AgentRole.NEUTRAL_DEBATOR, self._tool_context
+                AgentRole.NEUTRAL_DEBATOR, self._tool_context, enable_streaming=self.enable_streaming
             )
 
         if self.agent_config.conservative_debator.enabled:
             self._risk_analysts["conservative"] = await create_risk_analyst(
-                AgentRole.CONSERVATIVE_DEBATOR, self._tool_context
+                AgentRole.CONSERVATIVE_DEBATOR, self._tool_context, enable_streaming=self.enable_streaming
             )
 
         # 初始化决策层
         if self.agent_config.trader.enabled:
-            self._trader = await create_trader(self._tool_context)
+            self._trader = await create_trader(self._tool_context, enable_streaming=self.enable_streaming)
 
         if self.agent_config.portfolio_manager.enabled:
             self._portfolio_manager = await create_portfolio_manager(
-                self._tool_context, self.memory
+                self._tool_context, self.memory, enable_streaming=self.enable_streaming
             )
 
         logger.info(f"All agents initialized for {self.symbol}")

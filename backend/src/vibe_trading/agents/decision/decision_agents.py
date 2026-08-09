@@ -317,6 +317,7 @@ class PortfolioManagerAgent:
         self,
         tool_context: ToolContext,
         memory: Optional[object] = None,
+        enable_streaming: bool = False,
     ) -> None:
         """初始化 Agent"""
         self._tool_context = tool_context
@@ -373,7 +374,8 @@ class PortfolioManagerAgent:
         )
 
         # 设置流式打印
-        setup_streaming(self._agent, "Portfolio Manager", "blue")
+        if enable_streaming:
+            setup_streaming(self._agent, "Portfolio Manager", "blue")
         self._agent.subscribe(self._track_execution_tool_event)
 
         logger.info(f"Portfolio Manager Agent initialized for {tool_context.symbol}")
@@ -637,18 +639,19 @@ This decision will be executed, so be specific and careful.
         return prompt
 
 
-async def create_trader(tool_context: ToolContext) -> TraderAgent:
+async def create_trader(tool_context: ToolContext, enable_streaming: bool = False) -> TraderAgent:
     """创建并初始化交易员"""
     trader = TraderAgent()
-    await trader.initialize(tool_context)
+    await trader.initialize(tool_context, enable_streaming=enable_streaming)
     return trader
 
 
 async def create_portfolio_manager(
     tool_context: ToolContext,
     memory: Optional[object] = None,
+    enable_streaming: bool = False,
 ) -> PortfolioManagerAgent:
     """创建并初始化投资组合经理"""
     pm = PortfolioManagerAgent()
-    await pm.initialize(tool_context, memory)
+    await pm.initialize(tool_context, memory, enable_streaming=enable_streaming)
     return pm

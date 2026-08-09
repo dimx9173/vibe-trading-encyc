@@ -40,7 +40,7 @@ class BaseAnalystAgent:
         self._agent: Optional[Agent] = None
         self._tool_context: Optional[ToolContext] = None
 
-    async def initialize(self, tool_context: ToolContext) -> None:
+    async def initialize(self, tool_context: ToolContext, enable_streaming: bool = False) -> None:
         """初始化 Agent"""
         self._tool_context = tool_context
 
@@ -51,7 +51,7 @@ class BaseAnalystAgent:
         self._agent = await create_trading_agent(
             config=self.config,
             tool_context=tool_context,
-            enable_streaming=False,
+            enable_streaming=enable_streaming,
         )
 
         logger.info(f"{self.config.name} Agent initialized for {tool_context.symbol}")
@@ -330,6 +330,7 @@ async def create_analyst(
     role: AgentRole,
     tool_context: ToolContext,
     config: Optional[AgentConfig] = None,
+    enable_streaming: bool = False,
 ) -> BaseAnalystAgent:
     """创建并初始化分析师"""
     if config is None:
@@ -340,5 +341,5 @@ async def create_analyst(
         )
 
     analyst = BaseAnalystAgent(config)
-    await analyst.initialize(tool_context)
+    await analyst.initialize(tool_context, enable_streaming=enable_streaming)
     return analyst

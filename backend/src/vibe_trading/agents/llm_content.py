@@ -20,13 +20,14 @@ from typing import Any
 from pi_ai import TextContent
 
 
-async def prompt_with_timeout(agent: Any, prompt: str, timeout: float = 45.0) -> bool:
+async def prompt_with_timeout(agent: Any, prompt: str, timeout: float = 120.0) -> bool:
     """呼叫 agent.prompt() 並加上 timeout，防止 LLM thinking loop 卡死。
 
     Args:
         agent: pi-py Agent 實例
         prompt: 要送的 prompt
-        timeout: 秒數（預設 45s）
+        timeout: 秒數（預設 120s — DeepSeek V4 Flash 是 reasoning model，
+                 複雜 prompt 需要較長思考時間；45s 會截斷正常 thinking）
 
     Returns:
         True if prompt completed (含 API error，由 caller 檢查 state.error_message)；
