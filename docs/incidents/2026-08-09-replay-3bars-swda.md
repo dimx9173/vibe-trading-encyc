@@ -67,3 +67,24 @@ bar 2 時序（audit DB `execution_orders` 鐵證）：
 - 完整 log：`replay/data/leg_a_3bars_run.log`（497k 行）
 - 帳戶狀態：`replay/data/leg_a_3bars_state_v2.json`
 - audit DB：`vibe_trading.db`（`execution_orders` / `execution_risk_checks`，trace `BTCUSDT:30m:1784878200000` = bar 2，`1784880000000` = bar 3）
+
+---
+
+## 5. 修復狀態（2026-08-09 18:50，commit d7306ac）
+
+### ① 已修復 ✅ — Replay 禁 live tools（look-ahead 消除）
+- 新增 `replay/replay_tool_isolation.py`：monkey-patch `market_data_tools` / `fundamental_tools` / `sentiment_tools` / `technical_tools`，
+  讓價格類工具改從 replay storage 讀 bar close、技術指標帶入 replay storage、其餘 live 工具回傳「replay 不可用」。
+- `replay_leg_a.py` 在建立 coordinator 後安裝 isolation。
+- 驗證（smoke test + 1-bar replay）：`get_current_price` 回傳 **65641.31**（replay bar close，原本 live 65202.1）；
+  funding/order_book/long_short/fear_greed 全部回傳不可用；技術指標正常從 storage 計算。
+
+### ② 已修復 ✅ — 決策/執行脫鉤（timeout fallback 回填）
+- `trading_coordinator.py` 新增 `_decision_fallback_from_audit()`：PM 決策 UNKNOWN/HOLD 但 audit 顯示該 bar 有 FILLED 訂單時，
+  從訂單 rationale 提取 PM 原決策（如 WEAK BUY）回填，禁止 UNKNOWN 掩蓋已成交。
+- 驗證：1-bar replay 決策 = **WEAK BUY**（原本 UNKNOWN），成交價 65641.31 = replay close。
+
+### ③④⑤ 尚未執行（P1/P2）
+- ③ signal parser：WEAK BUY 誤判 BUY → 保險暴衝（風控已攔下，安全網運作正常）
+- ④ 保險自動執行應改用 PM 決策倉位
+- ⑤ PM timeout 45s → 90s 或換 mimo-v2.5
