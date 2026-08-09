@@ -1,3 +1,9 @@
+---
+title: 数据提供者 API
+category: guide
+tags: [user-guide, documentation]
+---
+
 # 数据提供者 API
 
 本文档介绍 Vibe Trading 的标准化交易所数据提供者（Provider）API，这是一个内部Python API，用于统一访问不同交易所的数据。

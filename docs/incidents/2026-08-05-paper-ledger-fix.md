@@ -1,3 +1,11 @@
+---
+title: "Paper Ledger Fix"
+description: "Incident report: Paper Ledger Fix"
+date: 2026-08-05
+category: incident
+tags: [incident, bug-fix, debugging, post-mortem]
+---
+
 # Paper 帳本真實化 + 跨重啟持久化 (2026-08-05)
 
 > 建立日期: 2026-08-05

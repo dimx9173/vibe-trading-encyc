@@ -1,3 +1,9 @@
+---
+title: API 文档
+category: guide
+tags: [user-guide, documentation]
+---
+
 # API 文档
 
 Vibe Trading 当前 Web API 主要服务于 React 监控前端：提供实时 WebSocket 推送、内存状态查询、K线级决策追溯和调试接口。

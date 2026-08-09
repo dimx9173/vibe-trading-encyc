@@ -1,3 +1,9 @@
+---
+title: 快速开始指南
+category: guide
+tags: [user-guide, documentation]
+---
+
 # 快速开始指南
 
 欢迎使用 Vibe Trading，这是一个 AI 驱动的多Agent协作量化交易系统。本指南将帮助你在几分钟内启动并运行系统，使你能够利用多Agent协作、智能辩论和风控评估构建专业的量化交易策略。

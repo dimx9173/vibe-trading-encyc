@@ -1,3 +1,9 @@
+---
+title: 版本变更记录
+category: develop
+tags: [development, contributing, changelog]
+---
+
 # 版本变更记录
 
 本文档记录了 Vibe Trading 项目的所有重要变更。

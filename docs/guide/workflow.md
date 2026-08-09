@@ -1,3 +1,9 @@
+---
+title: 协作流程
+category: guide
+tags: [user-guide, documentation]
+---
+
 # 协作流程
 
 本文档详细介绍 Vibe Trading 系统中 Agent 的协作流程和工作机制。

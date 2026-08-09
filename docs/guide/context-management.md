@@ -1,3 +1,9 @@
+---
+title: Context Management 上下文管理系统
+category: guide
+tags: [user-guide, documentation]
+---
+
 # Context Management 上下文管理系统
 
 > 深入了解 Vibe Trading 的多 Agent 协作中，如何管理和传递上下文信息，确保关键决策数据不丢失。

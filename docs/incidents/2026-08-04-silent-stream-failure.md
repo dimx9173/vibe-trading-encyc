@@ -1,3 +1,11 @@
+---
+title: "Silent Stream Failure"
+description: "Incident report: Silent Stream Failure"
+date: 2026-08-04
+category: incident
+tags: [incident, bug-fix, debugging, post-mortem]
+---
+
 # VBT 修正計畫：LLM 串流靜默失敗導致連續 UNKNOWN（2026-08-04）
 
 ## 1. 問題摘要

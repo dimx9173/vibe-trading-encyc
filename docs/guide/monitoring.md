@@ -1,3 +1,9 @@
+---
+title: Web 监控
+category: guide
+tags: [user-guide, documentation]
+---
+
 # Web 监控
 
 Vibe Trading 的 Web 监控界面用于观察 Paper Trading 实盘数据流、Agent 协作过程、Runtime Log 和每根 K线的历史追溯记录。

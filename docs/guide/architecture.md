@@ -1,3 +1,9 @@
+---
+title: 系统架构
+category: guide
+tags: [user-guide, documentation]
+---
+
 # 系统架构
 
 本文档详细介绍 Vibe Trading 的系统架构、技术选型和实现细节。

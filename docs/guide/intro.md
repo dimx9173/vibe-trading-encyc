@@ -1,3 +1,9 @@
+---
+title: 项目简介
+category: guide
+tags: [user-guide, documentation]
+---
+
 # 项目简介
 
 Vibe Trading 是一个基于大语言模型的多Agent协作加密货币量化交易系统，采用先进的AI技术和多Agent协作架构，模拟真实交易团队的决策流程。

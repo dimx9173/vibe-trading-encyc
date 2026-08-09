@@ -1,3 +1,9 @@
+---
+title: 开发路线图
+category: develop
+tags: [development, contributing, changelog]
+---
+
 # 开发路线图
 
 本文档描述了 Vibe Trading 项目的开发计划和未来方向。

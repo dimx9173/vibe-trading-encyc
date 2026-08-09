@@ -1,3 +1,13 @@
+---
+title: Agent Framework (pi_agent_core)
+description: Agent 框架核心文檔，雙迴圈訊息處理引擎
+date: 2026-08-05
+category: architecture
+tags: [agent-framework, pi-agent-core, message-loop, tool-calling]
+summary: |
+  pi_agent_core 框架完整說明，涵蓋 Agent 基類、雙迴圈訊息處理、Tool calling、狀態管理、streaming 整合。
+---
+
 # pi_agent_core 框架详解
 
 > 基于 badlogic/pi-mono 的 @mariozechner/pi-agent-core 包进行的 Python 复刻

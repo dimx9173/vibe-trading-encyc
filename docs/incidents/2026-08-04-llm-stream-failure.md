@@ -1,3 +1,11 @@
+---
+title: "Llm Stream Failure"
+description: "Incident report: Llm Stream Failure"
+date: 2026-08-04
+category: incident
+tags: [incident, bug-fix, debugging, post-mortem]
+---
+
 # Vbt LLM 修復大作戰 — 從「瞎子交易」到真 AI 交易系統 (2026-08-04)
 
 > 建立日期: 2026-08-04

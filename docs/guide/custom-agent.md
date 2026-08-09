@@ -1,3 +1,9 @@
+---
+title: 自定义 Agent
+category: guide
+tags: [user-guide, documentation]
+---
+
 # 自定义 Agent
 
 本文档介绍如何为 Vibe Trading 系统创建自定义 Agent。

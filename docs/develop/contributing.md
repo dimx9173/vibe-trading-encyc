@@ -1,3 +1,9 @@
+---
+title: 参与贡献
+category: develop
+tags: [development, contributing, changelog]
+---
+
 # 参与贡献
 
 感谢你对 Vibe Trading 项目的关注！我们欢迎任何形式的贡献。

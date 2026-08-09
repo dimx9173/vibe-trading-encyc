@@ -1,3 +1,9 @@
+---
+title: 记忆系统
+category: guide
+tags: [user-guide, documentation]
+---
+
 # 记忆系统
 
 Vibe Trading 的记忆系统基于 BM25 算法，能够从历史交易经验中学习，持续优化决策策略。

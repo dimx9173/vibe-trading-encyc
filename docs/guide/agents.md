@@ -1,3 +1,9 @@
+---
+title: Agent 团队
+category: guide
+tags: [user-guide, documentation]
+---
+
 # Agent 团队
 
 Vibe Trading 系统包含12个专业Agent，每个Agent都有特定的职责和专长，共同协作完成复杂的交易决策。

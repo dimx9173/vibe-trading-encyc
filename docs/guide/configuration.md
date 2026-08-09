@@ -1,3 +1,9 @@
+---
+title: 配置说明
+category: guide
+tags: [user-guide, documentation]
+---
+
 # 配置说明
 
 本文档说明当前 Vibe Trading 的主要配置项。系统默认读取项目根目录的 `.env` 文件；如果不存在，会退回到进程环境变量。

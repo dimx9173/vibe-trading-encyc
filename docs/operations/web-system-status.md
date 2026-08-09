@@ -1,3 +1,13 @@
+---
+title: Web System Status
+description: Web 監控系統狀態與運作說明
+date: 2026-07-15
+category: operations
+tags: [web-monitoring, status, fastapi, websocket]
+summary: |
+  Web 監控系統狀態文檔，說明 FastAPI + WebSocket 架構、即時推送機制、系統健康檢查。
+---
+
 # Vibe Trading Web System Status
 
 ## 当前状态

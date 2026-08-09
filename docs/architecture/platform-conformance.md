@@ -1,3 +1,13 @@
+---
+title: PI Platform Conformance
+description: PI 平台一致性規範與合規檢查
+date: 2026-08-05
+category: architecture
+tags: [pi-platform, conformance, standards, compliance]
+summary: |
+  PI 平台一致性規範，定義 Agent 框架、LLM 整合、Tool 系統的標準介面與合規要求。
+---
+
 # Vibe-Trading × pi-Platform-Skills — Architecture Conformance Review
 
 **Scope:** Design-level (architecture) review only. Not a code/implementation verification.
