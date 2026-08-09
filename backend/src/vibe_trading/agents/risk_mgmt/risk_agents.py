@@ -16,7 +16,7 @@ from vibe_trading.config.prompts import (
     CONSERVATIVE_DEBATOR_PROMPT,
 )
 from vibe_trading.config.settings import get_settings
-from vibe_trading.agents.llm_content import extract_text
+from vibe_trading.agents.llm_content import extract_text, prompt_with_timeout
 from vibe_trading.agents.agent_factory import ToolContext, setup_streaming
 
 logger = get_logger(__name__)
@@ -46,7 +46,7 @@ class RiskAnalystAgent:
         self._tool_context = tool_context
 
         # ========== 改进: 使用create_trading_agent以获得tools支持 ==========
-        from vibe_trading.agents.llm_content import extract_text
+        from vibe_trading.agents.llm_content import extract_text, prompt_with_timeout
         from vibe_trading.agents.agent_factory import create_trading_agent
 
         self._agent = await create_trading_agent(
@@ -100,7 +100,10 @@ As a {self.config.name}, please provide:
 5. Risk/reward ratio evaluation
 """
 
-        await self._agent.prompt(prompt)
+        ok = await prompt_with_timeout(self._agent, prompt)
+        if not ok:
+            logger.warning(f"{self.config.name} LLM timeout (45s)", tag="Risk")
+            return "Risk assessment failed - LLM timeout (45s)"
 
         # 获取响应
         messages = self._agent.state.messages

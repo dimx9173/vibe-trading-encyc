@@ -17,7 +17,7 @@ from vibe_trading.config.prompts import (
     RESEARCH_MANAGER_PROMPT,
 )
 from vibe_trading.config.settings import get_settings
-from vibe_trading.agents.llm_content import extract_text, get_agent_error
+from vibe_trading.agents.llm_content import extract_text, get_agent_error, prompt_with_timeout
 from vibe_trading.agents.agent_factory import ToolContext, setup_streaming
 from vibe_trading.agents.researchers.debate_analyzer import (
     ArgumentExtractor,
@@ -54,7 +54,7 @@ class ResearcherAgent:
         self._tool_context = tool_context
 
         # ========== 改进: 使用create_trading_agent以获得tools支持 ==========
-        from vibe_trading.agents.llm_content import extract_text, get_agent_error
+        from vibe_trading.agents.llm_content import extract_text, get_agent_error, prompt_with_timeout
         from vibe_trading.agents.agent_factory import create_trading_agent
         from vibe_trading.config.agent_config import AgentConfig
 
@@ -289,7 +289,7 @@ class ResearchManagerAgent:
         self._tool_context = tool_context
 
         # ========== 改进: 使用create_trading_agent以获得tools支持 ==========
-        from vibe_trading.agents.llm_content import extract_text, get_agent_error
+        from vibe_trading.agents.llm_content import extract_text, get_agent_error, prompt_with_timeout
         from vibe_trading.agents.agent_factory import create_trading_agent
 
         self._agent = await create_trading_agent(
@@ -353,7 +353,9 @@ class ResearchManagerAgent:
                 bear_agent
             )
 
-            await self._agent.prompt(prompt)
+            ok = await prompt_with_timeout(self._agent, prompt)
+            if not ok:
+                logger.warning("Research Manager LLM timeout (45s)", tag="ResearchManager")
 
             # 获取决策文本
             decision_text = ""

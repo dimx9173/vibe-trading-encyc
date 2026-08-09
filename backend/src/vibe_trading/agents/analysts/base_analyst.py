@@ -16,7 +16,7 @@ from vibe_trading.config.prompts import (
     SENTIMENT_ANALYST_PROMPT,
 )
 from vibe_trading.config.settings import get_settings
-from vibe_trading.agents.llm_content import extract_text, get_agent_error
+from vibe_trading.agents.llm_content import extract_text, get_agent_error, prompt_with_timeout
 from vibe_trading.agents.agent_factory import ToolContext
 
 logger = get_logger(__name__)
@@ -45,7 +45,7 @@ class BaseAnalystAgent:
         self._tool_context = tool_context
 
         # ========== 改进: 使用create_trading_agent以获得tools支持 ==========
-        from vibe_trading.agents.llm_content import extract_text, get_agent_error
+        from vibe_trading.agents.llm_content import extract_text, get_agent_error, prompt_with_timeout
         from vibe_trading.agents.agent_factory import create_trading_agent
 
         self._agent = await create_trading_agent(
@@ -77,8 +77,14 @@ class BaseAnalystAgent:
                     self._agent.reset()
                 except Exception:
                     pass
-            # 执行分析
-            await self._agent.prompt(prompt)
+            # 执行分析（含 timeout 防 thinking loop）
+            ok = await prompt_with_timeout(self._agent, prompt)
+            if not ok:
+                last_detail = "timeout (45s)"
+                logger.warning(f"{self.config.name} LLM timeout (attempt {attempt}/{max_attempts})", tag="Analyst")
+                if attempt < max_attempts:
+                    await asyncio.sleep(1.0 * attempt)
+                continue
 
             # 获取响应
             messages = self._agent.state.messages
@@ -180,8 +186,11 @@ class BaseAnalystAgent:
 使用可用工具获取相关数据，并提供综合分析。
 """
 
-        # 执行分析 - Agent会根据需要调用工具
-        await self._agent.prompt(prompt)
+        # 执行分析 - Agent会根据需要调用工具（含 timeout 防 thinking loop）
+        ok = await prompt_with_timeout(self._agent, prompt)
+        if not ok:
+            logger.warning(f"{self.config.name} LLM timeout (45s)", tag="Analyst")
+            return "Analysis failed - LLM timeout (45s)"
 
         # 获取响应
         messages = self._agent.state.messages

@@ -13,6 +13,7 @@ from pi_logger import get_logger
 from vibe_trading.config.agent_config import AgentConfig, AgentRole
 from vibe_trading.config.settings import get_settings
 from vibe_trading.agents.agent_factory import ToolContext
+from vibe_trading.agents.llm_content import prompt_with_timeout
 from vibe_trading.data_sources.macro_storage import MacroState
 
 logger = get_logger(__name__)
@@ -138,8 +139,11 @@ Your analysis should help guide trading decisions by providing context about the
         # Build analysis prompt
         prompt = self._build_analysis_prompt(market_data)
         
-        # Send prompt to agent
-        await self._agent.prompt(prompt)
+        # Send prompt to agent（含 timeout 防 thinking loop）
+        ok = await prompt_with_timeout(self._agent, prompt)
+        if not ok:
+            logger.warning("MacroAgent LLM timeout (45s)", tag="Macro")
+            return "Macro analysis failed - LLM timeout (45s)"
         
         # Wait for agent to complete
         await self._agent.wait_for_idle()

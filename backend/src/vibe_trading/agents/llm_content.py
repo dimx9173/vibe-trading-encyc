@@ -6,12 +6,37 @@
    ``type='thinking' thinking='...'`` repr 垃圾塞進 response。
 2. 錯誤檢查讀 ``state.error``，但 AgentState 只有 ``error_message`` →
    真實錯誤（context 過長等）永遠被吞，全顯示 "empty response"。
+
+2026-08-09 新增 prompt_with_timeout：
+   DeepSeek V4 Flash 在複雜 prompt 下會陷入 thinking loop（無限輸出
+   thinking tokens 永不結束）。所有 agent 的 prompt 呼叫必須包 timeout，
+   否則 process 會被外部 timeout 殺掉、決策永遠寫不進 JSONL。
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from pi_ai import TextContent
+
+
+async def prompt_with_timeout(agent: Any, prompt: str, timeout: float = 45.0) -> bool:
+    """呼叫 agent.prompt() 並加上 timeout，防止 LLM thinking loop 卡死。
+
+    Args:
+        agent: pi-py Agent 實例
+        prompt: 要送的 prompt
+        timeout: 秒數（預設 45s）
+
+    Returns:
+        True if prompt completed (含 API error，由 caller 檢查 state.error_message)；
+        False if timed out（thinking loop 被中斷）。
+    """
+    try:
+        await asyncio.wait_for(agent.prompt(prompt), timeout=timeout)
+        return True
+    except asyncio.TimeoutError:
+        return False
 
 
 def extract_text(content: Any) -> str:

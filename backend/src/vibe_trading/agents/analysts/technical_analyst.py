@@ -12,7 +12,7 @@ from pi_logger import get_logger
 from vibe_trading.config.agent_config import AgentConfig, AgentRole
 from vibe_trading.config.prompts import TECHNICAL_ANALYST_PROMPT
 from vibe_trading.config.settings import get_settings
-from vibe_trading.agents.llm_content import extract_text, get_agent_error
+from vibe_trading.agents.llm_content import extract_text, get_agent_error, prompt_with_timeout
 from vibe_trading.agents.agent_factory import ToolContext, format_market_data_for_agent, setup_streaming
 
 logger = get_logger(__name__)
@@ -35,7 +35,7 @@ class TechnicalAnalystAgent:
         self._tool_context = tool_context
 
         # ========== 改进: 使用create_trading_agent以获得tools支持 ==========
-        from vibe_trading.agents.llm_content import extract_text, get_agent_error
+        from vibe_trading.agents.llm_content import extract_text, get_agent_error, prompt_with_timeout
         from vibe_trading.agents.agent_factory import create_trading_agent
         from vibe_trading.config.agent_config import AgentConfig
 
@@ -83,7 +83,13 @@ Provide your technical analysis including:
                 except Exception:
                     pass
                 pass  # Fix: removed compensatory prompt
-            await self._agent.prompt(prompt)
+            ok = await prompt_with_timeout(self._agent, prompt)
+            if not ok:
+                last_detail = "timeout (45s)"
+                logger.warning(f"Technical Analyst LLM timeout (attempt {attempt}/{max_attempts})", tag="Technical")
+                if attempt < max_attempts:
+                    await asyncio.sleep(1.0 * attempt)
+                continue
 
             # 获取响应
             messages = self._agent.state.messages
@@ -149,7 +155,13 @@ Provide your technical analysis including:
                 except Exception:
                     pass
                 pass  # Fix: removed compensatory prompt
-            await self._agent.prompt(prompt)
+            ok = await prompt_with_timeout(self._agent, prompt)
+            if not ok:
+                last_detail = "timeout (45s)"
+                logger.warning(f"Technical Analyst LLM timeout (attempt {attempt}/{max_attempts})", tag="Technical")
+                if attempt < max_attempts:
+                    await asyncio.sleep(1.0 * attempt)
+                continue
 
             # 获取响应
             messages = self._agent.state.messages
@@ -228,7 +240,13 @@ Provide your technical analysis including:
                 except Exception:
                     pass
                 pass  # Fix: removed compensatory prompt
-            await self._agent.prompt(prompt)
+            ok = await prompt_with_timeout(self._agent, prompt)
+            if not ok:
+                last_detail = "timeout (45s)"
+                logger.warning(f"Technical Analyst LLM timeout (attempt {attempt}/{max_attempts})", tag="Technical")
+                if attempt < max_attempts:
+                    await asyncio.sleep(1.0 * attempt)
+                continue
 
             # 获取响应
             messages = self._agent.state.messages
