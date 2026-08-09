@@ -98,6 +98,7 @@ class TradingDecision:
     timestamp: int
     decision: str  # STRONG BUY/BUY/WEAK BUY/HOLD/WEAK SELL/SELL/STRONG SELL
     rationale: str
+    confidence: Optional[float] = None  # 0-1，PM 決策信心（Fix 2026-08-09）
     execution_instructions: Optional[dict] = None
     agent_outputs: dict = field(default_factory=dict)
 
@@ -669,6 +670,7 @@ class TradingCoordinator:
                 timestamp=int(datetime.now().timestamp() * 1000),
                 decision=final_decision.get("decision", "HOLD"),
                 rationale=final_decision.get("rationale", ""),
+                confidence=final_decision.get("confidence"),
                 execution_instructions=final_decision.get("execution_instructions"),
                 agent_outputs=agent_outputs,
             )
@@ -1238,6 +1240,13 @@ class TradingCoordinator:
         # 从响应中提取决策文本
         decision_text = pm_response.get("decision_text", "") if isinstance(pm_response, dict) else str(pm_response)
 
+        # Fix 2026-08-09: 從 scorecard 帶出 confidence（原本丟失）
+        pm_confidence = None
+        if isinstance(pm_response, dict):
+            scorecard = pm_response.get("scorecard")
+            if scorecard is not None:
+                pm_confidence = getattr(scorecard, "confidence", None)
+
         # 解析决策文本 — 走共享 parser，与 signal_processor 保持一致
         from vibe_trading.tools.signal_parser import parse_decision
         decision = parse_decision(decision_text)
@@ -1245,6 +1254,7 @@ class TradingCoordinator:
         return {
             "decision": decision,
             "rationale": decision_text,
+            "confidence": pm_confidence,
             "execution_instructions": None,  # 可以从 decision_text 中解析
         }
 

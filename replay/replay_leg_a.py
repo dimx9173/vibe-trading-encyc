@@ -165,6 +165,7 @@ async def main() -> None:
             "bar_close": float(c),
             "decision": decision.decision,
             "rationale": decision.rationale[:500],
+            "rationale_full": decision.rationale,  # Fix 2026-08-09: 保留完整 rationale 供事後審查
             "confidence": getattr(decision, "confidence", None),
             "elapsed_s": round(elapsed, 1),
             "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),

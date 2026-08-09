@@ -1052,15 +1052,15 @@ def get_tools_for_agent(agent_role: str) -> list[AgentTool]:
 
     # 研究员团队 - 综合工具用于辩论
     elif agent_role in ["bull_researcher", "bear_researcher", "research_manager"]:
+        # Fix 2026-08-09: 精簡 tools 降低 400 provider error 率
+        # 原 8 個 tools 讓 opencode proxy 偶發 400（Upstream request failed）；
+        # debate 主要靠 analyst reports + 情緒/資金數據，保留最核心的 5 個。
         return [
             all_tools["get_current_price"],
-            all_tools["get_24hr_ticker"],
             all_tools["get_fear_and_greed_index"],
-            all_tools["get_news_sentiment"],
             all_tools["get_funding_rate"],
             all_tools["get_long_short_ratio"],
             all_tools["get_open_interest"],
-            all_tools["get_technical_indicators"],  # 添加技术指标
         ]
 
     # 风控团队 - 需要风险相关数据
