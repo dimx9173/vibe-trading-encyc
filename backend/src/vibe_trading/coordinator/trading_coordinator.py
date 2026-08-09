@@ -1077,6 +1077,17 @@ class TradingCoordinator:
         if "manager" not in self._researchers:
             return "No investment plan (research manager not enabled)"
 
+        settings = get_settings()
+        
+        # Fix 3: skip_debate option — 跳過 debate，直接 risk → trader（debug/測試用）
+        if settings.skip_debate:
+            logger.info("[Fix 3] skip_debate=True, 跳過 debate phase")
+            # 用分析師報告組成簡單 investment plan
+            simple_plan = "Research debate SKIPPED (skip_debate=True). Direct to risk phase.\n\n"
+            for role, report in analyst_reports.items():
+                simple_plan += f"{role.upper()}:\n{report[:500]}...\n\n"
+            return simple_plan
+
         # 准备上下文
         context_str = f"Symbol: {context.symbol}\nPrice: {context.current_price}\n"
         for role, report in analyst_reports.items():
@@ -1090,7 +1101,6 @@ class TradingCoordinator:
         bull_history = ""
         bear_history = ""
 
-        settings = get_settings()
         for round_num in range(settings.debate_rounds):
             logger.info(f"Research debate round {round_num + 1}")
             bull_resp, bear_resp = await run_debate_round(

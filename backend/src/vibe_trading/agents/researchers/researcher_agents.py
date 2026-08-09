@@ -17,7 +17,7 @@ from vibe_trading.config.prompts import (
     RESEARCH_MANAGER_PROMPT,
 )
 from vibe_trading.config.settings import get_settings
-from vibe_trading.agents.llm_content import extract_text, get_agent_error, RETRY_COMPENSATORY_PROMPT
+from vibe_trading.agents.llm_content import extract_text, get_agent_error
 from vibe_trading.agents.agent_factory import ToolContext, setup_streaming
 from vibe_trading.agents.researchers.debate_analyzer import (
     ArgumentExtractor,
@@ -54,7 +54,7 @@ class ResearcherAgent:
         self._tool_context = tool_context
 
         # ========== 改进: 使用create_trading_agent以获得tools支持 ==========
-        from vibe_trading.agents.llm_content import extract_text, get_agent_error, RETRY_COMPENSATORY_PROMPT
+        from vibe_trading.agents.llm_content import extract_text, get_agent_error
         from vibe_trading.agents.agent_factory import create_trading_agent
         from vibe_trading.config.agent_config import AgentConfig
 
@@ -89,6 +89,10 @@ class ResearcherAgent:
         extract_arguments: bool = True,
     ) -> str:
         """生成回应（增强版）"""
+        import time
+        debug_start = time.monotonic()
+        logger.info(f"[DEBUG] {self.config.name} respond() START", tag="DebateDebug")
+        
         if not self._agent:
             raise RuntimeError("Agent not initialized. Call initialize() first.")
 
@@ -96,22 +100,37 @@ class ResearcherAgent:
         async with self._lock:
             # 构建提示
             prompt = self._build_debate_prompt(context, debate_history, opponent_argument)
+            logger.info(f"[DEBUG] {self.config.name} prompt built, len={len(prompt)}", tag="DebateDebug")
 
             # ========== 改进: 空响应/LLM错误重试 ==========
             import asyncio
             max_attempts = 3
             last_detail = ""
             for attempt in range(1, max_attempts + 1):
-                # P1: 重試時重置 state（防 context 累積）+ 注入補償 prompt
-                attempt_prompt = prompt
+                attempt_start = time.monotonic()
+                # Fix 1: 重試時只 reset state，不加 RETRY_COMPENSATORY_PROMPT（會觸發 thinking loop）
                 if attempt > 1:
                     try:
                         self._agent.reset()
                     except Exception:
                         pass
-                    attempt_prompt = prompt + RETRY_COMPENSATORY_PROMPT
 
-                await self._agent.prompt(attempt_prompt)
+                logger.info(f"[DEBUG] {self.config.name} attempt {attempt} calling agent.prompt()...", tag="DebateDebug")
+                # Fix 2: 加 timeout 防止 thinking loop（45s per attempt）
+                try:
+                    await asyncio.wait_for(
+                        self._agent.prompt(prompt),
+                        timeout=45.0,
+                    )
+                except asyncio.TimeoutError:
+                    prompt_elapsed = time.monotonic() - attempt_start
+                    logger.warning(f"[DEBUG] {self.config.name} TIMEOUT after {prompt_elapsed:.1f}s", tag="DebateDebug")
+                    last_detail = f"timeout (45s)"
+                    if attempt < max_attempts:
+                        await asyncio.sleep(1.0 * attempt)
+                    continue
+                prompt_elapsed = time.monotonic() - attempt_start
+                logger.info(f"[DEBUG] {self.config.name} agent.prompt() returned in {prompt_elapsed:.1f}s", tag="DebateDebug")
 
                 # 获取响应
                 messages = self._agent.state.messages
@@ -125,9 +144,12 @@ class ResearcherAgent:
                         else:
                             response = str(content)
 
+                logger.info(f"[DEBUG] {self.config.name} response len={len(response)}, first100={repr(response[:100])}", tag="DebateDebug")
+
                 agent_error = get_agent_error(self._agent)
                 if agent_error:
                     last_detail = str(agent_error)
+                    logger.warning(f"[DEBUG] {self.config.name} agent_error: {last_detail}", tag="DebateDebug")
                 elif response and response.strip():
                     # 提取论点
                     if extract_arguments:
@@ -135,6 +157,8 @@ class ResearcherAgent:
                             response,
                             "bull" if "bull" in self.config.role.value.lower() else "bear",
                         )
+                    total_elapsed = time.monotonic() - debug_start
+                    logger.info(f"[DEBUG] {self.config.name} respond() SUCCESS in {total_elapsed:.1f}s", tag="DebateDebug")
                     return response
                 else:
                     last_detail = last_detail or "empty response"
@@ -265,7 +289,7 @@ class ResearchManagerAgent:
         self._tool_context = tool_context
 
         # ========== 改进: 使用create_trading_agent以获得tools支持 ==========
-        from vibe_trading.agents.llm_content import extract_text, get_agent_error, RETRY_COMPENSATORY_PROMPT
+        from vibe_trading.agents.llm_content import extract_text, get_agent_error
         from vibe_trading.agents.agent_factory import create_trading_agent
 
         self._agent = await create_trading_agent(

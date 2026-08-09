@@ -62,6 +62,7 @@ class Settings:
 
     # Agent 配置
     debate_rounds: int = 2  # 辩论轮数
+    skip_debate: bool = False  # Fix 3: 跳過 debate，直接 risk → trader（debug/測試用）
     enable_memory: bool = True  # 是否启用记忆系统
     memory_top_k: int = 3  # 记忆检索数量
     memory_storage_path: str = "./data/memory_storage.pkl"  # 反思记忆持久化路径
@@ -109,6 +110,7 @@ class Settings:
             execution_max_margin_fraction=float(os.getenv("EXECUTION_MAX_MARGIN_FRACTION", "0.5")),
             execution_position_mode=os.getenv("EXECUTION_POSITION_MODE", "hedge"),
             debate_rounds=int(os.getenv("DEBATE_ROUNDS", "2")),
+            skip_debate=os.getenv("SKIP_DEBATE", "false").lower() == "true",
             enable_memory=os.getenv("ENABLE_MEMORY", "true").lower() == "true",
             memory_top_k=int(os.getenv("MEMORY_TOP_K", "3")),
             memory_storage_path=os.getenv("MEMORY_STORAGE_PATH", "./data/memory_storage.pkl"),

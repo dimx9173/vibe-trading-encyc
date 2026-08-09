@@ -16,7 +16,7 @@ from vibe_trading.config.prompts import (
     SENTIMENT_ANALYST_PROMPT,
 )
 from vibe_trading.config.settings import get_settings
-from vibe_trading.agents.llm_content import extract_text, get_agent_error, RETRY_COMPENSATORY_PROMPT
+from vibe_trading.agents.llm_content import extract_text, get_agent_error
 from vibe_trading.agents.agent_factory import ToolContext
 
 logger = get_logger(__name__)
@@ -45,7 +45,7 @@ class BaseAnalystAgent:
         self._tool_context = tool_context
 
         # ========== 改进: 使用create_trading_agent以获得tools支持 ==========
-        from vibe_trading.agents.llm_content import extract_text, get_agent_error, RETRY_COMPENSATORY_PROMPT
+        from vibe_trading.agents.llm_content import extract_text, get_agent_error
         from vibe_trading.agents.agent_factory import create_trading_agent
 
         self._agent = await create_trading_agent(
@@ -71,16 +71,14 @@ class BaseAnalystAgent:
         max_attempts = 3
         last_detail = ""
         for attempt in range(1, max_attempts + 1):
-            # P1: 重試時重置 state（防 context 累積）+ 注入補償 prompt
-            attempt_prompt = prompt
+            # Fix: 重試時只 reset state，不加補償 prompt（避免觸發 thinking loop）
             if attempt > 1:
                 try:
                     self._agent.reset()
                 except Exception:
                     pass
-                attempt_prompt = prompt + RETRY_COMPENSATORY_PROMPT
             # 执行分析
-            await self._agent.prompt(attempt_prompt)
+            await self._agent.prompt(prompt)
 
             # 获取响应
             messages = self._agent.state.messages
