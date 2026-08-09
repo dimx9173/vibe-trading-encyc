@@ -96,6 +96,12 @@ CLI (`cli.py`) 流程：
 - 每輪歷史累積（bull_history / bear_history）餵給下一輪
 - ResearchManager 綜合 → 投資建議 + 置信度
 
+**⚠️ Debate 防護機制（2026-08-09 新增）**：
+- **三層防護**：移除 RETRY_COMPENSATORY_PROMPT（避免 reasoning model 進入 thinking loop）
+- **45s timeout**：`asyncio.wait_for()` 包每次 attempt，防止無限思考
+- **skip_debate 選項**：`SKIP_DEBATE=true` 環境變數可跳過整個 debate phase（快速驗證用）
+- 重試邏輯：timeout 觸發 retry（最多 3 attempts），僅 `state reset()` 不補 prompt
+
 ### Phase 3: 風控評估（`_run_risk_assessment`）
 - `run_risk_debate()`：激進 / 中立 / 保守 3 個風控 agent 同時評估
 - 輸入：投資計畫 + 當前持倉 + 帳戶餘額
@@ -108,6 +114,14 @@ CLI (`cli.py`) 流程：
 ### Phase 5: 投資組合經理（`_run_portfolio_manager`）
 - `PortfolioManagerAgent.make_final_decision()` → 最終決策文本
 - 從文本解析決策：STRONG BUY / BUY / WEAK BUY / HOLD / SELL / WEAK SELL / STRONG SELL
+
+**⚠️ PM 決策保險機制（2026-08-06 新增）**：
+- **問題**：LLM 決策 BUY/SELL 但漏呼叫下單 tool → 決策未執行
+- **修復**：Coordinator 層級保險 — 決策 BUY/SELL 且該 bar 無訂單時自動觸發執行
+- **流程**：重用 `submit_trade_order` tool 完整鏈（風控 → exchange filter → executor → audit）
+- **對帳 key**：改用 `current_trace_id`（與 tool 記錄一致），避免 decision_id 格式誤報
+- **Fail-open**：trading_plan 為 None / 缺 entry_orders 時不 crash
+- **測試**：`backend/tests/test_coordinator_insurance.py`（4 tests）
 
 ### 決策後處理
 1. `_signal_processor.process_signal()` → 提取結構化信號（signal/confidence/strength）
@@ -277,7 +291,39 @@ PENDING → ANALYZING → DEBATING → ASSESSING_RISK → PLANNING → EXECUTING
 
 ---
 
-## 13. Triggers / 事件系統（`triggers/`）
+## 13. Backtest Engine（`backtest/`）
+
+### 架構（2026-08-09 優化）
+- **位置**：`backend/src/vibe_trading/backtest/engine.py`
+- **策略**：MA-crossover（簡單移動平均線交叉）— 僅做多（long-only），無做空/槓桿/手續費
+- **資料**：歷史 OHLCV K 線 → 信號 → 模擬交易 → 統計
+
+### SMA 計算優化
+- **舊版**：O(N·P) — 每個 bar 重新計算整個 window
+- **新版**：O(N) sliding window — `window_sum += values[i] - values[i - period]`
+- **加速**：N=1000, P=30 時約 **30x** 加速
+- **實現**：`_sma_series()` 使用滑動窗口，首個 window 用 `sum(values[:period])` 初始化
+
+### 交易模擬
+- **Entry/Exit**：next bar's open（1-bar delay 簡化）
+- **Position sizing**：`initial_balance * position_pct`（0-100%）
+- **Force-close**：最後一根 bar 若仍持倉則強制平倉
+
+### 統計指標
+- **P&L**：total_pnl / total_pnl_pct / avg_pnl / avg_win / avg_loss
+- **Win rate**：winning_trades / losing_trades / win_rate
+- **Risk**：max_drawdown / max_drawdown_pct（equity curve 計算）
+- **Sharpe ratio**：per-trade return，sample standard deviation
+- **Single-pass**：所有統計在一次迴圈中完成（PnL + equity curve drawdown 同步計算）
+
+### 模型（`backtest/models.py`）
+- `BacktestConfig`：symbol / interval / initial_balance / start_time / end_time
+- `BacktestResult`：完整結果（trades + stats + metadata）
+- `Trade`：單筆交易（entry/exit price/time / pnl / bars_held）
+
+---
+
+## 14. Triggers / 事件系統（`triggers/`）
 
 - `price_triggers.py`：價格異常觸發
 - `risk_triggers.py`：風險超標觸發
@@ -287,22 +333,33 @@ PENDING → ANALYZING → DEBATING → ASSESSING_RISK → PLANNING → EXECUTING
 
 ---
 
-## 14. 配置系統
+## 15. 配置系統
 
 | 配置 | 位置 | 說明 |
 |------|------|------|
 | LLM 模型 | `backend/src/vibe_trading/config/llm.yaml` | use_llm + 多 config |
 | 環境變數 | `.env`（gitignored） | API keys、LLM_MODEL、BINANCE_* |
-| 系統設定 | `config/settings.py` | 讀 LLM_MODEL、debate_rounds 等 |
+| 系統設定 | `config/settings.py` | 讀 LLM_MODEL、debate_rounds、skip_debate 等 |
 | Agent 設定 | `config/agent_config.py` | AgentRole / AgentConfig |
 | Prompt | `config/prompts.py` | 各 agent system prompt |
+
+**新增設定項（2026-08-09）**：
+- `skip_debate: bool`：跳過 Phase 2 debate（env: `SKIP_DEBATE=true`）
 
 ⚠️ `.env` 與 `llm.yaml` 都 gitignored → 換機器要手動重建
 
 ---
 
-## 15. 已知問題 / TODO
+## 16. 已知問題 / TODO
 
+### ✅ 已修復（2026-08-05 ~ 08-09）
+- [x] **Paper ledger 持久化**：`state_file` + `--reset-paper`，重啟自動還原（d140d36, 8abb462）
+- [x] **PM 決策保險**：BUY/SELL 漏呼叫 tool 時 coordinator 自動執行（7853355）
+- [x] **Debate timeout 防護**：45s timeout + 3 retries + skip_debate 選項（fc7f089）
+- [x] **Backtest SMA 優化**：O(N·P) → O(N) sliding window（30033a5）
+- [x] **Log rotation**：三層日誌輪替（c22e9c1）
+
+### 🔧 待解決
 - [ ] QualityTracker 0.90/0.30 交替原因（部分決策某 agent 被判 UNKNOWN）
 - [ ] 工具參數格式（opencode.ai 回 `arguments={'type':...}`）— LLM 目前自癒重試
 - [ ] 持倉數量對不上：8 筆 BUY = 0.01226 BTC vs snapshot 0.00156 BTC（0.0107 BTC 去向不明）
