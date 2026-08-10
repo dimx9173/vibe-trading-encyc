@@ -84,7 +84,23 @@ bar 2 時序（audit DB `execution_orders` 鐵證）：
   從訂單 rationale 提取 PM 原決策（如 WEAK BUY）回填，禁止 UNKNOWN 掩蓋已成交。
 - 驗證：1-bar replay 決策 = **WEAK BUY**（原本 UNKNOWN），成交價 65641.31 = replay close。
 
-### ③④⑤ 尚未執行（P1/P2）
-- ③ signal parser：WEAK BUY 誤判 BUY → 保險暴衝（風控已攔下，安全網運作正常）
-- ④ 保險自動執行應改用 PM 決策倉位
-- ⑤ PM timeout 45s → 90s 或換 mimo-v2.5
+### ③ 已修復 ✅ — Signal 判定 WEAK BUY 誤觸發保險（commit 29a998d）
+- 保險觸發改用原始 `decision.decision`（parse_decision 保留 WEAK），不再用 `processed_signal.signal.value`（to_signal_enum 把 WEAK_BUY 收斂成 BUY）。
+- WEAK BUY/WEAK SELL 不再觸發 coordinator 保險（bar 3 案例：PM 說 WEAK BUY 小倉位，保險卻開 2994 USDT 單）。
+- 驗證：1-bar replay → HOLD，保險未誤觸發。
+
+### ④ 已修復 ✅ — 保險 quantity cap（commit 29a998d）
+- `_auto_execute_insurance` quantity cap 到風控單筆 notional 上限（max_single_order_notional / reference_price）。
+- 保險無法再用 trading_plan 完整倉位覆蓋 PM 小倉位指示。
+- 驗證：0.04579 BTC（2994 USDT）→ cap 至 0.001529（100 USDT）。
+
+### ⑤ 已修復 ✅ — PM/Trader timeout 45s→180s（commit 29a998d）
+- Trader/PM `prompt_with_timeout` 調高至 180s，修正誤導的「45s」log 文字。
+- 驗證：1-bar replay 426s 跑完無 timeout（先前 3 bar 中 2 次 PM timeout）。
+
+### ②-fix（額外）✅ — 跨 run audit 污染修復（commit 29a998d）
+- `_decision_fallback_from_audit` + 保險 `has_order` 增加 `_cycle_started_at` 過濾：audit DB 共用且同一 bar 的 trace_id 相同，舊 run 的 FILLED order 曾被誤回填（fix345 run 誤把 HOLD 回填成 WEAK BUY，用的是上一 run 的 order paper_101936af）。
+- 驗證：fix345b run → HOLD，無誤回填、無誤保險。
+
+### ⑤b 尚未執行
+- 切回 mimo-v2.5（8/7 驗證 456.5s 能跑完）— 若 V4 Flash 仍不穩定再考慮。
