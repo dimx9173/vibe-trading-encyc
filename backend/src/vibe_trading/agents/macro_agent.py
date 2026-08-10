@@ -134,7 +134,9 @@ Your analysis should help guide trading decisions by providing context about the
             raise RuntimeError("Agent not initialized. Call initialize() first.")
         
         # Clear previous messages for fresh analysis
-        self._agent.clear_messages()
+        # Fix 2026-08-10 (SWDA): pi-py Agent 無 clear_messages API — 其他 agent 都用
+        # reset()（清 messages + streaming/error/tool_calls + queues），macro 是遷移漏網。
+        self._agent.reset()
         
         # Build analysis prompt
         prompt = self._build_analysis_prompt(market_data)
@@ -142,8 +144,8 @@ Your analysis should help guide trading decisions by providing context about the
         # Send prompt to agent（含 timeout 防 thinking loop）
         ok = await prompt_with_timeout(self._agent, prompt)
         if not ok:
-            logger.warning("MacroAgent LLM timeout (45s)", tag="Macro")
-            return "Macro analysis failed - LLM timeout (45s)"
+            logger.warning("MacroAgent LLM timeout (120s)", tag="Macro")
+            return "Macro analysis failed - LLM timeout (120s)"
         
         # Wait for agent to complete
         await self._agent.wait_for_idle()
