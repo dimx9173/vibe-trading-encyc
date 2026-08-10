@@ -59,6 +59,7 @@ class Settings:
     execution_max_total_exposure: float = 300.0
     execution_max_margin_fraction: float = 0.5
     execution_position_mode: str = "hedge"
+    risk_min_confidence: float = 0.6  # 決策置信度閘門（2026-08-10 SWDA F2）
 
     # Agent 配置
     debate_rounds: int = 2  # 辩论轮数
@@ -109,6 +110,7 @@ class Settings:
             execution_max_total_exposure=float(os.getenv("EXECUTION_MAX_TOTAL_EXPOSURE", "300")),
             execution_max_margin_fraction=float(os.getenv("EXECUTION_MAX_MARGIN_FRACTION", "0.5")),
             execution_position_mode=os.getenv("EXECUTION_POSITION_MODE", "hedge"),
+            risk_min_confidence=float(os.getenv("RISK_MIN_CONFIDENCE", "0.6")),
             debate_rounds=int(os.getenv("DEBATE_ROUNDS", "2")),
             skip_debate=os.getenv("SKIP_DEBATE", "false").lower() == "true",
             enable_memory=os.getenv("ENABLE_MEMORY", "true").lower() == "true",

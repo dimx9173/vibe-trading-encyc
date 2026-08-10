@@ -297,8 +297,20 @@ class DecisionAggregator:
 
         reasoning = reasoning.rstrip(",")
 
+        # 信號衝突檢測：bullish 與 bearish 同時顯著且分差接近 → 強制 HOLD
+        # （加權投票會選 max() 一方，完全無視對立信號；2026-08-10 SWDA F1）
+        bullish_score = scores.get(SignalType.BULLISH.value, 0.0)
+        bearish_score = scores.get(SignalType.BEARISH.value, 0.0)
+        conflict = (
+            bullish_score > 0.3
+            and bearish_score > 0.3
+            and abs(bullish_score - bearish_score) < 0.15
+        )
+
         # 确定交易动作
-        if max_signal_type == SignalType.BULLISH.value and max_score > 0.4:
+        if conflict:
+            action = TradingAction.HOLD
+        elif max_signal_type == SignalType.BULLISH.value and max_score > 0.4:
             action = TradingAction.BUY
         elif max_signal_type == SignalType.BEARISH.value and max_score > 0.4:
             action = TradingAction.SELL
@@ -313,6 +325,7 @@ class DecisionAggregator:
                 "aggregation_method": "weighted_voting",
                 "scores": scores,
                 "signal_count": len(self.signal_history) + 1,
+                **({"conflict": True} if conflict else {}),
             },
         )
 

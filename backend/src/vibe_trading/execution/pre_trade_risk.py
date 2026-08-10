@@ -26,6 +26,7 @@ class RiskPolicy:
     max_total_exposure: float = 300.0
     max_margin_fraction: float = 0.5
     position_mode: str = "hedge"
+    min_confidence: float = 0.6  # 決策置信度低於此值拒絕下單（2026-08-10 SWDA F2）
 
     @classmethod
     def from_settings(cls) -> "RiskPolicy":
@@ -35,6 +36,7 @@ class RiskPolicy:
             max_total_exposure=settings.execution_max_total_exposure,
             max_margin_fraction=settings.execution_max_margin_fraction,
             position_mode=settings.execution_position_mode,
+            min_confidence=settings.risk_min_confidence,
         )
 
 
@@ -82,7 +84,21 @@ class PreTradeRiskGate:
         price: Optional[float] = None,
         reference_price: Optional[float] = None,
         reduce_only: bool = False,
+        confidence: Optional[float] = None,
     ) -> PreTradeRiskResult:
+        if confidence is not None and confidence < self.policy.min_confidence:
+            return PreTradeRiskResult(
+                verdict=RiskVerdict.REJECTED,
+                reason=(
+                    f"decision confidence {confidence:.2f} below "
+                    f"minimum {self.policy.min_confidence:.2f}"
+                ),
+                order_notional=0.0,
+                total_exposure=0.0,
+                available_balance=None,
+                checks={"confidence": confidence},
+            )
+
         effective_price = price or reference_price or self._executor_reference_price(symbol)
         if effective_price is None or effective_price <= 0:
             return PreTradeRiskResult(
