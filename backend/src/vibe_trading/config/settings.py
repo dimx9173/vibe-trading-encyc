@@ -91,7 +91,14 @@ class Settings:
     lunarcrush_api_key: Optional[str] = field(default_factory=lambda: os.getenv("LUNARCRUSH_API_KEY"))
 
     # 数据库配置
-    database_url: str = "sqlite+aiosqlite:///./vibe_trading.db"
+    # 2026-08-10 F4: 預設 DB 必須錨定 repo root 絕對路徑（消除 CWD 依賴；
+    # 舊值 "sqlite+aiosqlite:///./vibe_trading.db" 造成 daemon(root) 與
+    # 工具(backend/) 寫入兩個不同 sqlite 檔 → 雙 DB 分裂）
+    database_url: str = field(
+        default_factory=lambda: (
+            f"sqlite+aiosqlite:///{(Path(__file__).resolve().parent.parent.parent.parent.parent / 'vibe_trading.db').as_posix()}"
+        )
+    )
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -130,7 +137,10 @@ class Settings:
             okx_secret_key=os.getenv("OKX_SECRET_KEY", ""),
             okx_passphrase=os.getenv("OKX_PASSPHRASE", ""),
             okx_demo_trading=os.getenv("OKX_DEMO_TRADING", "false").lower() == "true",
-            database_url=os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./vibe_trading.db"),
+            database_url=os.getenv(
+                "DATABASE_URL",
+                f"sqlite+aiosqlite:///{(Path(__file__).resolve().parent.parent.parent.parent.parent / 'vibe_trading.db').as_posix()}",
+            ),
             cryptocmp_api_key=os.getenv("CRYPTOCOMPARE_API_KEY"),
             lunarcrush_api_key=os.getenv("LUNARCRUSH_API_KEY"),
         )
