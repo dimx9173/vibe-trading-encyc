@@ -381,6 +381,10 @@ class TradingCoordinator:
             # ========== 决策级反思：回看此前已成熟的决策快照 ==========
             await self._reflect_on_matured_decisions(current_price, bar_open_time_ms)
 
+            # Fix ②-fix (2026-08-10): 記錄本次 cycle 開始時間，供 audit 回填/保險只認本 cycle 訂單
+            # （避免跨 run 污染：replay 多次跑同一 bar 時 trace_id 相同，會誤用上一 run 的舊 order）
+            self._cycle_started_at = start_time
+
             # ========== 改进工具: 状态机初始化 ==========
             self._current_state_machine = self._state_manager.create_machine(
                 decision_id=decision_id,
@@ -742,11 +746,24 @@ class TradingCoordinator:
             # 查詢 key 用 current_trace_id（與 submit_trade_order 記錄一致），
             # 避免 decision_id 格式不同導致誤報。
             try:
-                trade_decision = processed_signal.signal.value in ("BUY", "SELL")
+                # Fix ③ (2026-08-09 SWDA P1): 保險只在 PM 明確 BUY/SELL（非 WEAK）時觸發。
+                # processed_signal.signal.value 是 to_signal_enum 收斂結果（WEAK_BUY→BUY），
+                # 用原始 decision.decision（parse_decision 保留 WEAK）判斷，避免 WEAK BUY 誤觸發保險暴衝。
+                pm_decision = getattr(decision, "decision", "HOLD")
+                trade_decision = pm_decision in ("BUY", "SELL", "STRONG BUY", "STRONG SELL")
                 if trade_decision and self._tool_context.order_audit is not None:
                     trace_id = self._tool_context.current_trace_id or decision_id
                     trace = await self._tool_context.order_audit.get_trace(trace_id)
-                    has_order = bool(trace and trace.get("orders"))
+                    # Fix ②-fix (2026-08-10): 只認本 cycle 的訂單 — audit DB 共用，
+                    # 不同 run 同一 bar 的 trace_id 相同，舊 run 訂單會誤判「已有訂單」而跳過保險。
+                    orders = (trace or {}).get("orders", []) or []
+                    cycle_start = getattr(self, "_cycle_started_at", None)
+                    if cycle_start is not None:
+                        orders = [
+                            o for o in orders
+                            if o.get("created_at", "") >= cycle_start.isoformat()
+                        ]
+                    has_order = bool(orders)
                     if not has_order:
                         logger.warning(
                             f"[執行對帳] 決策={processed_signal.signal.value} 但 trace_id={trace_id} "
@@ -1285,6 +1302,14 @@ class TradingCoordinator:
                 return None
             trace = await audit.get_trace(trace_id)
             orders = trace.get("orders", []) or []
+            # Fix ②-fix (2026-08-10): 只認本 cycle 產生的訂單 — audit DB 是共用的，
+            # 不同 replay run 同一 bar 的 trace_id 相同，會誤用上一 run 的舊 order。
+            cycle_start = getattr(self, "_cycle_started_at", None)
+            if cycle_start is not None:
+                orders = [
+                    o for o in orders
+                    if o.get("created_at", "") >= cycle_start.isoformat()
+                ]
             filled = [o for o in orders if o.get("status") == "FILLED"]
             if not filled:
                 return None
@@ -1343,6 +1368,32 @@ class TradingCoordinator:
             if not quantity:
                 logger.warning(f"[執行保險] 無法取得 quantity，跳過自動執行 decision={decision_id}")
                 return None
+
+            # Fix ④ (2026-08-09 SWDA P1): 保險 quantity 不得直接用 trading_plan 完整倉位
+            # 覆蓋 PM 指示（bar 3 案例：PM 說小倉位加倉，保險卻下 0.04579 ≈ 2994 USDT）。
+            # cap 到風控單筆 notional 限制（max_single_order_notional / reference_price），
+            # 確保保險最多只開風控允許的單筆倉位，避免暴衝。
+            reference_price = entry.get("price") or getattr(entry, "price", None)
+            if not reference_price:
+                # fallback: 用 executor 目前參考價（PaperOrderExecutor 已 update_price）
+                try:
+                    reference_price = self._tool_context.executor.get_reference_price(self.symbol)
+                except Exception:
+                    reference_price = None
+            try:
+                from vibe_trading.config.settings import get_settings
+                max_notional = get_settings().execution_max_single_order_notional
+                if reference_price and float(reference_price) > 0:
+                    capped_qty = max_notional / float(reference_price)
+                    if quantity > capped_qty:
+                        logger.warning(
+                            f"[執行保險] trading_plan quantity={quantity} 超過風控單筆 "
+                            f"notional 上限（{max_notional}/{reference_price}={capped_qty:.6f}），"
+                            f"cap 至 {capped_qty:.6f}（Fix ④）"
+                        )
+                        quantity = capped_qty
+            except Exception as _e:
+                logger.warning(f"[執行保險] quantity cap 計算失敗，沿用原 quantity: {_e}")
 
             position_side = getattr(trading_plan, "position_side", None)
             position_side_str = getattr(position_side, "value", None) or str(position_side or "BOTH")

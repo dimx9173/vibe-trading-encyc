@@ -198,9 +198,11 @@ class TraderAgent:
             risk_assessment=risk_assessment,
         )
 
-        ok = await prompt_with_timeout(self._agent, prompt)
+        # Fix ⑤ (2026-08-09 SWDA P2): Trader/PM 是複雜 prompt（長 context + 多工具），
+        # 120s 仍會截斷 V4 Flash 正常 thinking（3 bar 中 2 次 timeout）→ 調高至 180s。
+        ok = await prompt_with_timeout(self._agent, prompt, timeout=180.0)
         if not ok:
-            logger.warning(f"{self.config.name} LLM timeout (45s) — 使用量化計算結果", tag="Trader")
+            logger.warning(f"{self.config.name} LLM timeout (180s) — 使用量化計算結果", tag="Trader")
 
         # 获取LLM响应并添加到执行说明
         messages = self._agent.state.messages
@@ -483,9 +485,10 @@ class PortfolioManagerAgent:
             current_price=current_price,
         )
 
-        ok = await prompt_with_timeout(self._agent, prompt)
+        # Fix ⑤ (2026-08-09 SWDA P2): PM 是最終決策，prompt 最複雜 → 180s。
+        ok = await prompt_with_timeout(self._agent, prompt, timeout=180.0)
         if not ok:
-            logger.warning(f"{self.config.name} LLM timeout (45s) — 使用評分卡決策", tag="PM")
+            logger.warning(f"{self.config.name} LLM timeout (180s) — 使用評分卡決策", tag="PM")
 
         # 获取LLM响应
         decision_text = ""
