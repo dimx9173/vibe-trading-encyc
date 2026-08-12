@@ -801,6 +801,7 @@ async def get_top_models(limit: int = 5):
                 "total_cost_usd": m.total_cost_usd,
             }
             for m in models
+        ]
     }
     return {"success": True}
 

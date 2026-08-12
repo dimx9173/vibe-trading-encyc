@@ -76,7 +76,7 @@ class OnBarThread:
             symbol=self.symbol,
             interval=self.interval,
             executor=self.executor,
-            memory=create_memory_from_settings(),
+            memory=create_hybrid_memory_from_settings(),
         )
         await self._coordinator.initialize()
         
