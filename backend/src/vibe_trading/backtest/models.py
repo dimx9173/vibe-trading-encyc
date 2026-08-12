@@ -30,6 +30,8 @@ class BacktestConfig:
     initial_balance: float = 10_000.0
     llm_mode: LLMMode = LLMMode.SIMULATED
     report_formats: List[ReportFormat] = field(default_factory=lambda: [ReportFormat.TEXT])
+    fee_rate: float = 0.001  # 0.1% trading fee
+    slippage_rate: float = 0.0005  # 0.05% slippage
 
 
 @dataclass

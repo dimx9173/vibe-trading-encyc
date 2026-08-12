@@ -12,7 +12,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 from pi_logger import get_logger
 
-from vibe_trading.memory.memory import PersistentMemory
+from vibe_trading.memory.hybrid_memory import HybridMemory
 from pi_ai import stream_simple, Context, UserMessage, TextContent, SimpleStreamOptions
 from vibe_trading.config.llm_config import get_api_key_from_config
 

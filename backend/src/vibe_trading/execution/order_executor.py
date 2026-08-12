@@ -122,6 +122,7 @@ class PaperOrderExecutor(OrderExecutor):
         self._balance = initial_balance
         self._realized_pnl = 0.0  # 累計已實現盈虧（跨平倉保留，避免 del 後丟失）
         self._orders: Dict[str, OrderResult] = {}
+        self._pending_orders: List[Dict] = []  # STOP/TP conditional orders
         self._current_prices: Dict[str, float] = {}
         self._state_file = state_file
         if state_file and os.path.exists(state_file) and not reset:
@@ -195,6 +196,150 @@ class PaperOrderExecutor(OrderExecutor):
         for pos in self._positions.values():
             if pos.symbol == symbol:
                 pos.update_unrealized_pnl(price)
+        
+        # Check pending conditional orders
+        self._check_pending_orders(symbol, price)
+
+    def _check_pending_orders(self, symbol: str, price: float) -> None:
+        """Check and execute pending conditional orders when trigger price is hit."""
+        triggered = []
+        for pending in self._pending_orders:
+            if pending['symbol'] != symbol:
+                continue
+            
+            stop_price = pending['stop_price']
+            order_type = pending['order_type']
+            
+            # STOP_MARKET: trigger when price <= stop_price (for LONG positions)
+            if order_type == OrderType.STOP_MARKET:
+                if price <= stop_price:
+                    triggered.append(pending)
+            
+            # TAKE_PROFIT_MARKET: trigger when price >= stop_price (for LONG positions)
+            elif order_type == OrderType.TAKE_PROFIT_MARKET:
+                if price >= stop_price:
+                    triggered.append(pending)
+        
+        # Execute triggered orders
+        for pending in triggered:
+            self._pending_orders.remove(pending)
+            # Execute the order at current market price
+            self._execute_pending_order(pending, price)
+    
+    def _execute_pending_order(self, pending: Dict, execution_price: float) -> OrderResult:
+        """Execute a pending conditional order."""
+        order_id = pending['order_id']
+        symbol = pending['symbol']
+        side = pending['side']
+        order_type = pending['order_type']
+        quantity = pending['quantity']
+        position_side = pending['position_side']
+        reduce_only = pending['reduce_only']
+        
+        logger.info(
+            f"Conditional order triggered: {order_id} {side.value} {quantity} {symbol} "
+            f"@ {execution_price} (stop_price={pending['stop_price']})"
+        )
+        
+        # Update position
+        if position_side:
+            pos_key = f"{symbol}_{position_side.value}"
+            
+            if side == OrderSide.BUY:
+                if position_side == PositionSide.SHORT and pos_key in self._positions:
+                    # Close short position
+                    pos = self._positions[pos_key]
+                    close_qty = min(quantity, pos.quantity)
+                    realized = (pos.entry_price - execution_price) * close_qty
+                    pos.realized_pnl += realized
+                    self._realized_pnl += realized
+                    self._balance += (
+                        pos.entry_price * close_qty / pos.leverage + realized
+                    )
+                    pos.quantity -= close_qty
+                    if pos.quantity <= 0:
+                        del self._positions[pos_key]
+                else:
+                    # Open/add long position
+                    if pos_key in self._positions:
+                        # Add to position
+                        self._positions[pos_key].quantity += quantity
+                        avg_price = (
+                            self._positions[pos_key].entry_price * (self._positions[pos_key].quantity - quantity)
+                            + execution_price * quantity
+                        ) / self._positions[pos_key].quantity
+                        self._positions[pos_key].entry_price = avg_price
+                    else:
+                        # New position
+                        self._positions[pos_key] = PaperPosition(
+                            symbol=symbol,
+                            position_side=position_side,
+                            entry_price=execution_price,
+                            quantity=quantity,
+                        )
+                    # Deduct margin
+                    self._balance -= (
+                        execution_price * quantity / self._positions[pos_key].leverage
+                    )
+            else:
+                # SELL
+                if position_side == PositionSide.LONG and pos_key in self._positions:
+                    # Close long position
+                    pos = self._positions[pos_key]
+                    close_qty = min(quantity, pos.quantity)
+                    realized = (execution_price - pos.entry_price) * close_qty
+                    pos.realized_pnl += realized
+                    self._realized_pnl += realized
+                    # Return margin + realized PnL
+                    self._balance += (
+                        pos.entry_price * close_qty / pos.leverage + realized
+                    )
+                    pos.quantity -= close_qty
+                    if pos.quantity <= 0:
+                        del self._positions[pos_key]
+                elif pos_key in self._positions:
+                    # Add to short position
+                    self._positions[pos_key].quantity += quantity
+                    avg_price = (
+                        self._positions[pos_key].entry_price * (self._positions[pos_key].quantity - quantity)
+                        + execution_price * quantity
+                    ) / self._positions[pos_key].quantity
+                    self._positions[pos_key].entry_price = avg_price
+                    self._balance -= (
+                        execution_price * quantity / self._positions[pos_key].leverage
+                    )
+                elif position_side == PositionSide.SHORT:
+                    # New short position
+                    self._positions[pos_key] = PaperPosition(
+                        symbol=symbol,
+                        position_side=position_side,
+                        entry_price=execution_price,
+                        quantity=quantity,
+                    )
+                    self._balance -= (
+                        execution_price * quantity / self._positions[pos_key].leverage
+                    )
+                else:
+                    logger.warning(f"No position to close for {pos_key}")
+        
+        result = OrderResult(
+            order_id=order_id,
+            symbol=symbol,
+            side=side,
+            order_type=order_type,
+            quantity=quantity,
+            price=None,
+            filled_price=execution_price,
+            filled_quantity=quantity,
+            status="FILLED",
+            timestamp=int(datetime.now().timestamp() * 1000),
+            is_paper=True,
+        )
+        
+        self._orders[order_id] = result
+        self._save_state()
+        
+        return result
 
     def get_reference_price(self, symbol: str) -> Optional[float]:
         """Return the latest paper-market reference price for risk checks."""
@@ -214,6 +359,60 @@ class PaperOrderExecutor(OrderExecutor):
         """下单（模拟）"""
         order_id = f"paper_{uuid.uuid4().hex[:8]}"
         timestamp = int(datetime.now().timestamp() * 1000)
+
+        # Conditional orders (STOP/TP) are stored as pending until trigger price is hit
+        if order_type in (OrderType.STOP_MARKET, OrderType.TAKE_PROFIT_MARKET):
+            if stop_price is None:
+                logger.warning(f"Conditional order {order_id} has no stop_price, rejecting")
+                return OrderResult(
+                    order_id=order_id,
+                    symbol=symbol,
+                    side=side,
+                    order_type=order_type,
+                    quantity=quantity,
+                    price=price,
+                    filled_price=None,
+                    filled_quantity=0,
+                    status="REJECTED",
+                    timestamp=timestamp,
+                    is_paper=True,
+                )
+            
+            pending_order = {
+                'order_id': order_id,
+                'symbol': symbol,
+                'side': side,
+                'order_type': order_type,
+                'quantity': quantity,
+                'stop_price': stop_price,
+                'position_side': position_side,
+                'reduce_only': reduce_only,
+                'created_at': timestamp,
+            }
+            self._pending_orders.append(pending_order)
+            logger.info(
+                f"Conditional order stored: {order_id} {side.value} {quantity} {symbol} "
+                f"stop_price={stop_price} type={order_type.value}"
+            )
+            
+            # Check if trigger is already hit (e.g., price already past stop)
+            current_price = self._current_prices.get(symbol)
+            if current_price is not None:
+                self._check_pending_orders(symbol, current_price)
+            
+            return OrderResult(
+                order_id=order_id,
+                symbol=symbol,
+                side=side,
+                order_type=order_type,
+                quantity=quantity,
+                price=price,
+                filled_price=None,
+                filled_quantity=0,
+                status="PENDING",
+                timestamp=timestamp,
+                is_paper=True,
+            )
 
         # 获取执行价格
         if price is None:

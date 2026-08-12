@@ -35,6 +35,30 @@ async def prompt_with_timeout(agent: Any, prompt: str, timeout: float = 120.0) -
     """
     try:
         await asyncio.wait_for(agent.prompt(prompt), timeout=timeout)
+        
+        # P0.3: Track LLM usage after successful prompt
+        try:
+            from vibe_trading.monitoring.usage_tracker import track_llm_usage
+            
+            # Extract agent metadata for tracking
+            agent_name = getattr(agent, "name", None) or getattr(agent, "agent_name", "unknown")
+            model = "unknown"
+            symbol = "unknown"
+            
+            # Try to get model from agent state
+            if hasattr(agent, "state") and hasattr(agent.state, "model"):
+                model = getattr(agent.state.model, "name", "unknown")
+            
+            # Try to get symbol from tool_context if available
+            if hasattr(agent, "tool_context"):
+                symbol = getattr(agent.tool_context, "symbol", "unknown")
+            
+            await track_llm_usage(agent_name, model, symbol, agent)
+        except Exception as e:
+            # Don't let usage tracking break the main flow
+            import logging
+            logging.getLogger(__name__).debug(f"Usage tracking failed: {e}")
+        
         return True
     except asyncio.TimeoutError:
         return False

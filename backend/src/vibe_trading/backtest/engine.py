@@ -70,10 +70,25 @@ class BacktestEngine:
         entry_price: float, exit_price: float,
         entry_time_ms: int, exit_time_ms: int,
         position_size: float, bars_held: int,
+        fee_rate: float = 0.0, slippage_rate: float = 0.0,
     ) -> Trade:
-        """Build a Trade with computed P&L fields."""
-        pnl = (exit_price - entry_price) * position_size
-        pnl_pct = (exit_price - entry_price) / entry_price if entry_price else 0.0
+        """Build a Trade with computed P&L fields including fees and slippage."""
+        # Apply slippage: entry price worse by slippage_rate, exit price worse by slippage_rate
+        actual_entry = entry_price * (1 + slippage_rate)
+        actual_exit = exit_price * (1 - slippage_rate)
+        
+        # Calculate raw P&L
+        raw_pnl = (actual_exit - actual_entry) * position_size
+        
+        # Apply fees on both entry and exit
+        entry_fee = actual_entry * position_size * fee_rate
+        exit_fee = actual_exit * position_size * fee_rate
+        total_fees = entry_fee + exit_fee
+        
+        pnl = raw_pnl - total_fees
+        pnl_pct = (actual_exit - actual_entry) / actual_entry if actual_entry else 0.0
+        pnl_pct -= 2 * fee_rate  # Subtract fees from percentage
+        
         return Trade(
             entry_time=_ms_to_dt(entry_time_ms),
             exit_time=_ms_to_dt(exit_time_ms),
@@ -91,6 +106,8 @@ class BacktestEngine:
         klines: List[Dict],
         signals: List[str],
         position_size: float,
+        fee_rate: float = 0.0,
+        slippage_rate: float = 0.0,
     ) -> List[Trade]:
         """Convert signals into round-trip trades.
 
@@ -116,6 +133,7 @@ class BacktestEngine:
                     entry_price, nxt_open,
                     entry_time_ms, nxt_time,
                     position_size, (i + 1) - entry_idx,
+                    fee_rate, slippage_rate,
                 ))
                 in_position = False
 
@@ -126,6 +144,7 @@ class BacktestEngine:
                 entry_price, float(last["close"]),
                 entry_time_ms, int(last["open_time_ms"]),
                 position_size, (len(klines) - 1) - entry_idx,
+                fee_rate, slippage_rate,
             ))
 
         return trades
@@ -233,7 +252,7 @@ class BacktestEngine:
 
         position_size = self.config.initial_balance * position_pct
         signals = self._signals_from_klines(klines, fast_period, slow_period)
-        trades = self._simulate(klines, signals, position_size)
+        trades = self._simulate(klines, signals, position_size, self.config.fee_rate, self.config.slippage_rate)
         stats = self._stats_from_trades(trades, self.config.initial_balance)
 
         first = klines[0]

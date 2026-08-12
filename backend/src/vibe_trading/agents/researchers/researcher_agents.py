@@ -12,10 +12,12 @@ from pi_logger import get_logger
 
 from vibe_trading.config.agent_config import AgentConfig, AgentRole
 from vibe_trading.config.prompts import (
+    RESEARCH_MANAGER_PROMPT,
     BULL_RESEARCHER_PROMPT,
     BEAR_RESEARCHER_PROMPT,
-    RESEARCH_MANAGER_PROMPT,
 )
+from vibe_trading.agents.decision.schemas import InvestmentRecommendationSchema
+from vibe_trading.agents.decision.structured_output import parse_structured_output
 from vibe_trading.config.settings import get_settings
 from vibe_trading.agents.llm_content import extract_text, get_agent_error, prompt_with_timeout
 from vibe_trading.agents.agent_factory import ToolContext, setup_streaming
@@ -365,6 +367,18 @@ class ResearchManagerAgent:
                     else:
                         decision_text = str(content)
 
+            # P0.2: 尝试解析结构化输出
+            structured_recommendation = parse_structured_output(decision_text, InvestmentRecommendationSchema)
+            if structured_recommendation:
+                logger.info(f"ResearchManager structured recommendation parsed: action={structured_recommendation.action}", tag="ResearchManager")
+                # 使用结构化输出更新 recommendation
+                recommendation.action = structured_recommendation.action
+                recommendation.confidence = structured_recommendation.confidence
+                recommendation.key_factors = structured_recommendation.key_factors
+                recommendation.risk_factors = structured_recommendation.risk_warnings
+            else:
+                logger.warning("ResearchManager structured output parsing failed, using text fallback", tag="ResearchManager")
+
             # 4. 生成分析摘要
             analysis_summary = self._generate_analysis_summary(scorecard, recommendation)
 
@@ -428,15 +442,20 @@ class ResearchManagerAgent:
             prompt += f"\n{role.upper()}:\n{report[:200]}...\n"
 
         prompt += """
-请基于以上分析，提供你的最终裁决，包括:
-1. 你的最终投资建议 (BUY/SELL/HOLD)
-2. 建议的置信度
-3. 具体的投资计划 (入场价位、目标价位、止损价位、仓位建议)
-4. 理由说明 (综合各方观点后的理由)
-5. 风险提示
+請基於以上分析，提供你的最終裁決。請以 JSON 格式回應，包含以下欄位：
+{
+  "action": "BUY" | "SELL" | "HOLD",  // 最終投資建議
+  "confidence": 0.0-1.0,  // 建議的置信度
+  "reasoning": "綜合各方觀點後的理由說明",
+  "key_factors": ["關鍵因素1", "關鍵因素2", ...],  // 影響決策的關鍵因素
+  "risk_warnings": ["風險提示1", "風險提示2", ...]  // 需要關注的風險
+}
+
+請將 JSON 放在 ```json 代碼塊中。
 """
 
         return prompt
+
 
     def _generate_analysis_summary(
         self,

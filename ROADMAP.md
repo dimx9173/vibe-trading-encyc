@@ -174,18 +174,35 @@
   - C3 每 bar 注入 PM（`_build_decision_prompt`）
   - C4 决策级反思（含 HOLD，`REFLECTION_MATURATION_BARS`）
   - C5 跨 ticker 教训聚合（无 LLM）
-- [ ] **P0.2** 结构化输出：`pi_ai/llm.py` 加 `response_format`；Trader/PM 产出 schema 化
-- [ ] **P0.3** 用量遥测：`pi_ai/usage_ledger.py` + 前端面板
-- [ ] **P1.1** MCP server 化 `get_all_tools()`
-- [ ] **P1.2** Checkpoint/Resume（per-phase 落 SQLite + `resume_from`）
-- [ ] **P1.3** Grounded Analyst（情绪/新闻锚定价格）
-- [ ] **P2.2** 回测引擎 `run()` + metrics + MC/WF/Bootstrap（先于 Alpha Zoo）
-- [ ] **P2.1** Alpha Zoo（因子库 + IC/IR bench + 纯度门）
-- [ ] **P2.3** Shadow Account（行为诊断报告）
-- [ ] **P3.1** Hypothesis Registry + Research Goal
-- [ ] **P3.2** 跨会话记忆升级（FTS5 + 压缩 + skill CRUD）
-- [ ] **P3.3** 策略导出（Pine/MQL5）
-- [ ] **P3.4** Swarm 预设（可配置编排）
+- [x] **P0.2** 结构化输出 ✅
+  - 创建 Pydantic schemas（FinalDecisionSchema, TradingPlanSchema, InvestmentRecommendationSchema, TraderAnalysisSchema）
+  - 实现 JSON 解析工具（extract_json_from_text, parse_structured_output）
+  - TraderAgent 整合结构化输出（解析 LLM 响应为 TraderAnalysisSchema）
+  - PortfolioManagerAgent 整合结构化输出（解析 LLM 响应为 FinalDecisionSchema）
+  - ResearchManager 整合结构化输出（解析 LLM 响应为 InvestmentRecommendationSchema）
+  - 编写测试（test_structured_output.py，15 tests passed）
+- [x] **P0.3** 用量遥测 ✅
+  - 創建 `monitoring/usage_ledger.py`：SQLite 持久化追蹤 LLM 使用量（agent/model/symbol 維度）
+  - 創建 `monitoring/usage_tracker.py`：從 agent 回應中提取 usage 數據
+  - 整合到 `agents/llm_content.py:prompt_with_timeout`：所有 LLM 調用自動追蹤
+  - 添加 Web API 端點：`/api/usage/summary`、`/api/usage/daily`、`/api/usage/top-agents`、`/api/usage/top-models`
+  - 編寫測試（test_usage_ledger.py，16 tests passed）
+- [x] **P1.1** MCP server 化 `get_all_tools()` ✅
+  - 創建 `mcp/server.py`：MCPServer 類別封裝 get_all_tools()
+  - 實現 list_tools() 方法列出所有可用工具（MCP 格式）
+  - 實現 call_tool() 方法執行工具並返回結果
+  - 無 tool_context 時自動排除 submit_trade_order 等交易工具
+  - 全局單例模式 get_mcp_server() + reset_mcp_server() 用於測試
+  - 編寫測試（test_mcp_server.py，14 tests passed）
+- [x] **P1.2** Checkpoint/Resume（per-phase 落 SQLite + `resume_from`）✅
+- [x] **P1.3** Grounded Analyst（情绪/新闻锚定价格）✅
+- [x] **P2.2** 回測引擎 `run()` + metrics + MC/WF/Bootstrap（先於 Alpha Zoo）✅
+- [x] **P2.1** Alpha Zoo（因子库 + IC/IR bench + 纯度门）✅
+- [x] **P2.3** Shadow Account（行为诊断报告）✅
+- [x] **P3.1** Hypothesis Registry + Research Goal ✅
+- [x] **P3.2** 跨会话记忆升级（FTS5 + 压缩 + skill CRUD）✅
+- [x] **P3.3** 策略导出（Pine/MQL5）✅
+- [x] **P3.4** Swarm 预设（可配置编排）✅
 - [ ] **P4.1** OKX 实盘 + broker connector 抽象
 - [ ] **P4.2** 多市场数据源（仅当扩业务边界）
 

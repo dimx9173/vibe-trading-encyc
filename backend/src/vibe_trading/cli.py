@@ -310,8 +310,8 @@ def analyze(
         storage = KlineStorage()
         await storage.init()
 
-        from vibe_trading.memory.memory import create_memory_from_settings
-        memory = create_memory_from_settings()
+        from vibe_trading.memory.hybrid_memory import create_hybrid_memory_from_settings
+        memory = create_hybrid_memory_from_settings()
 
         coordinator = TradingCoordinator(
             symbol=symbol,
@@ -609,6 +609,544 @@ def macro(
             warning("宏观分析失败", tag="MACRO")
 
     asyncio.run(run_macro_analysis())
+
+
+# Alpha Zoo CLI commands
+alpha_app = typer.Typer(help="Alpha 因子庫管理")
+app.add_typer(alpha_app, name="alpha")
+
+
+@alpha_app.command("list")
+def alpha_list(
+    category: str = typer.Option(None, "--category", "-c", help="因子類別 (momentum/volatility/volume/mean_reversion)"),
+):
+    """列出所有可用因子"""
+    from vibe_trading.backtest.alphas import get_all_alphas, get_alphas_by_category
+    
+    table = Table(title="Alpha 因子庫")
+    table.add_column("名稱", style="cyan")
+    table.add_column("類別", style="green")
+    table.add_column("公式", style="yellow")
+    table.add_column("預熱期", justify="right")
+    table.add_column("標籤", style="magenta")
+    
+    if category:
+        alphas = get_alphas_by_category(category)
+    else:
+        alphas = get_all_alphas()
+    
+    for alpha_class in alphas:
+        meta = alpha_class.__alpha_meta__
+        table.add_row(
+            meta.name,
+            meta.tags[0] if meta.tags else "unknown",
+            meta.formula,
+            str(meta.warmup_periods),
+            ", ".join(meta.tags[:3]),
+        )
+    
+    console.print(table)
+    console.print(f"\n共 {len(alphas)} 個因子")
+
+
+@alpha_app.command("bench")
+def alpha_bench(
+    symbol: str = typer.Argument("BTCUSDT", help="交易對符號"),
+    interval: str = typer.Option("1h", "--interval", "-i", help="K線間隔"),
+    periods: int = typer.Option(500, "--periods", "-p", help="數據期數"),
+    forward_period: int = typer.Option(1, "--forward", "-f", help="前瞻期數"),
+    category: str = typer.Option(None, "--category", "-c", help="因子類別篩選"),
+):
+    """運行因子 IC/IR benchmark 報告"""
+    from vibe_trading.backtest.alphas import get_all_alphas, get_alphas_by_category
+    from vibe_trading.backtest.alphas.metrics import calculate_ic_summary
+    from vibe_trading.data_sources.kline_storage import KlineStorage
+    
+    # 獲取因子列表
+    if category:
+        alphas = get_alphas_by_category(category)
+    else:
+        alphas = get_all_alphas()
+    # 加載數據
+    try:
+        storage = KlineStorage()
+        from vibe_trading.data_sources.kline_storage import KlineQuery
+        query = KlineQuery(symbol=symbol, interval=interval, limit=periods + 50)
+        klines = asyncio.run(storage.query_klines(query))
+        if not klines:
+            warning(f"無法獲取 {symbol} 的 K線數據（數據庫為空）", tag="ALPHA")
+            console.print("[dim]提示: 先運行 vibe-trade start 收集數據，或使用 --demo 生成模擬數據[/dim]")
+            return
+        
+        # 轉換為 DataFrame
+        import pandas as pd
+        data = pd.DataFrame([
+            {
+                "open_time": k.open_time,
+                "open": k.open,
+                "high": k.high,
+                "low": k.low,
+                "close": k.close,
+                "volume": k.volume,
+            }
+            for k in klines
+        ])
+        data["open_time"] = pd.to_datetime(data["open_time"], unit="ms")
+        data.set_index("open_time", inplace=True)
+    except Exception as e:
+        warning(f"數據加載失敗: {e}", tag="ALPHA")
+        return
+    
+    # 計算前瞻收益
+    close = data["close"]
+    forward_returns = close.shift(-forward_period).pct_change(forward_period).shift(forward_period)
+    
+    # 運行每個因子
+    results = []
+    for alpha_class in alphas:
+        try:
+            alpha = alpha_class()
+            meta = alpha.__alpha_meta__
+            
+            # 計算因子值
+            factor_values = alpha.compute(data)
+            
+            # 對齊數據
+            common_idx = factor_values.index.intersection(forward_returns.index)
+            fv = factor_values.loc[common_idx]
+            fr = forward_returns.loc[common_idx]
+            
+            # 計算 IC/IR
+            summary = calculate_ic_summary(fv, fr)
+            
+            results.append({
+                "name": meta.name,
+                "category": meta.tags[0] if meta.tags else "unknown",
+                "ic_mean": summary.get("ic_mean", 0),
+                "ic_std": summary.get("ic_std", 0),
+                "ir": summary.get("ir", 0),
+                "ic_pos_ratio": summary.get("ic_pos_ratio", 0),
+            })
+        except Exception as e:
+            warning(f"{alpha_class.__name__} 計算失敗: {e}", tag="ALPHA")
+    
+    # 顯示結果
+    table = Table(title="IC/IR Benchmark Results")
+    table.add_column("因子", style="cyan")
+    table.add_column("類別", style="green")
+    table.add_column("IC Mean", justify="right", style="yellow")
+    table.add_column("IC Std", justify="right")
+    table.add_column("IR", justify="right", style="magenta")
+    table.add_column("IC>0%", justify="right")
+    
+    # 按 IR 絕對值排序
+    results.sort(key=lambda x: abs(x["ir"]), reverse=True)
+    
+    for r in results:
+        table.add_row(
+            r["name"],
+            r["category"],
+            f"{r['ic_mean']:.4f}",
+            f"{r['ic_std']:.4f}",
+            f"{r['ir']:.4f}",
+            f"{r['ic_pos_ratio']:.1%}",
+        )
+    
+    console.print(table)
+    console.print(f"\n共測試 {len(results)} 個因子")
+
+# Shadow Account CLI commands
+shadow_app = typer.Typer(help="Shadow Account 行為診斷")
+app.add_typer(shadow_app, name="shadow")
+
+
+@shadow_app.command("analyze")
+def shadow_analyze(
+    csv_path: str = typer.Argument(..., help="Binance 交易歷史 CSV 文件路徑"),
+    trader_id: str = typer.Option("default", "--trader", "-t", help="交易者 ID"),
+    output: str = typer.Option("shadow_report.html", "--output", "-o", help="報告輸出路徑"),
+    recommended_daily: int = typer.Option(8, "--recommended-daily", help="建議日均交易次數"),
+    chasing_threshold: float = typer.Option(3.0, "--chasing-threshold", help="追漲閾值百分比"),
+):
+    """分析交易記錄並生成行為診斷報告
+
+    示例:
+        vibe-trade shadow analyze trades.csv
+        vibe-trade shadow analyze trades.csv -t my_trader -o report.html
+    """
+    from vibe_trading.backtest.shadow_account import ShadowAccountAnalyzer
+
+    analyzer = ShadowAccountAnalyzer(
+        recommended_daily_trades=recommended_daily,
+        chasing_threshold_pct=chasing_threshold,
+    )
+
+    console.print(f"[bold cyan]Shadow Account Analysis[/bold cyan]")
+    console.print(f"CSV: {csv_path}")
+    console.print(f"Trader: {trader_id}")
+    console.print()
+
+    try:
+        report = analyzer.analyze_csv(csv_path, trader_id=trader_id)
+    except FileNotFoundError as e:
+        warning(str(e), tag="SHADOW")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        warning(f"分析失敗: {e}", tag="SHADOW")
+        raise typer.Exit(code=1)
+
+    # 顯示摘要
+    profile = report.profile
+    console.print(Panel(
+        f"[bold]交易者:[/bold] {profile.trader_id}\n"
+        f"[bold]分析期間:[/bold] {profile.analysis_period_start.strftime('%Y-%m-%d')} - {profile.analysis_period_end.strftime('%Y-%m-%d')}\n"
+        f"[bold]總交易:[/bold] {profile.total_trades} (已平倉: {profile.closed_trades})\n"
+        f"[bold]整體偏差分數:[/bold] {profile.overall_score:.2f}/1.00",
+        title="[bold cyan]行為剖面[/bold cyan]",
+    ))
+
+    # 顯示偏差
+    table = Table(title="行為偏差分析")
+    table.add_column("偏差類型", style="cyan")
+    table.add_column("分數", justify="right")
+    table.add_column("描述", style="yellow")
+
+    for bias in profile.biases:
+        score_color = "green" if bias.score < 0.4 else ("yellow" if bias.score < 0.7 else "red")
+        table.add_row(
+            bias.bias_type.value,
+            f"[{score_color}]{bias.score:.2f}[/{score_color}]",
+            bias.description,
+        )
+
+    console.print(table)
+
+    # 顯示反事實
+    if report.counterfactual:
+        cf = report.counterfactual
+        console.print(Panel(
+            f"[bold]實際 PnL:[/bold] {cf.actual_pnl:.2f} USDT ({cf.actual_pnl_pct:.2%})\n"
+            f"[bold]理想 PnL:[/bold] {cf.ideal_pnl:.2f} USDT ({cf.ideal_pnl_pct:.2%})\n"
+            f"[bold]潛在改進:[/bold] [green]+{cf.improvement:.2f} USDT ({cf.improvement_pct:.2%})[/green]",
+            title="[bold cyan]反事實分析[/bold cyan]",
+        ))
+
+    # 保存報告
+    analyzer.save_report(report, output)
+    success(f"報告已保存: {output}", tag="SHADOW")
+
+    # 顯示建議
+    if report.recommendations:
+        console.print("\n[bold]建議:[/bold]")
+        for i, rec in enumerate(report.recommendations, 1):
+            console.print(f"  {i}. {rec}")
+
+# Research CLI commands
+research_app = typer.Typer(help="Hypothesis Registry & Research Goals")
+app.add_typer(research_app, name="research")
+
+
+@research_app.command("hyp-create")
+def hyp_create(
+    title: str = typer.Argument(..., help="假設標題"),
+    description: str = typer.Option("", "--desc", "-d", help="假設描述"),
+    tags: str = typer.Option("", "--tags", "-t", help="標籤（逗號分隔）"),
+    factors: str = typer.Option("", "--factors", "-f", help="Alpha 因子（逗號分隔）"),
+):
+    """創建新的研究假設"""
+    from vibe_trading.backtest.research import HypothesisRegistry
+
+    registry = HypothesisRegistry()
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+    factor_list = [f.strip() for f in factors.split(",") if f.strip()]
+
+    hyp = registry.create(
+        title=title,
+        description=description,
+        tags=tag_list,
+        alpha_factors=factor_list,
+    )
+
+    success(f"假設已創建: {hyp.id}", tag="RESEARCH")
+    console.print(f"  標題: {hyp.title}")
+    console.print(f"  狀態: {hyp.status.value}")
+    console.print(f"  標籤: {', '.join(hyp.tags)}")
+
+
+@research_app.command("hyp-list")
+def hyp_list(
+    status: str = typer.Option(None, "--status", "-s", help="狀態篩選"),
+    tags: str = typer.Option(None, "--tags", "-t", help="標籤篩選（逗號分隔）"),
+):
+    """列出研究假設"""
+    from vibe_trading.backtest.research import HypothesisRegistry, HypothesisStatus
+
+    registry = HypothesisRegistry()
+    status_filter = HypothesisStatus(status) if status else None
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
+
+    hyps = registry.list(status=status_filter, tags=tag_list)
+
+    table = Table(title="研究假設")
+    table.add_column("ID", style="cyan")
+    table.add_column("標題", style="yellow")
+    table.add_column("狀態", style="green")
+    table.add_column("標籤", style="magenta")
+    table.add_column("更新時間")
+
+    for hyp in hyps:
+        table.add_row(
+            hyp.id,
+            hyp.title,
+            hyp.status.value,
+            ", ".join(hyp.tags),
+            hyp.updated_at.strftime("%Y-%m-%d %H:%M"),
+        )
+
+    console.print(table)
+    console.print(f"\n共 {len(hyps)} 個假設")
+
+
+@research_app.command("goal-create")
+def goal_create(
+    title: str = typer.Argument(..., help="研究目標標題"),
+    description: str = typer.Option("", "--desc", "-d", help="研究目標描述"),
+    checklist: str = typer.Option("", "--checklist", "-c", help="檢查清單項目（逗號分隔）"),
+    budget: int = typer.Option(10, "--budget", "-b", help="回測預算次數"),
+    tags: str = typer.Option("", "--tags", "-t", help="標籤（逗號分隔）"),
+):
+    """創建新的研究目標"""
+    from vibe_trading.backtest.research import GoalManager
+
+    manager = GoalManager()
+    checklist_items = [item.strip() for item in checklist.split(",") if item.strip()]
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+
+    goal = manager.create(
+        title=title,
+        description=description,
+        checklist_items=checklist_items,
+        budget_backtests=budget,
+        tags=tag_list,
+    )
+
+    success(f"研究目標已創建: {goal.id}", tag="RESEARCH")
+    console.print(f"  標題: {goal.title}")
+    console.print(f"  狀態: {goal.status.value}")
+    console.print(f"  預算: {goal.budget_backtests} 次回測")
+    console.print(f"  檢查清單: {len(goal.checklist)} 項")
+
+
+@research_app.command("goal-list")
+def goal_list(
+    status: str = typer.Option(None, "--status", "-s", help="狀態篩選"),
+):
+    """列出研究目標"""
+    from vibe_trading.backtest.research import GoalManager, GoalStatus
+
+    manager = GoalManager()
+    status_filter = GoalStatus(status) if status else None
+
+    goals = manager.list(status=status_filter)
+
+    table = Table(title="研究目標")
+    table.add_column("ID", style="cyan")
+    table.add_column("標題", style="yellow")
+    table.add_column("狀態", style="green")
+    table.add_column("進度", justify="right")
+    table.add_column("預算使用", justify="right")
+    table.add_column("更新時間")
+
+    for goal in goals:
+        progress = f"{goal.completion_percentage:.0f}%"
+        budget = f"{goal.budget_used}/{goal.budget_backtests}"
+        table.add_row(
+            goal.id,
+            goal.title,
+            goal.status.value,
+            progress,
+            budget,
+            goal.updated_at.strftime("%Y-%m-%d %H:%M"),
+        )
+
+    console.print(table)
+    console.print(f"\n共 {len(goals)} 個目標")
+
+# Swarm Presets CLI commands
+swarm_app = typer.Typer(help="Swarm Presets - 可配置管線編排")
+app.add_typer(swarm_app, name="swarm")
+
+
+@swarm_app.command("list")
+def swarm_list():
+    """列出所有可用的 Swarm 預設"""
+    from vibe_trading.coordinator.presets import PresetLoader
+
+    loader = PresetLoader()
+    presets = loader.load_builtin_presets()
+
+    table = Table(title="Swarm 預設")
+    table.add_column("名稱", style="cyan")
+    table.add_column("模式", style="green")
+    table.add_column("描述", style="yellow")
+    table.add_column("階段數", justify="right")
+    table.add_column("超時", justify="right")
+
+    for name, preset in presets.items():
+        enabled_phases = len(preset.get_enabled_phases())
+        timeout = f"{preset.global_timeout_seconds}s" if preset.global_timeout_seconds else "N/A"
+        table.add_row(
+            name,
+            preset.mode.value,
+            preset.description,
+            str(enabled_phases),
+            timeout,
+        )
+
+    console.print(table)
+    console.print(f"\n共 {len(presets)} 個預設")
+
+
+@swarm_app.command("show")
+def swarm_show(
+    name: str = typer.Argument(..., help="預設名稱"),
+):
+    """顯示預設詳細配置"""
+    from vibe_trading.coordinator.presets import PresetLoader
+
+    loader = PresetLoader()
+    presets = loader.load_builtin_presets()
+
+    if name not in presets:
+        warning(f"預設 '{name}' 不存在", tag="SWARM")
+        raise typer.Exit(code=1)
+
+    preset = presets[name]
+
+    console.print(Panel(
+        f"[bold]名稱:[/bold] {preset.name}\n"
+        f"[bold]模式:[/bold] {preset.mode.value}\n"
+        f"[bold]描述:[/bold] {preset.description}\n"
+        f"[bold]全局超時:[/bold] {preset.global_timeout_seconds}s",
+        title=f"[bold cyan]Swarm 預設: {name}[/bold cyan]",
+    ))
+
+    table = Table(title="階段配置")
+    table.add_column("階段", style="cyan")
+    table.add_column("啟用", style="green")
+    table.add_column("代理數", justify="right")
+    table.add_column("超時", justify="right")
+
+    for phase_name, phase_config in preset.phases.items():
+        agent_count = len([a for a in phase_config.agents.values() if a.enabled])
+        timeout = f"{phase_config.timeout_seconds}s" if phase_config.timeout_seconds else "N/A"
+        table.add_row(
+            phase_name.value,
+            "✅" if phase_config.enabled else "❌",
+            str(agent_count),
+            timeout,
+        )
+
+    console.print(table)
+
+
+@swarm_app.command("validate")
+def swarm_validate(
+    name: str = typer.Argument(..., help="預設名稱"),
+):
+    """驗證預設配置"""
+    from vibe_trading.coordinator.presets import PresetLoader
+
+    loader = PresetLoader()
+    presets = loader.load_builtin_presets()
+
+    if name not in presets:
+        warning(f"預設 '{name}' 不存在", tag="SWARM")
+        raise typer.Exit(code=1)
+
+    preset = presets[name]
+    issues = loader.validate_preset(preset)
+
+    if not issues:
+        success(f"預設 '{name}' 驗證通過", tag="SWARM")
+    else:
+        warning(f"預設 '{name}' 存在 {len(issues)} 個問題:", tag="SWARM")
+        for i, issue in enumerate(issues, 1):
+            console.print(f"  {i}. {issue}")
+
+# Strategy Export CLI commands
+export_app = typer.Typer(help="策略导出 - 转换为 Pine Script / MQL5")
+app.add_typer(export_app, name="export")
+
+
+@export_app.command("to-pine")
+def export_to_pine(
+    plan_file: str = typer.Argument(..., help="交易计划 JSON 文件路径"),
+    output: str = typer.Option("strategy.pine", "--output", "-o", help="输出文件路径"),
+    strategy_name: str = typer.Option("VibeTradingStrategy", "--name", "-n", help="策略名称"),
+    author: str = typer.Option("Vibe Trading", "--author", "-a", help="作者"),
+):
+    """导出交易计划为 Pine Script (TradingView)"""
+    import json
+    from vibe_trading.exporters import PineScriptExporter, ExportConfig
+
+    try:
+        with open(plan_file, "r", encoding="utf-8") as f:
+            plan = json.load(f)
+    except FileNotFoundError:
+        warning(f"文件不存在: {plan_file}", tag="EXPORT")
+        raise typer.Exit(code=1)
+    except json.JSONDecodeError as e:
+        warning(f"JSON 格式错误: {e}", tag="EXPORT")
+        raise typer.Exit(code=1)
+
+    config = ExportConfig(strategy_name=strategy_name, author=author)
+    exporter = PineScriptExporter(config)
+    result = exporter.export(plan)
+
+    with open(output, "w", encoding="utf-8") as f:
+        f.write(result)
+
+    success(f"Pine Script 已导出: {output}", tag="EXPORT")
+    console.print(f"  策略名称: {strategy_name}")
+    console.print(f"  作者: {author}")
+    console.print(f"  交易对: {plan.get('symbol', 'N/A')}")
+    console.print(f"  方向: {plan.get('direction', 'N/A')}")
+
+
+@export_app.command("to-mql5")
+def export_to_mql5(
+    plan_file: str = typer.Argument(..., help="交易计划 JSON 文件路径"),
+    output: str = typer.Option("strategy.mq5", "--output", "-o", help="输出文件路径"),
+    strategy_name: str = typer.Option("VibeTradingStrategy", "--name", "-n", help="策略名称"),
+    author: str = typer.Option("Vibe Trading", "--author", "-a", help="作者"),
+):
+    """导出交易计划为 MQL5 (MetaTrader 5)"""
+    import json
+    from vibe_trading.exporters import MQL5Exporter, ExportConfig
+
+    try:
+        with open(plan_file, "r", encoding="utf-8") as f:
+            plan = json.load(f)
+    except FileNotFoundError:
+        warning(f"文件不存在: {plan_file}", tag="EXPORT")
+        raise typer.Exit(code=1)
+    except json.JSONDecodeError as e:
+        warning(f"JSON 格式错误: {e}", tag="EXPORT")
+        raise typer.Exit(code=1)
+
+    config = ExportConfig(strategy_name=strategy_name, author=author)
+    exporter = MQL5Exporter(config)
+    result = exporter.export(plan)
+
+    with open(output, "w", encoding="utf-8") as f:
+        f.write(result)
+
+    success(f"MQL5 已导出: {output}", tag="EXPORT")
+    console.print(f"  策略名称: {strategy_name}")
+    console.print(f"  作者: {author}")
+    console.print(f"  交易对: {plan.get('symbol', 'N/A')}")
+    console.print(f"  方向: {plan.get('direction', 'N/A')}")
 
 
 if __name__ == "__main__":

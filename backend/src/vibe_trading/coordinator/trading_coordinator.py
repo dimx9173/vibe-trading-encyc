@@ -31,8 +31,9 @@ from vibe_trading.agents.decision.decision_agents import (
     create_portfolio_manager,
 )
 from vibe_trading.agents.decision.trading_tools import TradingPlan
-from vibe_trading.memory.memory import PersistentMemory
+from vibe_trading.memory.hybrid_memory import HybridMemory
 from vibe_trading.data_sources.kline_storage import KlineStorage
+from vibe_trading.data_sources.checkpoint_storage import DecisionCheckpointStore
 
 # 改进工具导入
 from vibe_trading.coordinator.state_machine import (
@@ -115,7 +116,7 @@ class TradingCoordinator:
         symbol: str,
         interval: str = "30m",
         storage: Optional[KlineStorage] = None,
-        memory: Optional[PersistentMemory] = None,
+        memory: Optional[HybridMemory] = None,
         agent_config: Optional[AgentTeamConfig] = None,
         executor: Optional[OrderExecutor] = None,
         enable_streaming: bool = True,
@@ -127,11 +128,13 @@ class TradingCoordinator:
         self.agent_config = agent_config or AgentTeamConfig()
         self.executor = executor or PaperOrderExecutor()
         self.enable_streaming = enable_streaming
-
         # 决策级反思快照队列（仅在启用记忆时工作）
         self._snapshot_store: Optional[DecisionSnapshotStore] = (
             DecisionSnapshotStore() if self.memory is not None else None
         )
+        
+        # Checkpoint storage for crash recovery
+        self._checkpoint_store = DecisionCheckpointStore()
 
         # 工具上下文
         self._tool_context = ToolContext(
@@ -437,7 +440,6 @@ class TradingCoordinator:
 
             # 更新决策树 - 阶段完成
             await self._update_decision_tree("analysts", "completed", agents=agent_statuses)
-
             # 推送报告到 Web
             try:
                 from vibe_trading.web.server import send_report
@@ -452,6 +454,22 @@ class TradingCoordinator:
                     )
             except Exception:
                 pass  # Web 未启用时忽略
+
+            log.done("分析师报告完成")
+            
+            # Save checkpoint after Phase 1
+            self._checkpoint_store.save_checkpoint(
+                decision_id=decision_id,
+                symbol=self.symbol,
+                interval=self.interval,
+                completed_phase="analyzing",
+                context={
+                    "analyst_reports": analyst_reports,
+                    "current_price": current_price,
+                    "account_balance": account_balance,
+                    "current_positions": current_positions,
+                }
+            )
 
             # 打印分析师报告
             for role, report in analyst_reports.items():
@@ -505,6 +523,21 @@ class TradingCoordinator:
             print(investment_plan[:500] + "..." if len(investment_plan) > 500 else investment_plan)
             separator()
             log.done("研究员辩论完成")
+            
+            # Save checkpoint after Phase 2
+            self._checkpoint_store.save_checkpoint(
+                decision_id=decision_id,
+                symbol=self.symbol,
+                interval=self.interval,
+                completed_phase="debating",
+                context={
+                    "analyst_reports": analyst_reports,
+                    "investment_plan": investment_plan,
+                    "current_price": current_price,
+                    "account_balance": account_balance,
+                    "current_positions": current_positions,
+                }
+            )
 
             # Phase 3: 风控评估
             info("Phase 3: 风控评估...", tag="Risk")
@@ -557,8 +590,23 @@ class TradingCoordinator:
             for role, assessment in risk_assessment.items():
                 if role != "error":
                     print(f"[{role}]: {assessment[:200]}..." if len(assessment) > 200 else f"[{role}]: {assessment}")
-            separator()
             log.done("风控评估完成")
+            
+            # Save checkpoint after Phase 3
+            self._checkpoint_store.save_checkpoint(
+                decision_id=decision_id,
+                symbol=self.symbol,
+                interval=self.interval,
+                completed_phase="assessing_risk",
+                context={
+                    "analyst_reports": analyst_reports,
+                    "investment_plan": investment_plan,
+                    "risk_assessment": risk_assessment,
+                    "current_price": current_price,
+                    "account_balance": account_balance,
+                    "current_positions": current_positions,
+                }
+            )
 
             # Phase 4: 交易员制定方案
             info("Phase 4: 交易员制定方案...", tag="Trader")
@@ -608,8 +656,24 @@ class TradingCoordinator:
             print("\n[TRADING PLAN]")
             separator("=", 60)
             print(trading_plan_display)
-            separator()
             log.done("交易方案制定完成")
+            
+            # Save checkpoint after Phase 4
+            self._checkpoint_store.save_checkpoint(
+                decision_id=decision_id,
+                symbol=self.symbol,
+                interval=self.interval,
+                completed_phase="planning",
+                context={
+                    "analyst_reports": analyst_reports,
+                    "investment_plan": investment_plan,
+                    "risk_assessment": risk_assessment,
+                    "trading_plan": trading_plan,
+                    "current_price": current_price,
+                    "account_balance": account_balance,
+                    "current_positions": current_positions,
+                }
+            )
 
             # Phase 5: 投资组合经理最终决策
             info("Phase 5: 投资组合经理最终决策...", tag="PM")
@@ -667,6 +731,24 @@ class TradingCoordinator:
             print(f"\n理由:\n{final_decision.get('rationale', '')}")
             separator()
             log.done("投资组合经理决策完成")
+            
+            # Save checkpoint after Phase 5 (final)
+            self._checkpoint_store.save_checkpoint(
+                decision_id=decision_id,
+                symbol=self.symbol,
+                interval=self.interval,
+                completed_phase="completed",
+                context={
+                    "analyst_reports": analyst_reports,
+                    "investment_plan": investment_plan,
+                    "risk_assessment": risk_assessment,
+                    "trading_plan": trading_plan,
+                    "final_decision": final_decision,
+                    "current_price": current_price,
+                    "account_balance": account_balance,
+                    "current_positions": current_positions,
+                }
+            )
 
             # 创建决策结果
             decision = TradingDecision(
@@ -1738,6 +1820,247 @@ class TradingCoordinator:
             logger.error(f"获取不佳Agent失败: {e}", tag="QualityTracker")
             return []
 
+    async def resume_from_checkpoint(
+        self,
+        decision_id: str,
+        current_price: float,
+        account_balance: float = 10000.0,
+        current_positions: Optional[List[Dict]] = None,
+        bar_open_time_ms: Optional[int] = None,
+    ) -> Optional[TradingDecision]:
+        """从 checkpoint 恢复决策流程
+        
+        Args:
+            decision_id: 要恢复的决策 ID
+            current_price: 当前价格
+            account_balance: 账户余额
+            current_positions: 当前持仓
+            bar_open_time_ms: K线开盘时间
+            
+        Returns:
+            TradingDecision 如果恢复成功，否则 None
+        """
+        checkpoint = self._checkpoint_store.get_latest_checkpoint(decision_id)
+        if not checkpoint:
+            logger.warning(f"No checkpoint found for decision_id: {decision_id}")
+            return None
+        
+        completed_phase = checkpoint["completed_phase"]
+        context = checkpoint["context"]
+        
+        logger.info(f"Resuming from checkpoint: decision_id={decision_id}, completed_phase={completed_phase}")
+        
+        # 根据完成的阶段决定从哪个阶段继续
+        if completed_phase == "completed":
+            # 已完成，直接返回结果
+            logger.info(f"Decision {decision_id} already completed")
+            return self._reconstruct_decision_from_checkpoint(context)
+        
+        # 设置状态机
+        self._current_state_machine = self._state_manager.create_machine(
+            decision_id=decision_id,
+            symbol=self.symbol,
+            interval=self.interval
+        )
+        self._current_correlation_id = decision_id
+        
+        # 恢复上下文
+        analyst_reports = context.get("analyst_reports", {})
+        investment_plan = context.get("investment_plan")
+        risk_assessment = context.get("risk_assessment")
+        trading_plan = context.get("trading_plan")
+        
+        # 根据完成阶段设置状态机
+        if completed_phase == "analyzing":
+            self._current_state_machine.transition_to(DecisionState.ANALYZING, "Resumed from checkpoint")
+        elif completed_phase == "debating":
+            self._current_state_machine.transition_to(DecisionState.DEBATING, "Resumed from checkpoint")
+        elif completed_phase == "assessing_risk":
+            self._current_state_machine.transition_to(DecisionState.ASSESSING_RISK, "Resumed from checkpoint")
+        elif completed_phase == "planning":
+            self._current_state_machine.transition_to(DecisionState.PLANNING, "Resumed from checkpoint")
+        
+        # 继续执行未完成的阶段
+        try:
+            return await self._continue_from_checkpoint(
+                completed_phase=completed_phase,
+                analyst_reports=analyst_reports,
+                investment_plan=investment_plan,
+                risk_assessment=risk_assessment,
+                trading_plan=trading_plan,
+                current_price=current_price,
+                account_balance=account_balance,
+                current_positions=current_positions or [],
+                bar_open_time_ms=bar_open_time_ms,
+                decision_id=decision_id,
+            )
+        except Exception as e:
+            logger.error(f"Failed to resume from checkpoint: {e}", exc_info=True)
+            return None
+    
+    async def _continue_from_checkpoint(
+        self,
+        completed_phase: str,
+        analyst_reports: Dict,
+        investment_plan: Optional[str],
+        risk_assessment: Optional[Dict],
+        trading_plan: Optional[Any],
+        current_price: float,
+        account_balance: float,
+        current_positions: List[Dict],
+        bar_open_time_ms: Optional[int],
+        decision_id: str,
+    ) -> TradingDecision:
+        """从指定阶段继续执行"""
+        import time
+        stats = {"cache_hits": 0, "cache_misses": 0, "api_calls": 0, "messages_sent": 0}
+        agent_outputs = {}
+        context = await self._prepare_context(current_price)
+        
+        # Phase 2: 研究员辩论（如果 Phase 1 已完成）
+        if completed_phase == "analyzing" and investment_plan is None:
+            info("Phase 2: 研究员辩论...", tag="Researchers")
+            self._current_state_machine.transition_to(DecisionState.DEBATING, "Continuing from checkpoint")
+            phase_start = time.time()
+            investment_plan = await self._run_research_debate(context, analyst_reports, decision_id, stats)
+            phase_elapsed = time.time() - phase_start
+            logger.info(f"[性能] Phase 2 (研究员) 耗时: {phase_elapsed:.2f}s")
+            agent_outputs["investment_plan"] = investment_plan
+            
+            # 保存 checkpoint
+            self._checkpoint_store.save_checkpoint(
+                decision_id=decision_id,
+                symbol=self.symbol,
+                interval=self.interval,
+                completed_phase="debating",
+                context={
+                    "analyst_reports": analyst_reports,
+                    "investment_plan": investment_plan,
+                    "current_price": current_price,
+                    "account_balance": account_balance,
+                    "current_positions": current_positions,
+                }
+            )
+        
+        # Phase 3: 风控评估（如果 Phase 2 已完成）
+        if completed_phase in ["analyzing", "debating"] and risk_assessment is None:
+            info("Phase 3: 风控评估...", tag="Risk")
+            self._current_state_machine.transition_to(DecisionState.ASSESSING_RISK, "Continuing from checkpoint")
+            phase_start = time.time()
+            risk_assessment = await self._run_risk_assessment(
+                investment_plan, current_positions, account_balance, decision_id, stats
+            )
+            phase_elapsed = time.time() - phase_start
+            logger.info(f"[性能] Phase 3 (风控) 耗时: {phase_elapsed:.2f}s")
+            agent_outputs["risk_assessment"] = risk_assessment
+            
+            # 保存 checkpoint
+            self._checkpoint_store.save_checkpoint(
+                decision_id=decision_id,
+                symbol=self.symbol,
+                interval=self.interval,
+                completed_phase="assessing_risk",
+                context={
+                    "analyst_reports": analyst_reports,
+                    "investment_plan": investment_plan,
+                    "risk_assessment": risk_assessment,
+                    "current_price": current_price,
+                    "account_balance": account_balance,
+                    "current_positions": current_positions,
+                }
+            )
+        
+        # Phase 4: 交易员制定方案（如果 Phase 3 已完成）
+        if completed_phase in ["analyzing", "debating", "assessing_risk"] and trading_plan is None:
+            info("Phase 4: 交易员制定方案...", tag="Trader")
+            self._current_state_machine.transition_to(DecisionState.PLANNING, "Continuing from checkpoint")
+            phase_start = time.time()
+            trading_plan = await self._run_trader(
+                investment_plan, risk_assessment, context, account_balance
+            )
+            phase_elapsed = time.time() - phase_start
+            logger.info(f"[性能] Phase 4 (交易员) 耗时: {phase_elapsed:.2f}s")
+            agent_outputs["trading_plan"] = trading_plan
+            
+            # 保存 checkpoint
+            self._checkpoint_store.save_checkpoint(
+                decision_id=decision_id,
+                symbol=self.symbol,
+                interval=self.interval,
+                completed_phase="planning",
+                context={
+                    "analyst_reports": analyst_reports,
+                    "investment_plan": investment_plan,
+                    "risk_assessment": risk_assessment,
+                    "trading_plan": trading_plan,
+                    "current_price": current_price,
+                    "account_balance": account_balance,
+                    "current_positions": current_positions,
+                }
+            )
+        
+        # Phase 5: 投资组合经理最终决策（如果 Phase 4 已完成）
+        info("Phase 5: 投资组合经理最终决策...", tag="PM")
+        self._current_state_machine.transition_to(DecisionState.COMPLETED, "Continuing from checkpoint")
+        phase_start = time.time()
+        self._tool_context.current_bar_open_time_ms = bar_open_time_ms
+        self._tool_context.current_trace_id = f"{self.symbol}:{self.interval}:{bar_open_time_ms or int(time.time() * 1000)}"
+        final_decision = await self._run_portfolio_manager(
+            analyst_reports,
+            investment_plan,
+            trading_plan,
+            risk_assessment,
+            current_positions,
+            account_balance,
+            context,
+        )
+        phase_elapsed = time.time() - phase_start
+        logger.info(f"[性能] Phase 5 (投资组合经理) 耗时: {phase_elapsed:.2f}s")
+        
+        # 保存最终 checkpoint
+        self._checkpoint_store.save_checkpoint(
+            decision_id=decision_id,
+            symbol=self.symbol,
+            interval=self.interval,
+            completed_phase="completed",
+            context={
+                "analyst_reports": analyst_reports,
+                "investment_plan": investment_plan,
+                "risk_assessment": risk_assessment,
+                "trading_plan": trading_plan,
+                "final_decision": final_decision,
+                "current_price": current_price,
+                "account_balance": account_balance,
+                "current_positions": current_positions,
+            }
+        )
+        
+        # 构建决策结果
+        decision = TradingDecision(
+            symbol=self.symbol,
+            timestamp=int(datetime.now().timestamp() * 1000),
+            decision=final_decision.get("decision", "HOLD"),
+            rationale=final_decision.get("rationale", ""),
+            confidence=final_decision.get("confidence"),
+            execution_instructions=final_decision.get("execution_instructions"),
+            agent_outputs=agent_outputs,
+        )
+        
+        self._decision_history.append(decision)
+        return decision
+    
+    def _reconstruct_decision_from_checkpoint(self, context: Dict) -> TradingDecision:
+        """从 checkpoint context 重建 TradingDecision"""
+        final_decision = context.get("final_decision", {})
+        return TradingDecision(
+            symbol=self.symbol,
+            timestamp=int(datetime.now().timestamp() * 1000),
+            decision=final_decision.get("decision", "HOLD"),
+            rationale=final_decision.get("rationale", ""),
+            confidence=final_decision.get("confidence"),
+            execution_instructions=final_decision.get("execution_instructions"),
+            agent_outputs={},
+        )
     async def close(self) -> None:
         """关闭所有资源"""
         # 关闭所有Agent

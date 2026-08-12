@@ -24,6 +24,8 @@ from vibe_trading.agents.decision.trading_tools import (
     DecisionScorecard,
     PositionSide,
 )
+from vibe_trading.agents.decision.schemas import FinalDecisionSchema, TradingPlanSchema, TraderAnalysisSchema
+from vibe_trading.agents.decision.structured_output import parse_structured_output
 
 logger = get_logger(__name__)
 
@@ -204,7 +206,7 @@ class TraderAgent:
         if not ok:
             logger.warning(f"{self.config.name} LLM timeout (180s) — 使用量化計算結果", tag="Trader")
 
-        # 获取LLM响应并添加到执行说明
+        # 获取LLM响应并尝试解析结构化输出
         messages = self._agent.state.messages
         if messages:
             last_assistant = [m for m in messages if getattr(m, "role", None) == "assistant"]
@@ -214,14 +216,14 @@ class TraderAgent:
                     llm_response = extract_text(content)
                 else:
                     llm_response = str(content)
+                structured_plan = parse_structured_output(llm_response, TraderAnalysisSchema)
+                if structured_plan:
+                    logger.info(f"Trader structured plan parsed: approved={structured_plan.plan_approved}", tag="Trader")
+                    trading_plan.structured_analysis = structured_plan
+                else:
+                    logger.warning("Trader structured output parsing failed, using text fallback", tag="Trader")
+                
                 trading_plan.execution_notes.append(f"\nLLM分析:\n{llm_response}")
-        
-        # 记录交易计划到日志
-        plan_summary = f"Trader Plan: {trading_plan.direction} {trading_plan.total_position_usdt} USDT @ {current_price:.2f}, " \
-                     f"SL: {trading_plan.stop_loss_orders[0]['trigger_price']:.2f}, " \
-                     f"TP: {[tp['price'] for tp in trading_plan.take_profit_orders]}"
-        logger.info(f"{plan_summary}\nExecution Notes: {trading_plan.execution_notes}", tag="Trader")
-
         return trading_plan
 
     def _determine_risk_preference(self, risk_assessment: Dict[str, str]) -> str:
@@ -284,12 +286,18 @@ class TraderAgent:
             prompt += f"\n{role.upper()}:\n{assessment[:200]}...\n"
 
         prompt += """
-请提供你的分析:
-1. 这个量化执行计划是否合理? 如有调整请说明理由
-2. 对执行时机的建议
-3. 任何额外的风险提示
+請提供你的分析，並以 JSON 格式回應，包含以下欄位：
+{
+  "plan_approved": true/false,  // 是否同意量化計劃
+  "adjustments": "調整說明或 null",  // 如有調整請說明
+  "timing_suggestion": "執行時機建議",
+  "risk_warnings": ["風險提示1", "風險提示2"],
+  "confidence": 0.0-1.0  // 對計劃的信心度
+}
 
-**重要: 请使用中文输出所有分析.**
+請將 JSON 放在 ```json 代碼塊中。
+
+**重要: 請使用中文輸出所有分析.**
 """
 
         return prompt
@@ -504,6 +512,19 @@ class PortfolioManagerAgent:
                 
                 # 记录投资组合经理决策到日志
                 logger.info(f"Portfolio Manager Decision: {decision_text}", tag="Decision")
+        
+        # P0.2: 尝试解析结构化输出
+        structured_decision = parse_structured_output(decision_text, FinalDecisionSchema)
+        if structured_decision:
+            logger.info(f"PM structured decision parsed: {structured_decision.decision}", tag="PM")
+            return {
+                "scorecard": scorecard,
+                "decision_text": decision_text,
+                "structured_decision": structured_decision,
+                "execution_plan": trading_plan if trading_plan.total_position_usdt > 0 else None,
+            }
+        else:
+            logger.warning("PM structured output parsing failed, using text fallback", tag="PM")
 
         # 4. 记录决策历史
         self._decision_framework.record_decision(
@@ -630,16 +651,17 @@ Current Positions: {len(current_positions)}
         prompt += self._build_memory_section(scorecard)
 
         prompt += """
-Please provide your FINAL DECISION including:
-1. Confirm or modify the quantitative recommendation
-2. Your qualitative assessment and rationale
-3. Specific execution instructions (if approving the trade)
-4. Any additional risk warnings or considerations
+Please provide your FINAL DECISION as a JSON object with this exact schema:
+{
+  "decision": "STRONG BUY" | "BUY" | "WEAK BUY" | "HOLD" | "WEAK SELL" | "SELL" | "STRONG SELL",
+  "confidence": <float 0-1>,
+  "rationale": "<your reasoning>",
+  "execution_instructions": "<specific instructions or null>",
+  "risk_assessment": "<risk summary>"
+}
 
-This decision will be executed, so be specific and careful.
+Include the JSON in a ```json code block. Be specific and careful — this decision will be executed.
 """
-
-        return prompt
 
 
 async def create_trader(tool_context: ToolContext, enable_streaming: bool = False) -> TraderAgent:

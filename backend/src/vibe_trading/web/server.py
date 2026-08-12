@@ -20,6 +20,7 @@ from pi_logger.colors import strip_ansi
 from vibe_trading.data_sources.kline_storage import KlineStorage, KlineQuery
 from vibe_trading.data_sources.technical_indicators import TechnicalIndicators
 from vibe_trading.web.journal_storage import DecisionJournalStorage
+from vibe_trading.monitoring.usage_ledger import get_usage_ledger
 
 app = FastAPI(title="Vibe Trading Monitor")
 
@@ -714,11 +715,93 @@ async def reset_data():
     await state.send_update("reset", {})
     return {"success": True}
 
-
 @app.post("/api/decision_tree")
 async def update_decision_tree(tree_data: dict):
     """更新决策树"""
     await state.send_update("decision_tree", tree_data)
+    return {"success": True}
+
+
+# =============================================================================
+# Usage Ledger API 端點
+# =============================================================================
+
+
+@app.get("/api/usage/summary")
+async def get_usage_summary(
+    agent_name: Optional[str] = None,
+    model: Optional[str] = None,
+    symbol: Optional[str] = None,
+):
+    """獲取 LLM 使用統計摘要"""
+    ledger = get_usage_ledger()
+    summary = await ledger.get_summary(
+        agent_name=agent_name,
+        model=model,
+        symbol=symbol,
+    )
+    return {
+        "total_requests": summary.total_requests,
+        "total_input_tokens": summary.total_input_tokens,
+        "total_output_tokens": summary.total_output_tokens,
+        "total_cost_usd": summary.total_cost_usd,
+    }
+
+
+@app.get("/api/usage/daily")
+async def get_daily_usage(days: int = 7):
+    """獲取每日使用統計"""
+    ledger = get_usage_ledger()
+    daily = await ledger.get_daily_summary(days=days)
+    return {
+        "daily": [
+            {
+                "date": d.date,
+                "total_requests": d.total_requests,
+                "total_input_tokens": d.total_input_tokens,
+                "total_output_tokens": d.total_output_tokens,
+                "total_cost_usd": d.total_cost_usd,
+            }
+            for d in daily
+        ]
+    }
+
+
+@app.get("/api/usage/top-agents")
+async def get_top_agents(limit: int = 5):
+    """獲取使用最多的 Agent"""
+    ledger = get_usage_ledger()
+    agents = await ledger.get_top_agents(limit=limit)
+    return {
+        "agents": [
+            {
+                "agent_name": a.agent_name,
+                "total_requests": a.total_requests,
+                "total_input_tokens": a.total_input_tokens,
+                "total_output_tokens": a.total_output_tokens,
+                "total_cost_usd": a.total_cost_usd,
+            }
+            for a in agents
+        ]
+    }
+
+
+@app.get("/api/usage/top-models")
+async def get_top_models(limit: int = 5):
+    """獲取使用最多的模型"""
+    ledger = get_usage_ledger()
+    models = await ledger.get_top_models(limit=limit)
+    return {
+        "models": [
+            {
+                "model": m.model,
+                "total_requests": m.total_requests,
+                "total_input_tokens": m.total_input_tokens,
+                "total_output_tokens": m.total_output_tokens,
+                "total_cost_usd": m.total_cost_usd,
+            }
+            for m in models
+    }
     return {"success": True}
 
 

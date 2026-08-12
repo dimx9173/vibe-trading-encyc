@@ -82,6 +82,8 @@ def config():
         start_time=datetime(2024, 1, 1, tzinfo=timezone.utc),
         end_time=datetime(2024, 2, 1, tzinfo=timezone.utc),
         initial_balance=10_000.0,
+        fee_rate=0.0,  # Disable fees for backward compatibility
+        slippage_rate=0.0,  # Disable slippage for backward compatibility
     )
 
 
