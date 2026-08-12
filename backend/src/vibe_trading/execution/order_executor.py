@@ -33,6 +33,8 @@ class TradingMode(str, Enum):
     PAPER = "paper"
     TESTNET = "testnet"
     LIVE = "live"
+    OKX_LIVE = "okx_live"
+    OKX_TESTNET = "okx_testnet"
 
 
 @dataclass
@@ -700,7 +702,7 @@ def create_executor(
     """创建订单执行器
 
     Args:
-        mode: 交易模式 (PAPER 或 LIVE)
+        mode: 交易模式 (PAPER, TESTNET, LIVE, OKX_LIVE, OKX_TESTNET)
         dry_run: 是否为dry-run模式 (仅打印订单不执行，仅适用于LIVE模式)
         paper_state_file: paper 模式帳戶狀態檔路徑（跨重啟保留 balance/positions）
         reset_paper: 為 True 時忽略 state 檔，從初始餘額重新開始
@@ -724,6 +726,47 @@ def create_executor(
             testnet=True,
             dry_run=dry_run,
         )
+    elif mode == TradingMode.OKX_LIVE:
+        from vibe_trading.execution.broker_connector import BrokerConfig, BrokerType
+        from vibe_trading.execution.okx_executor import OkxOrderExecutor
+
+        if not settings.okx_api_key or not settings.okx_api_secret or not settings.okx_passphrase:
+            raise ValueError("OKX_API_KEY, OKX_API_SECRET, and OKX_PASSPHRASE are required for OKX live trading")
+
+        if dry_run:
+            logger.info("Creating OKX Live executor (DRY-RUN mode)")
+        else:
+            logger.info("Creating OKX Live executor")
+
+        config = BrokerConfig(
+            broker_type=BrokerType.OKX,
+            api_key=settings.okx_api_key,
+            api_secret=settings.okx_api_secret,
+            passphrase=settings.okx_passphrase,
+            testnet=False,
+            dry_run=dry_run,
+        )
+        return OkxOrderExecutor(config)
+
+    elif mode == TradingMode.OKX_TESTNET:
+        from vibe_trading.execution.broker_connector import BrokerConfig, BrokerType
+        from vibe_trading.execution.okx_executor import OkxOrderExecutor
+
+        if not settings.okx_api_key or not settings.okx_api_secret or not settings.okx_passphrase:
+            raise ValueError("OKX_API_KEY, OKX_API_SECRET, and OKX_PASSPHRASE are required for OKX testnet trading")
+
+        logger.info("Creating OKX Testnet executor")
+
+        config = BrokerConfig(
+            broker_type=BrokerType.OKX,
+            api_key=settings.okx_api_key,
+            api_secret=settings.okx_api_secret,
+            passphrase=settings.okx_passphrase,
+            testnet=True,
+            dry_run=dry_run,
+        )
+        return OkxOrderExecutor(config)
+
     else:
         if dry_run:
             logger.info("Creating Binance Live executor (DRY-RUN mode - orders will be printed but not executed)")

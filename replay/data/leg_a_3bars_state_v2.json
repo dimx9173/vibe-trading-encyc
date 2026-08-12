@@ -1,0 +1,14 @@
+{
+  "balance": 9980.43937,
+  "realized_pnl": 0.0,
+  "positions": [
+    {
+      "symbol": "BTCUSDT",
+      "position_side": "LONG",
+      "entry_price": 65202.1,
+      "quantity": 0.0015,
+      "leverage": 5,
+      "realized_pnl": 0.0
+    }
+  ]
+}
