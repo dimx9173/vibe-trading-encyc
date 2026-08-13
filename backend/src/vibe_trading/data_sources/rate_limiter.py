@@ -190,6 +190,12 @@ class MultiEndpointRateLimiter:
         if endpoint not in self._limiters:
             self._limiters[endpoint] = RateLimiter()
         return await self._limiters[endpoint].acquire()
+    
+    def get_limiter(self, endpoint: str) -> RateLimiter:
+        """獲取指定端點的限流器"""
+        if endpoint not in self._limiters:
+            self._limiters[endpoint] = RateLimiter()
+        return self._limiters[endpoint]
 
 
 _multi_endpoint_limiter: Optional[MultiEndpointRateLimiter] = None
