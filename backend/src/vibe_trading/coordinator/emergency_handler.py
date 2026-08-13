@@ -22,6 +22,12 @@ from vibe_trading.agents.decision.emergency_agent import (
 from vibe_trading.coordinator.thread_manager import ThreadManager, get_thread_manager
 from vibe_trading.coordinator.shared_state import SharedStateManager, get_shared_state_manager
 from vibe_trading.coordinator.event_queue import EventQueue, get_event_queue
+from vibe_trading.notifications import (
+    TelegramNotifier,
+    Notification,
+    NotificationPriority,
+    MessageFormatter,
+)
 
 logger = logging.getLogger(__name__)
 

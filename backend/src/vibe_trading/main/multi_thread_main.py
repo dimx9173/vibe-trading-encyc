@@ -31,6 +31,7 @@ from vibe_trading.triggers.risk_triggers import (
 )
 from vibe_trading.triggers.base_trigger import TriggerContext
 from vibe_trading.tools import market_data_tools
+from vibe_trading.data_sources.ws_price_cache import get_price_cache
 from vibe_trading.execution.order_executor import OrderExecutor
 
 logger = logging.getLogger(__name__)
@@ -254,17 +255,30 @@ class MultiThreadedTradingSystem:
 
     async def _get_current_price(self) -> Optional[float]:
         """
-        获取当前价格
+        获取当前价格（优先使用 WebSocket 缓存）
 
         Returns:
             当前价格或None
         """
         try:
+            # 优先使用 WebSocket 缓存
+            price = await self._price_cache.get_price_with_fallback(
+                self.symbol,
+                fallback_func=lambda: self._get_price_from_rest()
+            )
+            return price
+        except Exception as e:
+            logger.warning(f"获取当前价格失败: {e}")
+        return None
+    
+    async def _get_price_from_rest(self) -> Optional[float]:
+        """从 REST API 获取价格（降級方案）"""
+        try:
             result = await market_data_tools.get_current_price(self.symbol)
             if result and "price" in result:
                 return float(result["price"])
         except Exception as e:
-            logger.warning(f"获取当前价格失败: {e}")
+            logger.warning(f"REST API 获取价格失败: {e}")
         return None
 
     async def _get_positions(self) -> List[Dict]:

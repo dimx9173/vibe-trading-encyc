@@ -18,6 +18,7 @@ import aiohttp
 import websockets
 
 from vibe_trading.config.binance_config import BinanceConfig
+from .rate_limiter import get_rate_limiter, get_retry_handler
 
 logger = logging.getLogger(__name__)
 
@@ -312,6 +313,8 @@ class BinanceRestClient:
     def __init__(self, config: BinanceConfig):
         self.config = config
         self._session: Optional[aiohttp.ClientSession] = None
+        self._rate_limiter = get_rate_limiter()
+        self._retry_handler = get_retry_handler()
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """获取或创建 HTTP session"""
@@ -344,28 +347,32 @@ class BinanceRestClient:
         signed: bool = False,
         **kwargs,
     ) -> dict:
-        """发送 HTTP 请求"""
-        session = await self._get_session()
-        url = f"{self.config.rest_base_url}{endpoint}"
+        """发送 HTTP 请求（带限流和重试）"""
+        async def _do_request():
+            session = await self._get_session()
+            url = f"{self.config.rest_base_url}{endpoint}"
 
-        params = kwargs.get("params", {})
-        headers = kwargs.get("headers", {})
+            params = kwargs.get("params", {})
+            headers = kwargs.get("headers", {})
 
-        headers["X-MBX-APIKEY"] = self.config.api_key
+            headers["X-MBX-APIKEY"] = self.config.api_key
 
-        if signed:
-            params["timestamp"] = int(time.time() * 1000)
-            params = self._sign(params)
+            if signed:
+                params["timestamp"] = int(time.time() * 1000)
+                params = self._sign(params)
 
-        kwargs["params"] = params
-        kwargs["headers"] = headers
+            kwargs["params"] = params
+            kwargs["headers"] = headers
 
-        async with session.request(method, url, **kwargs) as response:
-            data = await response.json()
-            if response.status != 200:
-                logger.error(f"API Error: {data}")
-                raise Exception(f"API Error: {data}")
-            return data
+            async with session.request(method, url, **kwargs) as response:
+                data = await response.json()
+                if response.status != 200:
+                    logger.error(f"API Error: {data}")
+                    raise Exception(f"API Error: {data}")
+                return data
+
+        # 使用重試處理器執行請求（自動限流 + 指數退避）
+        return await self._retry_handler.execute_with_retry(_do_request)
 
     async def get_exchange_info(self) -> dict:
         """获取交易所信息"""
