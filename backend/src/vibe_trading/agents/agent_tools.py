@@ -606,6 +606,53 @@ def create_submit_trade_order_tool(tool_context: Any) -> AgentTool:
             tool_context, "current_bar_open_time_ms", None
         ) or "manual"
 
+        # ===== B9 修復 (2026-08-13 SWDA): PM 路徑訂單正規化 (cap/position_side/reference_price) =====
+        # 實證: 06:37 三連拒 (orders #255-257) — LLM 送 qty=0.01 超 notional cap /
+        # position_side=BOTH 撞 hedge mode / reference_price=None。
+        # 統一與保險路徑同規則 (OrderBuilder), 讓 PM tool 與保險參數一致。
+        from vibe_trading.config.settings import get_settings as _get_settings
+        from vibe_trading.execution.order_builder import compute_quantity, resolve_position_side
+
+        _settings = _get_settings()
+
+        # C2: hedge mode + position_side=BOTH → 依 side 推導 LONG/SHORT
+        if position_side == PositionSide.BOTH and _settings.execution_position_mode == "hedge":
+            position_side = resolve_position_side(side, "hedge")
+            logger.info(f"[執行] position_side BOTH → {position_side.value} (hedge 正規化, B9)")
+
+        # C4: reference_price 缺 → 自動從 executor 取價
+        if not args.reference_price or args.reference_price <= 0:
+            _getter = getattr(tool_context.executor, "get_reference_price", None)
+            if callable(_getter):
+                try:
+                    _rp = _getter(args.symbol.upper())
+                    if isinstance(_rp, (int, float)) and _rp > 0:
+                        args.reference_price = float(_rp)
+                        logger.info(f"[執行] reference_price 自動補: {args.reference_price} (B9)")
+                    else:
+                        args.reference_price = None
+                except Exception:
+                    args.reference_price = None
+
+        # C3: 非 reduce_only 時 cap qty 至 notional ≤ 上限 (floor stepSize 0.0001)
+        if not args.reduce_only and args.reference_price and args.reference_price > 0:
+            try:
+                _capped = compute_quantity(
+                    notional_cap=_settings.execution_max_single_order_notional,
+                    reference_price=float(args.reference_price),
+                    step_size=0.0001,
+                    min_qty=0.0001,
+                    min_notional=50.0,
+                )
+                if args.quantity > _capped:
+                    logger.info(
+                        f"[執行] qty {args.quantity} 超 notional cap, cap 至 {_capped} (B9)"
+                    )
+                    args.quantity = _capped
+            except Exception as _e:
+                logger.warning(f"[執行] qty cap 失敗, 沿用原值: {_e}")
+
+        args.position_side = position_side.value  # 記錄正規化後值
         risk_result = None
         if getattr(tool_context, "risk_gate", None):
             risk_result = await tool_context.risk_gate.validate_order(
@@ -709,8 +756,14 @@ def create_submit_trade_order_tool(tool_context: Any) -> AgentTool:
         # FIX: pass risk-checked effective_price as fallback to avoid the
         # PaperOrderExecutor 50000 mock-price fallback when caller leaves
         # price=None and no real-time price is cached.
+        # B8 修復 (2026-08-13 SWDA): MARKET 單不帶 price — Binance -1106
+        # "Parameter 'price' sent when not required" (06:08 order #254 鐵證)。
         fill_price = args.price
-        if fill_price is None and risk_result is not None:
+        if (
+            fill_price is None
+            and risk_result is not None
+            and order_type != OrderType.MARKET
+        ):
             fill_price = risk_result.checks.get("effective_price")
 
         # VBT B5 修復 (2026-08-13 SWDA): place_order 失敗必須可觀測。
