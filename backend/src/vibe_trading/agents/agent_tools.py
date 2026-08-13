@@ -712,10 +712,20 @@ def create_submit_trade_order_tool(tool_context: Any) -> AgentTool:
 
         exchange_filter_result = None
         if getattr(tool_context, "exchange_filter_validator", None):
+            # B10 修復 (2026-08-13 SWDA): MARKET 單不帶 price 給 filter 驗證。
+            # Binance PRICE_FILTER.tickSize 只適用於 LIMIT 價格；把 reference_price
+            # 塞給 MARKET 單會誤判 "price is not aligned to tickSize"
+            # (09:37 order #260 鐵證: risk approved 但本地 filter 拒單)。
+            # 與 B8 修復 (place_order 送價端) 同源，此處修 filter 驗證端。
+            filter_price = (
+                None
+                if order_type == OrderType.MARKET
+                else (args.price or args.reference_price)
+            )
             exchange_filter_result = tool_context.exchange_filter_validator.validate(
                 symbol=args.symbol.upper(),
                 quantity=args.quantity,
-                price=args.price or args.reference_price,
+                price=filter_price,
             )
             if not exchange_filter_result.approved:
                 details = {
