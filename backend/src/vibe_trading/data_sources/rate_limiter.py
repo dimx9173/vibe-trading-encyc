@@ -173,3 +173,31 @@ def get_retry_handler() -> APIRetryHandler:
     if _global_retry_handler is None:
         _global_retry_handler = APIRetryHandler()
     return _global_retry_handler
+
+
+# =============================================================================
+# 兼容性接口（供 market_data_tools.py 使用）
+# =============================================================================
+
+class MultiEndpointRateLimiter:
+    """多端點限流器（兼容舊接口）"""
+    
+    def __init__(self):
+        self._limiters = {}
+    
+    async def acquire(self, endpoint: str, tokens: int = 1):
+        """獲取請求許可"""
+        if endpoint not in self._limiters:
+            self._limiters[endpoint] = RateLimiter()
+        return await self._limiters[endpoint].acquire()
+
+
+_multi_endpoint_limiter: Optional[MultiEndpointRateLimiter] = None
+
+
+def get_multi_endpoint_limiter() -> MultiEndpointRateLimiter:
+    """獲取全局多端點限流器"""
+    global _multi_endpoint_limiter
+    if _multi_endpoint_limiter is None:
+        _multi_endpoint_limiter = MultiEndpointRateLimiter()
+    return _multi_endpoint_limiter
