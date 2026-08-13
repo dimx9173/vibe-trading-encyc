@@ -79,6 +79,46 @@ from vibe_trading.execution.pre_trade_risk import PreTradeRiskGate, RiskPolicy
 logger = logging.getLogger(__name__)
 log = get_logger("TradingCoordinator")
 
+# ========== 執行對帳 helper (VBT B6) ==========
+_VALID_ORDER_STATUSES = ("FILLED", "SUBMITTED", "PENDING", "NEW", "PARTIALLY_FILLED")
+
+
+def _has_valid_order(
+    orders: list,
+    cycle_start: Optional[Any] = None,
+) -> bool:
+    """對帳判定: 只有有效訂單 (FILLED/SUBMITTED/PENDING 等) 才算 has_order.
+
+    B6 修復: 舊邏輯 `bool(orders)` 把 REJECTED_BY_RISK 的記錄也算 has_order,
+    導致 PM approved 無單時保險安全網被誤判「已有訂單」而癱瘓。
+    """
+    if not orders:
+        return False
+    for o in orders:
+        status = str(o.get("status", ""))
+        if status in _VALID_ORDER_STATUSES:
+            if cycle_start is not None:
+                created = str(o.get("created_at", ""))
+                if created and created >= cycle_start.isoformat():
+                    return True
+                continue
+            return True
+    return False
+
+
+def _insurance_on_cooldown(
+    last_insurance_at: Optional[float],
+    cooldown_s: float,
+    now_ts: Optional[float] = None,
+) -> bool:
+    """保險 cooldown 判定: 上次觸發距今 < cooldown_s 則阻擋重送 (防 04:07 6 秒 3 連砲)."""
+    import time as _time
+
+    now = now_ts if now_ts is not None else _time.time()
+    if last_insurance_at is None:
+        return False
+    return (now - last_insurance_at) < cooldown_s
+
 
 @dataclass
 class TradingContext:
@@ -845,12 +885,28 @@ class TradingCoordinator:
                             o for o in orders
                             if o.get("created_at", "") >= cycle_start.isoformat()
                         ]
-                    has_order = bool(orders)
-                    if not has_order:
+                    # Fix B6 (2026-08-13 SWDA): 只認有效訂單 (FILLED/SUBMITTED/PENDING 等)。
+                    # 舊邏輯 bool(orders) 把 REJECTED_BY_RISK 記錄也算 has_order,
+                    # 導致 approved 無單時保險安全網被誤判「已有訂單」而癱瘓。
+                    has_order = _has_valid_order(orders)
+                    # Fix B6b (2026-08-13 SWDA): 保險 cooldown — 防 04:07 式
+                    # 6 秒 3 連砲 (每次 rejected 都再觸發保險重送)。
+                    if not has_order and _insurance_on_cooldown(
+                        getattr(self, "_last_insurance_at", None),
+                        getattr(self, "_insurance_cooldown_s", 300.0),
+                    ):
+                        logger.warning(
+                            f"[執行對帳] 保險 cooldown 中 (上次 {getattr(self, '_last_insurance_at', None)}), "
+                            f"跳過自動執行 decision={decision_id}"
+                        )
+                    elif not has_order:
                         logger.warning(
                             f"[執行對帳] 決策={processed_signal.signal.value} 但 trace_id={trace_id} "
-                            f"無任何訂單 — PM agent 可能漏呼叫 submit_trade_order tool，啟動 coordinator 保險..."
+                            f"無任何有效訂單 — PM agent 可能漏呼叫 submit_trade_order tool，啟動 coordinator 保險..."
                         )
+                        import time as _time
+
+                        self._last_insurance_at = _time.time()
                         await self._auto_execute_insurance(
                             decision_id=decision_id,
                             signal_value=processed_signal.signal.value,
@@ -1446,15 +1502,12 @@ class TradingCoordinator:
 
             entry = entry_orders[0]
             order_type = str(entry.get("order_type", "market")).upper()
-            quantity = entry.get("size_coin") or getattr(trading_plan, "total_position_coin", None)
-            if not quantity:
-                logger.warning(f"[執行保險] 無法取得 quantity，跳過自動執行 decision={decision_id}")
-                return None
 
-            # Fix ④ (2026-08-09 SWDA P1): 保險 quantity 不得直接用 trading_plan 完整倉位
-            # 覆蓋 PM 指示（bar 3 案例：PM 說小倉位加倉，保險卻下 0.04579 ≈ 2994 USDT）。
-            # cap 到風控單筆 notional 限制（max_single_order_notional / reference_price），
-            # 確保保險最多只開風控允許的單筆倉位，避免暴衝。
+            # ===== VBT B1-B4 修復 (2026-08-13 SWDA): 改用 OrderBuilder 統一建構 =====
+            # 舊邏輯 (Fix ④ 手工 cap + 未 floor stepSize + position_side 預設 BOTH
+            # + reference_price 用原始 entry 而非 fallback) 造成 4 連拒。
+            # OrderBuilder 保證 A1-A4: qty 對齊 step / reference_price 必填 /
+            # hedge→LONG/SHORT / notional ≤ cap。
             reference_price = entry.get("price") or getattr(entry, "price", None)
             if not reference_price:
                 # fallback: 用 executor 目前參考價（PaperOrderExecutor 已 update_price）
@@ -1462,23 +1515,53 @@ class TradingCoordinator:
                     reference_price = self._tool_context.executor.get_reference_price(self.symbol)
                 except Exception:
                     reference_price = None
-            try:
-                from vibe_trading.config.settings import get_settings
-                max_notional = get_settings().execution_max_single_order_notional
-                if reference_price and float(reference_price) > 0:
-                    capped_qty = max_notional / float(reference_price)
-                    if quantity > capped_qty:
-                        logger.warning(
-                            f"[執行保險] trading_plan quantity={quantity} 超過風控單筆 "
-                            f"notional 上限（{max_notional}/{reference_price}={capped_qty:.6f}），"
-                            f"cap 至 {capped_qty:.6f}（Fix ④）"
-                        )
-                        quantity = capped_qty
-            except Exception as _e:
-                logger.warning(f"[執行保險] quantity cap 計算失敗，沿用原 quantity: {_e}")
 
-            position_side = getattr(trading_plan, "position_side", None)
-            position_side_str = getattr(position_side, "value", None) or str(position_side or "BOTH")
+            if not reference_price or float(reference_price) <= 0:
+                logger.warning(
+                    f"[執行保險] 無法取得 reference_price，跳過自動執行 decision={decision_id} "
+                    f"(B2 修復: 不送無價單給風控)"
+                )
+                return None
+
+            from vibe_trading.execution.order_builder import (
+                OrderBuilder,
+            )
+            from vibe_trading.config.settings import get_settings as _get_settings
+
+            _settings = _get_settings()
+            from vibe_trading.data_sources.binance_client import OrderSide
+
+            try:
+                side = OrderSide(signal_value.upper())
+            except ValueError:
+                logger.warning(f"[執行保險] 無法解析 side={signal_value!r}，跳過自動執行 decision={decision_id}")
+                return None
+
+            try:
+                builder = OrderBuilder(
+                    reference_price=float(reference_price),
+                    position_mode=_settings.execution_position_mode,
+                    step_size=0.0001,
+                    min_qty=0.0001,
+                    min_notional=50.0,
+                    notional_cap=_settings.execution_max_single_order_notional,
+                )
+                built = builder.build(
+                    symbol=self.symbol,
+                    side=side,
+                    order_type=order_type,
+                    price=entry.get("price") if order_type == "LIMIT" else None,
+                    rationale=(
+                        f"coordinator 保險自動執行（PM 未呼叫 submit_trade_order tool, "
+                        f"decision={decision_id}）"
+                    ),
+                )
+            except Exception as e:
+                logger.warning(
+                    f"[執行保險] OrderBuilder 建構失敗 decision={decision_id}: {e} "
+                    f"(B1/B4 修復: 參數不合法不送單)"
+                )
+                return None
 
             stop_price = None
             stop_loss_orders = getattr(trading_plan, "stop_loss_orders", None) or []
@@ -1491,16 +1574,16 @@ class TradingCoordinator:
             )
 
             params = SubmitTradeOrderParams(
-                symbol=self.symbol,
-                side=signal_value,
-                order_type=order_type,
-                quantity=quantity,
-                position_side=position_side_str,
-                price=entry.get("price") if order_type == "LIMIT" else None,
-                reference_price=entry.get("price"),
-                stop_price=stop_price,
+                symbol=built.symbol,
+                side=built.side.value,
+                order_type=built.order_type,
+                quantity=built.quantity,
+                position_side=built.position_side.value,
+                price=built.price,
+                reference_price=built.reference_price,
+                stop_price=stop_price or built.stop_price,
                 reduce_only=False,
-                rationale=f"coordinator 保險自動執行（PM 未呼叫 submit_trade_order tool, decision={decision_id}）",
+                rationale=built.rationale,
             )
 
             tool = create_submit_trade_order_tool(self._tool_context)

@@ -712,16 +712,63 @@ def create_submit_trade_order_tool(tool_context: Any) -> AgentTool:
         fill_price = args.price
         if fill_price is None and risk_result is not None:
             fill_price = risk_result.checks.get("effective_price")
-        result = await tool_context.executor.place_order(
-            symbol=args.symbol.upper(),
-            side=side,
-            order_type=order_type,
-            quantity=args.quantity,
-            price=fill_price,
-            stop_price=args.stop_price,
-            position_side=position_side,
-            reduce_only=args.reduce_only,
-        )
+
+        # VBT B5 修復 (2026-08-13 SWDA): place_order 失敗必須可觀測。
+        # 舊邏輯: BinanceOrderExecutor.place_order 對 API 400 無 try/except →
+        # 異常穿過 tool 被 PM agent loop 吞掉 → risk approved 卻無 order 記錄
+        # (04:07:20/26 兩筆 approved 無單鐵證)。
+        # 新邏輯: 捕獲異常並以 REJECTED_BY_BROKER 記錄到 audit → 保險對帳可見、
+        # log 有 traceback、bar 層可追溯。
+        try:
+            result = await tool_context.executor.place_order(
+                symbol=args.symbol.upper(),
+                side=side,
+                order_type=order_type,
+                quantity=args.quantity,
+                price=fill_price,
+                stop_price=args.stop_price,
+                position_side=position_side,
+                reduce_only=args.reduce_only,
+            )
+        except Exception as e:
+            logger.error(
+                f"[執行] place_order 失敗 (B5): {e}",
+                exc_info=True,
+            )
+            details = {
+                "order_id": None,
+                "symbol": args.symbol.upper(),
+                "side": side.value,
+                "order_type": order_type.value,
+                "quantity": args.quantity,
+                "price": args.price,
+                "filled_price": None,
+                "filled_quantity": 0.0,
+                "status": "REJECTED_BY_BROKER",
+                "is_paper": None,
+                "rationale": args.rationale,
+                "reduce_only": args.reduce_only,
+                "broker_error": str(e),
+            }
+            if risk_result:
+                details["risk_check"] = risk_result.to_dict()
+            if getattr(tool_context, "order_audit", None):
+                await tool_context.order_audit.record_order(
+                    trace_id=str(trace_id),
+                    symbol=args.symbol.upper(),
+                    interval=tool_context.interval,
+                    open_time_ms=getattr(tool_context, "current_bar_open_time_ms", None),
+                    order_id=None,
+                    status=details["status"],
+                    side=side.value,
+                    order_type=order_type.value,
+                    quantity=args.quantity,
+                    result=details,
+                )
+            return AgentToolResult(
+                content=[TextContent(text=f"订单提交失败 (broker): {e}")],
+                details=details,
+            )
 
         details = {
             "order_id": result.order_id,
