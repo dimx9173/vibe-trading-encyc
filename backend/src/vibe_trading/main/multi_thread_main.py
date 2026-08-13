@@ -81,7 +81,7 @@ class MultiThreadedTradingSystem:
         self._shutdown_event = asyncio.Event()
         self._last_price: Optional[float] = None
         self._last_price_update: Optional[float] = None  # timestamp
-        
+        self._price_cache = get_price_cache()
         log.info(f"MultiThreadedTradingSystem initialized for {symbol}")
     
     async def initialize(self) -> None:
