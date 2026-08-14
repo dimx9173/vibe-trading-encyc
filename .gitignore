@@ -73,3 +73,6 @@ backtest_results/
 # MemPalace per-project files (issue #185)
 mempalace.yaml
 entities.json
+
+# Runtime state (not source)
+data/vbt.pid

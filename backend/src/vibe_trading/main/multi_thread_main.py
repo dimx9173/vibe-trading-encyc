@@ -499,9 +499,9 @@ class MultiThreadedTradingSystem:
         """Setup signal handlers for graceful shutdown"""
         def signal_handler(signum, frame):
             log.info(f"Received signal {signum}, initiating shutdown...")
-            # 使用线程安全的方式触发关闭
+            # 只觸發關閉事件; stop() 內部會設置 _running=False 並
+            # 執行 notifier shutdown 通知 (若在此提前設 False, stop() 會直接 return)
             self._shutdown_event.set()
-            self._running = False
 
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
