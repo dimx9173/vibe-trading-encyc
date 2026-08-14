@@ -9,6 +9,15 @@ import logging
 from typing import Optional
 from pydantic import BaseModel, Field
 import httpx
+import time
+from typing import Optional
+
+# 新聞數據緩存（5 分鐘 TTL）
+_news_cache = {
+    "data": None,
+    "timestamp": 0,
+    "ttl": 300  # 5 minutes
+}
 
 logger = logging.getLogger(__name__)
 
@@ -303,13 +312,24 @@ async def get_news_sentiment(symbol: Optional[str] = None, limit: int = 10) -> d
                 "authorization": f"Apikey {api_key}"
             }
 
-            response = await client.get(
-                "https://min-api.cryptocompare.com/data/v2/news/",
-                params=params,
-                headers=headers,
-                timeout=10.0
-            )
-            data = response.json()
+            # 檢查緩存
+            current_time = time.time()
+            if _news_cache["data"] and (current_time - _news_cache["timestamp"]) < _news_cache["ttl"]:
+                logger.debug("Using cached CryptoCompare news data")
+                data = _news_cache["data"]
+            else:
+                response = await client.get(
+                    "https://min-api.cryptocompare.com/data/v2/news/",
+                    params=params,
+                    headers=headers,
+                    timeout=10.0
+                )
+                data = response.json()
+                
+                # 更新緩存
+                if data.get("Data"):
+                    _news_cache["data"] = data
+                    _news_cache["timestamp"] = current_time
 
             # 检查响应
             if response.status_code != 200 or not data.get("Data"):

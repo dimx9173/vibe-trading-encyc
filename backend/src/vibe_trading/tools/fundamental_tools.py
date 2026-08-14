@@ -7,6 +7,14 @@ import logging
 from typing import Optional
 from pydantic import BaseModel, Field
 import httpx
+import time
+
+# 清算數據緩存（10 分鐘 TTL）
+_liquidation_cache = {
+    "data": None,
+    "timestamp": 0,
+    "ttl": 600  # 10 minutes
+}
 
 logger = logging.getLogger(__name__)
 
