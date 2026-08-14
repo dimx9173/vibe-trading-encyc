@@ -7,7 +7,9 @@ VBT 外部數據層採用**核心 + 插件**架構：
 - **核心層**：K-line、技術指標、Alpha 因子、Skills（回測/即時共用）
 - **插件層**：新聞情緒、清算數據（可選，即時專用）
 - **智能路由**：動態選擇最佳數據源
-- **證據門控**：Paper 14 天驗證 → Live 配置決策
+- **證據門控**：Paper 14 天驗證 → Live 配置決策（`EvidenceGate` + `PerformanceTracker`）
+- **決策增強**：插件資料裝飾器注入（`DecisionEnhancer`，自動降級）
+- **統一報告**：回測/Paper 雙模式 + 數據源差異標記（`ReportGenerator`）
 
 ---
 
@@ -310,12 +312,25 @@ Paper Mode（可開關新聞）
 ### 使用示例
 
 ```python
-from vibe_trading.data_sources.evidence_gate import EvidenceGate
+from vibe_trading.data_sources.evidence_gate import EvidenceGate, EvidenceGateConfig
+from vibe_trading.data_sources.performance_tracker import PerformanceTracker
 
-gate = EvidenceGate(config)
+tracker = PerformanceTracker(db_path="performance.db")   # 記錄已平倉交易
+gate = EvidenceGate(
+    tracker=tracker,
+    config=EvidenceGateConfig(min_sharpe=0.8, max_drawdown=0.2, min_trades=5),
+    db_path="evidence_gate.db",
+)
 
-# 評估 Paper 績效
-result = await gate.evaluate_paper_performance(period_days=14)
+# 記錄一筆交易（由 Paper executor 平倉時呼叫）
+from vibe_trading.data_sources.performance_tracker import TradeRecord
+tracker.record_trade(
+    TradeRecord(symbol="BTCUSDT", side="BUY", quantity=0.01,
+                entry_price=50_000, exit_price=50_500, realized_pnl=50.0)
+)
+
+# 評估 Paper 績效（同步方法，預設 14 天窗口）
+result = gate.evaluate_paper_performance(period_days=14)
 
 if result.passed:
     print(f"建議切換到 Live mode")
@@ -324,6 +339,28 @@ if result.passed:
 else:
     print(f"建議繼續 Paper mode")
     print(result.recommendation)
+
+# 查詢評估歷史
+history = gate.get_evaluations(limit=5)
+```
+
+### 決策增強（DecisionEnhancer）
+
+```python
+from vibe_trading.data_sources.decision_enhancer import DecisionEnhancer
+
+enhancer = DecisionEnhancer(
+    sentiment_plugin=sentiment_plugin,      # 可選
+    liquidation_plugin=liquidation_plugin,  # 可選
+)
+
+# 包裝決策函式：插件可用時注入資料，故障/停用時自動降級
+@enhancer.enhance
+async def decide(symbol: str) -> dict:
+    return {"decision": "BUY", "symbol": symbol}
+
+result = await decide("BTCUSDT")
+# result["enhancements"] = {"sentiment_score": 0.8, "sentiment_source": "..."}
 ```
 
 ---
@@ -333,37 +370,40 @@ else:
 ### 回測引擎適配
 
 ```python
-from vibe_trading.data_sources.backtest_adapter import BacktestAdapter
+from vibe_trading.backtest.data_loader import BacktestDataLoader, DataSource
 
-adapter = BacktestAdapter(
-    data_source=unified_data_source,
-    skills=skill_list
-)
+loader = BacktestDataLoader(default_source=DataSource.HYBRID)
 
-# 運行回測（硬編碼不調用新聞插件）
-report = await adapter.run(
+# 載入回測 K-line（走統一數據層 KlineStorage，硬編碼不調用新聞插件）
+klines = await loader.load_klines(
     symbol="BTCUSDT",
+    interval="30m",
     start=datetime(2026, 1, 1),
-    end=datetime(2026, 8, 1)
+    end=datetime(2026, 8, 1),
+    source=DataSource.BINANCE,   # 可覆蓋預設來源
 )
-
-print(f"Sharpe: {report.sharpe_ratio:.2f}")
-print(f"Win Rate: {report.win_rate:.2%}")
-print(f"Data Sources: {report.data_sources}")
-# 輸出：["歷史 K-line", "技術指標", "Alpha 因子", "Skills"]
 ```
 
 ### 統一報告格式
 
 ```python
-{
-    "sharpe_ratio": 1.2,
-    "win_rate": 0.58,
-    "max_drawdown": 0.12,
-    "total_return": 0.15,
-    "data_sources": ["歷史 K-line", "技術指標", "Alpha 因子", "Skills"],
-    "note": "回測未使用新聞/情緒數據"
-}
+from vibe_trading.data_sources.report_generator import ReportGenerator
+
+reporter = ReportGenerator(mode="backtest")
+report = reporter.build_report(
+    symbol="BTCUSDT",
+    metrics={"sharpe": 1.2, "win_rate": 0.58, "max_drawdown": 0.12, "total_return": 0.15},
+    data_sources=["歷史 K-line", "技術指標", "Alpha 因子", "Skills"],
+)
+# report["note"] = "回測未使用新聞/情緒數據"
+
+# Paper 模式對比
+paper_report = reporter.build_report("BTCUSDT", metrics, mode="paper")
+comparison = reporter.compare_reports(report, paper_report)  # 各指標 delta
+
+# 序列化
+print(reporter.to_markdown(report))   # Markdown
+print(reporter.to_json(paper_report)) # JSON
 ```
 
 ---

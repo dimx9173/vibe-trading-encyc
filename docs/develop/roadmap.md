@@ -29,22 +29,24 @@ tags: [development, contributing, changelog]
 
 ## 下一版本：v0.2.0
 
+> 大部分已落地，逐項勾選如下（截至 2026-08-14）。
+
 ### 计划功能
 
 #### 性能优化
 
-- [ ] 并行 LLM 调用优化
-- [ ] 缓存机制改进
-- [ ] 数据库查询优化
+- [x] 并行 LLM 调用优化（`prompt_with_timeout` + 多线程）
+- [x] 缓存机制改进（外部數據層 LRU + TTL + SmartRouter）
+- [ ] 数据库查询优化（進行中，FTS5 已用於記憶）
 - [ ] WebSocket 连接池
 
 #### 新功能
 
-- [ ] 支持更多交易所（Binance US、Bybit、OKX）
-- [ ] 多交易对并行分析
-- [ ] 自定义技术指标
-- [ ] 策略模板系统
-- [ ] 风险规则配置界面
+- [x] 支持更多交易所（OKX 实盘 + Broker Connector；Binance US/Bybit 未做）
+- [x] 多交易对并行分析（`multi_thread_main.py` + `thread_manager.py`）
+- [x] 自定义技术指标（`data_sources/indicators/technical.py` + Alpha Zoo）
+- [x] 策略模板系统（`exporters/` NL→Pine/MQL5）
+- [ ] 风险规则配置界面（風控邏輯已有，UI 未做）
 
 #### 用户体验
 

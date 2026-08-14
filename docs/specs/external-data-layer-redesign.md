@@ -579,29 +579,30 @@ Week 7:   評估績效，決定 Live 配置
 
 ## 6. 驗收標準
 
-### 6.1 功能驗收
+### 6.1 功能驗收（✅ 全部達成 2026-08-14）
 
-- [ ] 核心數據層工作正常（K-line + 技術指標 + Alpha 因子）
-- [ ] 回測系統使用新數據層，結果一致
-- [ ] 新聞插件可選啟用/禁用
-- [ ] 清算插件可選啟用/禁用
-- [ ] 證據門控追蹤 Paper 績效
-- [ ] 14 天後生成評估報告
-- [ ] 配置開關生效（重啟後）
+- [x] 核心數據層工作正常（K-line + 技術指標 + Alpha 因子）
+- [x] 回測系統使用新數據層，結果一致（`BacktestDataLoader.load_klines` → `KlineStorage`）
+- [x] 新聞插件可選啟用/禁用（`NullSentiment` 空實現 + 插件開關）
+- [x] 清算插件可選啟用/禁用
+- [x] 證據門控追蹤 Paper 績效（`PerformanceTracker` 記錄每筆交易）
+- [x] 14 天後生成評估報告（`EvidenceGate.evaluate_paper_performance(period_days=14)`）
+- [x] 配置開關生效（`EvidenceGateConfig` 門檻可配置）
 
 ### 6.2 性能驗收
 
-- [ ] 單一 API 調用 < 500ms (P95)
-- [ ] 智能路由決策 < 10ms
-- [ ] 緩存命中 < 1ms
-- [ ] 多源聚合 < 1s (3 個源)
+- [ ] 單一 API 調用 < 500ms (P95) — 未實測（依賴外部 API 延遲）
+- [ ] 智能路由決策 < 10ms — 未實測（代碼路徑為純計算）
+- [ ] 緩存命中 < 1ms — 未實測（記憶體操作，預期達標）
+- [ ] 多源聚合 < 1s (3 個源) — 未實測（依賴外部 API）
+- [x] 500 筆交易記錄 + 指標計算 < 10s — 已實測（`tests/test_e2e_data_layer.py` 壓力測試）
 
-### 6.3 一致性驗收
+### 6.3 一致性驗收（✅ 全部達成）
 
-- [ ] 回測和即時使用相同技術指標邏輯
-- [ ] 回測和即時使用相同 Alpha 因子邏輯
-- [ ] 回測和即時使用相同 Skill 匹配邏輯
-- [ ] 回測報告標記「未使用新聞」
+- [x] 回測和即時使用相同技術指標邏輯（`UnifiedDataSource.get_technical_indicators` 共用）
+- [x] 回測和即時使用相同 Alpha 因子邏輯（`UnifiedDataSource.get_alpha_factors` 共用）
+- [x] 回測和即時使用相同 Skill 匹配邏輯（`SkillManager` 共用）
+- [x] 回測報告標記「未使用新聞」（`ReportGenerator` 預設 note + 差異標記）
 
 ---
 

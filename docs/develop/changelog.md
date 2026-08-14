@@ -45,7 +45,7 @@ tags: [development, contributing, changelog]
 - **Paper ledger 持久化**：`state_file` + `--reset-paper`，重启自动还原（d140d36, 8abb462）
 - **Backtest SMA 优化**：O(N·P) → O(N) sliding window，30x 加速（30033a5）
 - **B9 订单规范化**：PM 路径订单 notional cap（settings `execution_max_single_order_notional=100`）在 risk gate 前执行（0dcb9a8）
-- **spec/task 文档**：external-data-layer 规格更新为 2.1.0，诚实标注 Phase 4（证据门控/统一报告）未实施
+- **spec/task 文档**：external-data-layer 规格更新至 2.2.0，Phase 4（证据门控/决策增强/统一报告）已实施并标记完成（2026-08-14）
 
 ### 修复
 
