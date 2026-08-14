@@ -45,6 +45,17 @@ class TelegramNotifier:
                 await self._task
             except asyncio.CancelledError:
                 pass
+        # Flush notifications still queued (e.g. shutdown notice enqueued just
+        # before stop). LOW items are batched; CRITICAL/HIGH go through dequeue.
+        low_priority = await self.queue.get_pending_notifications()
+        if low_priority:
+            await self._send_batch_notifications(low_priority)
+            await self.queue.clear_low_priority()
+        while True:
+            notification = await self.queue.dequeue()
+            if notification is None:
+                break
+            await self._send_notification(notification)
         logger.info("Telegram Notifier stopped")
 
     async def _notification_loop(self):
@@ -169,6 +180,28 @@ class TelegramNotifier:
             logger.error(f"Test message failed: {e}")
             return False
 
+    async def send_startup_notification(self, symbol: str, interval: str, mode: str) -> None:
+        """發送啟動通知"""
+        notification = Notification(
+            id=f"startup_{uuid.uuid4().hex[:8]}",
+            priority=NotificationPriority.LOW,
+            title="VBT 啟動完成",
+            message=f"交易對: {symbol}\n間隔: {interval}\n模式: {mode}",
+            metadata={"type": "startup", "symbol": symbol}
+        )
+        await self.queue.enqueue(notification)
+
+    async def send_shutdown_notification(self, reason: str = "正常關閉") -> None:
+        """發送關閉通知"""
+        notification = Notification(
+            id=f"shutdown_{uuid.uuid4().hex[:8]}",
+            priority=NotificationPriority.LOW,
+            title="VBT 已關閉",
+            message=f"原因: {reason}",
+            metadata={"type": "shutdown"}
+        )
+        await self.queue.enqueue(notification)
+
     async def handle_callback(self, callback_query) -> bool:
         """處理 inline keyboard 回調"""
         data = callback_query.data
@@ -185,3 +218,11 @@ class TelegramNotifier:
             await callback_query.answer("查看詳情")
             return True
         return False
+
+    async def send_notification(self, notification: Notification) -> None:
+        """發送單條通知
+
+        Args:
+            notification: 要發送的通知對象
+        """
+        await self.queue.enqueue(notification)

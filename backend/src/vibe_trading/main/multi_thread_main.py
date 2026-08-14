@@ -10,7 +10,7 @@ import asyncio
 import logging
 import signal
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 from pi_logger import get_logger, info, success, warning, separator
 
@@ -34,6 +34,9 @@ from vibe_trading.tools import market_data_tools
 from vibe_trading.data_sources.ws_price_cache import get_price_cache
 from vibe_trading.execution.order_executor import OrderExecutor
 
+if TYPE_CHECKING:
+    from vibe_trading.notifications.telegram_notifier import TelegramNotifier
+
 logger = logging.getLogger(__name__)
 log = get_logger("MultiThreadMain")
 
@@ -50,6 +53,7 @@ class MultiThreadedTradingSystem:
         symbol: str = "BTCUSDT",
         interval: str = "30m",
         executor: Optional[OrderExecutor] = None,
+        mode: str = "paper",
     ):
         """
         Initialize multi-threaded trading system
@@ -61,6 +65,7 @@ class MultiThreadedTradingSystem:
         self.symbol = symbol
         self.interval = interval
         self.executor = executor
+        self.mode = mode
         
         # Core components
         self.thread_manager = get_thread_manager()
@@ -75,6 +80,9 @@ class MultiThreadedTradingSystem:
         
         # Emergency handler
         self.emergency_handler: Optional[EmergencyHandler] = None
+        
+        # Telegram notifier
+        self.notifier: Optional["TelegramNotifier"] = None
         
         # State
         self._running = False
@@ -107,11 +115,28 @@ class MultiThreadedTradingSystem:
         )
         await self.onbar_thread.initialize()
         
+        # Initialize Telegram notifier
+        from vibe_trading.notifications.config import TelegramConfig
+        from vibe_trading.notifications.telegram_notifier import TelegramNotifier
+        
+        telegram_config = TelegramConfig.from_env()
+        if telegram_config and telegram_config.enabled:
+            try:
+                self.notifier = TelegramNotifier(
+                    bot_token=telegram_config.bot_token,
+                    chat_id=telegram_config.chat_id
+                )
+                log.info("Telegram notifier initialized", tag="NOTIFIER")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Telegram notifier: {e}")
+                self.notifier = None
+
         # Initialize emergency handler
         self.emergency_handler = EmergencyHandler(
             thread_manager=self.thread_manager,
             shared_state=self.shared_state,
             event_queue=self.event_queue,
+            notifier=self.notifier,
         )
         await self.emergency_handler.initialize(symbol=self.symbol)
         
@@ -184,6 +209,19 @@ class MultiThreadedTradingSystem:
         self.event_thread = asyncio.create_task(self._run_event_thread())
         
         success("All threads started")
+        
+        # Start Telegram notifier and send startup notification
+        if self.notifier:
+            try:
+                await self.notifier.start()
+                await self.notifier.send_startup_notification(
+                    symbol=self.symbol,
+                    interval=self.interval,
+                    mode=self.mode
+                )
+                log.info("Telegram notifier started and startup notification sent", tag="NOTIFIER")
+            except Exception as e:
+                logger.warning(f"Failed to start Telegram notifier: {e}")
         
         # Print system status
         await self._print_system_status()
@@ -376,6 +414,15 @@ class MultiThreadedTradingSystem:
         
         self._running = False
         self._shutdown_event.set()
+        
+        # Stop Telegram notifier first (before threads)
+        if self.notifier:
+            try:
+                await self.notifier.send_shutdown_notification()
+                await self.notifier.stop()
+                log.info("Telegram notifier stopped", tag="NOTIFIER")
+            except Exception as e:
+                logger.warning(f"Failed to stop Telegram notifier: {e}")
         
         # Cancel event thread
         if self.event_thread:

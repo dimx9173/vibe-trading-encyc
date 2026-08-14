@@ -262,6 +262,7 @@ async def run_multi_thread_system(
             symbol=symbol,
             interval=interval,
             executor=executor,
+            mode=mode.value,
         )
 
         # 设置信号处理

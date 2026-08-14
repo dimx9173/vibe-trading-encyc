@@ -284,3 +284,176 @@ class TestNotificationConfig:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestTelegramNotifierIntegration:
+    """測試 TelegramNotifier 整合功能"""
+
+    @pytest.mark.asyncio
+    async def test_send_startup_notification(self):
+        """測試發送啟動通知"""
+        from vibe_trading.notifications.telegram_notifier import TelegramNotifier
+        from unittest.mock import AsyncMock, patch
+        
+        with patch('vibe_trading.notifications.telegram_notifier.Bot') as mock_bot_class:
+            mock_bot = AsyncMock()
+            mock_bot_class.return_value = mock_bot
+            
+            notifier = TelegramNotifier("test_token", "test_chat_id")
+            await notifier.send_startup_notification("BTCUSDT", "30m", "paper")
+            
+            # Verify notification was queued
+            pending = await notifier.queue.get_pending_notifications()
+            assert len(pending) == 1
+            assert pending[0].priority == NotificationPriority.LOW
+            assert "VBT 啟動完成" in pending[0].title
+            assert "BTCUSDT" in pending[0].message
+            assert "30m" in pending[0].message
+            assert "paper" in pending[0].message
+
+    @pytest.mark.asyncio
+    async def test_send_shutdown_notification(self):
+        """測試發送關閉通知"""
+        from vibe_trading.notifications.telegram_notifier import TelegramNotifier
+        from unittest.mock import AsyncMock, patch
+        
+        with patch('vibe_trading.notifications.telegram_notifier.Bot') as mock_bot_class:
+            mock_bot = AsyncMock()
+            mock_bot_class.return_value = mock_bot
+            
+            notifier = TelegramNotifier("test_token", "test_chat_id")
+            await notifier.send_shutdown_notification("正常關閉")
+            
+            # Verify notification was queued
+            pending = await notifier.queue.get_pending_notifications()
+            assert len(pending) == 1
+            assert pending[0].priority == NotificationPriority.LOW
+            assert "VBT 已關閉" in pending[0].title
+            assert "正常關閉" in pending[0].message
+
+    @pytest.mark.asyncio
+    async def test_shutdown_notification_flushed_on_stop(self):
+        """測試 stop() 時 flush 未發送的關閉通知"""
+        from vibe_trading.notifications.telegram_notifier import TelegramNotifier
+        from unittest.mock import AsyncMock, patch
+        
+        with patch('vibe_trading.notifications.telegram_notifier.Bot') as mock_bot_class:
+            mock_bot = AsyncMock()
+            mock_bot_class.return_value = mock_bot
+            
+            notifier = TelegramNotifier("test_token", "test_chat_id")
+            await notifier.start()
+            await notifier.send_shutdown_notification("正常關閉")
+            await notifier.stop()
+            
+            # Notification must be flushed (sent) during stop, not left in queue
+            assert mock_bot.send_message.call_count >= 1
+            assert notifier.queue.get_queue_size() == 0
+
+    @pytest.mark.asyncio
+    async def test_emergency_handler_sends_notification(self):
+        """測試緊急處理器發送通知"""
+        from vibe_trading.coordinator.emergency_handler import EmergencyHandler, EmergencyAction
+        from vibe_trading.notifications.telegram_notifier import TelegramNotifier
+        from vibe_trading.triggers.base_trigger import TriggerEvent, TriggerSeverity
+        from vibe_trading.agents.decision.emergency_agent import EmergencyDecision
+        from unittest.mock import AsyncMock, MagicMock, patch
+        
+        with patch('vibe_trading.notifications.telegram_notifier.Bot') as mock_bot_class:
+            mock_bot = AsyncMock()
+            mock_bot_class.return_value = mock_bot
+            
+            # Create notifier
+            notifier = TelegramNotifier("test_token", "test_chat_id")
+            
+            # Create emergency handler with notifier
+            handler = EmergencyHandler(
+                thread_manager=AsyncMock(),
+                shared_state=AsyncMock(),
+                event_queue=AsyncMock(),
+                notifier=notifier
+            )
+            
+            # Mock _handle_critical_event to return a known action
+            mock_decision = MagicMock(spec=EmergencyDecision)
+            mock_action = EmergencyAction(
+                action="EXECUTED",
+                decision=mock_decision,
+                execution_result={"status": "success"}
+            )
+            handler._handle_critical_event = AsyncMock(return_value=mock_action)
+            
+            # Mock risk assessment
+            handler._run_risk_assessment = AsyncMock()
+            
+            # Create trigger event
+            trigger_event = TriggerEvent(
+                event_id="test_event_001",
+                trigger_name="price_drop",
+                severity=TriggerSeverity.CRITICAL,
+                data={"price": 50000.0, "threshold": 0.05},
+                timestamp=1234567890,
+                symbol="BTCUSDT"
+            )
+            
+            # Handle emergency event
+            await handler.handle_emergency_event(
+                trigger_event=trigger_event,
+                current_positions=[],
+                account_balance=10000.0
+            )
+            
+            # Verify notification was queued (dequeue returns any priority)
+            notification = await notifier.queue.dequeue()
+            assert notification is not None
+            assert notification.priority == NotificationPriority.CRITICAL
+            assert "緊急事件: price_drop" in notification.title
+            assert "BTCUSDT" in notification.message
+
+    @pytest.mark.asyncio
+    async def test_emergency_ignored_action_no_notification(self):
+        """測試 IGNORED 動作不發送通知 (log-only 事件不騷擾用戶)"""
+        from vibe_trading.coordinator.emergency_handler import EmergencyHandler, EmergencyAction
+        from vibe_trading.notifications.telegram_notifier import TelegramNotifier
+        from vibe_trading.triggers.base_trigger import TriggerEvent, TriggerSeverity
+        from unittest.mock import AsyncMock, MagicMock, patch
+        
+        with patch('vibe_trading.notifications.telegram_notifier.Bot') as mock_bot_class:
+            mock_bot = AsyncMock()
+            mock_bot_class.return_value = mock_bot
+            
+            notifier = TelegramNotifier("test_token", "test_chat_id")
+            handler = EmergencyHandler(
+                thread_manager=AsyncMock(),
+                shared_state=AsyncMock(),
+                event_queue=AsyncMock(),
+                notifier=notifier
+            )
+            
+            # Mock normal event handler to return IGNORED action
+            mock_action = EmergencyAction(
+                action="IGNORED",
+                decision=MagicMock(),
+                execution_result={"message": "Event logged, no action taken"}
+            )
+            handler._handle_normal_event = AsyncMock(return_value=mock_action)
+            handler._run_risk_assessment = AsyncMock()
+            
+            trigger_event = TriggerEvent(
+                event_id="test_event_002",
+                trigger_name="normal_fluctuation",
+                severity=TriggerSeverity.MEDIUM,
+                data={"price": 50000.0},
+                timestamp=1234567890,
+                symbol="BTCUSDT"
+            )
+            
+            await handler.handle_emergency_event(
+                trigger_event=trigger_event,
+                current_positions=[],
+                account_balance=10000.0
+            )
+            
+            # Verify no notification was queued
+            pending = await notifier.queue.get_pending_notifications()
+            assert len(pending) == 0

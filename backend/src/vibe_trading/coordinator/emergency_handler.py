@@ -5,6 +5,7 @@ Handles emergency event processing and coordination.
 """
 import asyncio
 import logging
+import uuid
 from typing import Dict, List, Optional
 from datetime import datetime
 from dataclasses import dataclass
@@ -73,6 +74,7 @@ class EmergencyHandler:
         thread_manager: Optional[ThreadManager] = None,
         shared_state: Optional[SharedStateManager] = None,
         event_queue: Optional[EventQueue] = None,
+        notifier: Optional[TelegramNotifier] = None,
     ):
         """
         Initialize emergency handler
@@ -80,10 +82,12 @@ class EmergencyHandler:
         Args:
             thread_manager: Thread manager instance
             shared_state: Shared state manager instance
+            notifier: Telegram notifier instance for sending alerts
             event_queue: Event queue instance
         """
         self.thread_manager = thread_manager or get_thread_manager()
         self.shared_state = shared_state or get_shared_state_manager()
+        self.notifier = notifier
         self.event_queue = event_queue or get_event_queue()
         
         # Initialize agents
@@ -176,6 +180,31 @@ class EmergencyHandler:
                 self._deferred += 1
             elif action.action == "IGNORED":
                 self._ignored += 1
+            
+            # Send Telegram notification (EXECUTED/DEFERRED only, not IGNORED)
+            if self.notifier and action.action in ("EXECUTED", "DEFERRED"):
+                try:
+                    notification = Notification(
+                        id=f"emergency_{uuid.uuid4().hex[:8]}",
+                        priority=NotificationPriority.CRITICAL,
+                        title=f"緊急事件: {trigger_event.trigger_name}",
+                        message=(
+                            f"嚴重性: {trigger_event.severity.value}\n"
+                            f"交易對: {trigger_event.symbol}\n"
+                            f"動作: {action.action}\n"
+                            f"決策: {action.decision}"
+                        ),
+                        metadata={
+                            "type": "emergency",
+                            "trigger_name": trigger_event.trigger_name,
+                            "severity": trigger_event.severity.value,
+                            "action": action.action,
+                            "symbol": trigger_event.symbol,
+                        }
+                    )
+                    await self.notifier.send_notification(notification)
+                except Exception as notif_error:
+                    logger.error(f"Failed to send Telegram notification: {notif_error}")
             
             return action
             
