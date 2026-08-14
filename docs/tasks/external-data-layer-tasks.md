@@ -205,7 +205,7 @@
 - **負責**: 專案負責人
 - **工時**: 30 分鐘
 - **優先級**:  P0
-- **狀態**: ❌ 已取消（2026-08-14）— CryptoPanic 已無免費方案；免費情緒資料改用 Task 3.3 `RSSSentiment`（無需 API key）。`CryptoPanicSentiment` 插件保留（付費用戶可自行配置 key）
+- **狀態**: ❌ 已取消（2026-08-14）— CryptoPanic 已無免費方案；免費情緒資料改用 **alternative.me F&G + RSS**（均無需 API key，實測可用）。調查紀錄見 spec 附錄 8.3
 
 **行動項目**（已取消，原因：供應商無免費方案）:
 - [ ] 訪問 https://cryptopanic.com/developers/api/

@@ -642,6 +642,24 @@ Week 7:   評估績效，決定 Live 配置
 - [Python websockets](https://websockets.readthedocs.io/)
 - [Pydantic Documentation](https://docs.pydantic.dev/)
 
+### 8.3 免費情緒資料源調查（2026-08-14 實測）
+
+CryptoPanic 無免費方案後，實測評估以下替代（curl 實測）：
+
+| 資料源 | 免費 | 需 API key | 實測結果 | 狀態 |
+|---|---|---|---|---|
+| alternative.me Fear & Greed (`/fng/`) | ✅ | ❌ | 200 OK，即時指數 | ✅ **已整合**（`get_fear_and_greed_index`） |
+| RSS（coindesk/cointelegraph） | ✅ | ❌ | feedparser 可用 | ✅ **已整合**（`RSSSentiment`） |
+| Binance funding rate / long-short ratio | ✅ | ❌ | 正常 | ✅ **已整合** |
+| CoinGecko demo `/search/trending` | ✅ | ❌ | 可用但偶發 "Throttled"（免費 tier rate-limit） | ⚠️ 可選 fallback |
+| CoinGecko demo `/global` | ✅ | ❌ | 偶發 "Throttled" | ⚠️ 可選 fallback |
+| CoinGecko `/news` | ❌ | ✅ | 401/PRO only（error 10005） | ❌ 需付費 |
+| CryptoCompare news (`/data/v2/news/`) | ❌ | ✅ | 401 "API key required"（轉 coindesk developers） | ❌ 需付費 |
+| CoinCap | ❌ | ✅ | 已轉 x402 付費（僅 100 free credits） | ❌ 需付費 |
+
+**結論**：免費情緒信號以 **alternative.me F&G + RSS + Binance** 組合即可，無需付費依賴。
+CoinGecko demo 因 rate-limit 不穩定，不建議作為主源。
+
 ---
 
 **文件結束**
