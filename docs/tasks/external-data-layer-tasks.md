@@ -6,7 +6,7 @@
 - **開始日期**: 2026-08-14
 - **預計完成**: 2026-08-28（14 天）
 - **優先級**:  P0（高）
-- **狀態**: ✅ Phase 1-4 已實施（2026-08-14）；❌ Task 3.1 已取消（CryptoPanic 無免費方案，改用 RSS）；⏸ Task 4.7（部署）待 DevOps
+- **狀態**: ✅ Phase 1-4 已實施（2026-08-14）；❌ Task 3.1/3.2 已取消並移除（CryptoPanic 無免費方案，插件已刪，情緒改用 RSS + alternative.me F&G）；⏸ Task 4.7（部署）待 DevOps
 
 ---
 
@@ -205,7 +205,7 @@
 - **負責**: 專案負責人
 - **工時**: 30 分鐘
 - **優先級**:  P0
-- **狀態**: ❌ 已取消（2026-08-14）— CryptoPanic 已無免費方案；免費情緒資料改用 **alternative.me F&G + RSS**（均無需 API key，實測可用）。調查紀錄見 spec 附錄 8.3
+- **狀態**: ❌ 已取消並移除（2026-08-14）— CryptoPanic 無免費方案，`CryptoPanicSentiment` 插件已刪除；免費情緒資料用 **alternative.me F&G + RSS**（無需 API key，實測可用）。調查紀錄見 spec 附錄 8.3
 
 **行動項目**（已取消，原因：供應商無免費方案）:
 - [ ] 訪問 https://cryptopanic.com/developers/api/

@@ -44,7 +44,7 @@ print(result.data)
 from vibe_trading.data_sources.plugins.sentiment.rss import RSSSentiment
 from vibe_trading.data_sources.plugins.sentiment.null import NullSentiment
 
-# 即時模式：RSS 免費源（無需 API key；CryptoPanic 已無免費方案）
+# 即時模式：RSS 免費源（無需 API key）
 sentiment_plugin = RSSSentiment(feed_urls=[
     "https://www.coindesk.com/arc/outboundfeeds/rss/",
     "https://cointelegraph.com/rss",
@@ -206,7 +206,6 @@ class SentimentPlugin(ABC):
 
 **可用實現**：
 - `RSSSentiment` - RSS 聚合（免費，無需 API key；推薦）
-- `CryptoPanicSentiment` - CryptoPanic API（需付費 key — 已無免費方案，2026-08-14 實測確認）
 - `NullSentiment` - 空實現（回測用）
 
 > 💡 **免費情緒組合**（無需任何 API key）：alternative.me Fear & Greed（`sentiment_tools.get_fear_and_greed_index`）+ `RSSSentiment` + Binance funding/long-short。完整調查表見 spec 附錄 8.3。
@@ -261,8 +260,8 @@ trading:
     
     sentiment:
       enabled: false  # 全局開關
-      plugin: cryptopanic
-      api_key: ${CRYPTOPANIC_API_KEY}
+      plugin: rss  # 免費 RSS 源，無需 API key
+      feeds: ["https://cointelegraph.com/rss", "https://www.coindesk.com/arc/outboundfeeds/rss/"]
     
     liquidation:
       enabled: true
@@ -517,7 +516,7 @@ logger = structlog.get_logger()
 
 logger.info(
     "data_fetched",
-    source="cryptopanic",
+    source="rss",
     symbol="BTCUSDT",
     data_type="sentiment",
     latency_ms=245,

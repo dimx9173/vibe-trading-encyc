@@ -3,7 +3,7 @@
 ## 版本資訊
 - **版本**: 2.2.1
 - **日期**: 2026-08-14
-- **狀態**: ✅ 已實施（Phase 1-4 全部）；❌ Task 3.1 已取消（CryptoPanic 無免費方案，情緒資料改用免費 RSS）；⏸ Task 4.7 部署
+- **狀態**: ✅ 已實施（Phase 1-4 全部）；❌ Task 3.1/3.2 已取消並移除（CryptoPanic 無免費方案，插件已刪，情緒改用 RSS + alternative.me F&G）；⏸ Task 4.7 部署
 - **預估工期**: 14 天（4 個階段）→ 實際 Phase 1-4 於 2026-08-14 完成
 - **架構原則**: 核心技術指標 + 可選新聞插件 + 證據門控
 
@@ -32,7 +32,7 @@
 - ✅ Skill 系統（學習後的交易規則）
 
 **可選插件層**（即時專用）：
-- ✅ 新聞/情緒插件（RSS 免費源為主；CryptoPanic 需付費 key — 無免費方案，Task 3.1 已取消）
+- ✅ 新聞/情緒插件（RSS 免費源 + alternative.me F&G；CryptoPanic 已移除 — 無免費方案）
 - ✅ 清算數據插件（Binance WebSocket + 多交易所）
 - ✅ 智能路由（動態選擇最佳數據源）
 - ✅ 統一緩存（LRU + TTL）
@@ -110,8 +110,7 @@ backend/src/vibe_trading/data_sources/
 │   ├── sentiment/
 │   │   ├── __init__.py
 │   │   ├── base.py         # SentimentPlugin ABC
-│   │   ├── cryptopanic.py  # CryptoPanic 實現
-│   │   ├── rss.py          # RSS 聚合實現
+│   │   ├── rss.py          # RSS 聚合實現（免費）
 │   │   └── null.py         # 空實現（回測用）
 │   └── liquidation/
 │       ├── __init__.py
@@ -225,16 +224,17 @@ class NullSentiment(SentimentPlugin):
     def is_available(self) -> bool:
         return False
 
-class CryptoPanicSentiment(SentimentPlugin):
-    """CryptoPanic 實現"""
+class RSSSentiment(SentimentPlugin):
+    """RSS 聚合實現（免費，無需 API key）"""
     
-    def __init__(self, api_key: str):
-        self.api_key = api_key
+    def __init__(self, feed_urls: List[str]):
+        self.feed_urls = feed_urls
         self._available = True
     
     async def get_sentiment(self, symbol: str) -> Optional[float]:
         try:
-            # 調用 CryptoPanic API
+            import feedparser
+            # 聚合多 RSS 源，關鍵字情緒分析
             ...
             return sentiment_score
         except Exception:
@@ -433,8 +433,8 @@ trading:
     # 可選插件
     sentiment:
       enabled: false  # 全局開關
-      plugin: cryptopanic
-      api_key: ${CRYPTOPANIC_API_KEY}
+      plugin: rss  # 免費 RSS 源，無需 API key
+      feeds: ["https://cointelegraph.com/rss", "https://www.coindesk.com/arc/outboundfeeds/rss/"]
     
     liquidation:
       enabled: true
@@ -520,8 +520,8 @@ trading:
 **目標**: 整合新聞/情緒和清算數據插件
 
 **任務**:
-1. ❌ 註冊 CryptoPanic API Key（已取消 — CryptoPanic 無免費方案；免費情緒改用 RSS）
-2. 🟡 實現 `CryptoPanicSentiment` 插件（已實作，但需付費 key 才可用）
+1. ❌ 註冊 CryptoPanic API Key（已取消 — CryptoPanic 無免費方案，插件已移除；免費情緒改用 RSS + alternative.me F&G）
+2. ❌ 實現 `CryptoPanicSentiment` 插件（已移除，2026-08-14 — 需付費 key，不再維護）
 3. ✅ 實現 `RSSSentiment` 插件（免費替代，無需 key）
 4. ✅ 實現 `BinanceLiquidationWS` 插件
 5. ✅ 實現多交易所聚合器
@@ -529,8 +529,8 @@ trading:
 7. ✅ 編寫插件測試（`tests/test_data_sources.py` + `tests/test_e2e_data_layer.py`）
 
 **交付物**:
-- ✅ `plugins/sentiment/cryptopanic.py`
 - ✅ `plugins/sentiment/rss.py`
+- ✅ `plugins/sentiment/null.py`
 - ✅ `plugins/liquidation/binance_ws.py`
 - ✅ `plugins/liquidation/aggregator.py`
 - ✅ `decision_enhancer.py`（2026-08-14）
@@ -632,15 +632,15 @@ Week 7:   評估績效，決定 Live 配置
 
 ### 8.1 API 註冊連結
 
-- **CryptoPanic**（❌ 已取消 — 無免費方案，2026-08-14）: https://cryptopanic.com/developers/api/
 - **Coinglass**: https://www.coinglass.com/pro/api
+- （CryptoPanic 已移除 — 無免費方案，2026-08-14）
 
 ### 8.2 參考文檔
 
 - [Binance WebSocket API](https://binance-docs.github.io/apidocs/futures/en/)
-- [CryptoPanic API Docs](https://cryptopanic.com/developers/api/)
 - [Python websockets](https://websockets.readthedocs.io/)
 - [Pydantic Documentation](https://docs.pydantic.dev/)
+- [alternative.me F&G API](https://alternative.me/crypto/api/)
 
 ### 8.3 免費情緒資料源調查（2026-08-14 實測）
 
@@ -656,6 +656,7 @@ CryptoPanic 無免費方案後，實測評估以下替代（curl 實測）：
 | CoinGecko `/news` | ❌ | ✅ | 401/PRO only（error 10005） | ❌ 需付費 |
 | CryptoCompare news (`/data/v2/news/`) | ❌ | ✅ | 401 "API key required"（轉 coindesk developers） | ❌ 需付費 |
 | CoinCap | ❌ | ✅ | 已轉 x402 付費（僅 100 free credits） | ❌ 需付費 |
+| CryptoPanic | ❌ | ✅ | 無免費方案；插件已移除（2026-08-14） | ❌ 已移除 |
 
 **結論**：免費情緒信號以 **alternative.me F&G + RSS + Binance** 組合即可，無需付費依賴。
 CoinGecko demo 因 rate-limit 不穩定，不建議作為主源。
