@@ -251,8 +251,20 @@ class TestTradeFields:
         klines = make_trending_klines(n=200, drift=0.5)
         result = engine.run(klines, fast_period=10, slow_period=30)
         for t in result.trades:
-            expected_pnl = (t.exit_price - t.entry_price) * t.position_size
+            # position_size is USDT deployed; quantity = size / entry_price.
+            # With fee=0 and slippage=0: pnl = (exit-entry) * (size/entry).
+            expected_pnl = (t.exit_price - t.entry_price) / t.entry_price * t.position_size
             assert abs(t.pnl - expected_pnl) < 1e-6
+
+    def test_pnl_not_scaled_by_price(self, engine):
+        """Regression: position_size is USDT amount, not quantity — pnl must
+        not be (exit-entry) * size, which scales P&L by entry price."""
+        # Flat market, tiny drift: exit ≈ entry, pnl must be small relative to balance
+        klines = make_trending_klines(n=60, drift=0.001)
+        result = engine.run(klines, fast_period=2, slow_period=5)
+        for t in result.trades:
+            assert abs(t.pnl) < t.position_size * 0.05  # ≤5% of deployed size
+            assert abs(t.pnl_pct) < 0.05
 
 
 # === BacktestResult shape ===

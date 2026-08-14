@@ -761,6 +761,79 @@ shadow_app = typer.Typer(help="Shadow Account 行為診斷")
 app.add_typer(shadow_app, name="shadow")
 
 
+# Agent-in-the-loop backtest CLI commands
+backtest_agent_app = typer.Typer(help="Agent-in-the-loop 回測 (13-agent LLM 管線)")
+app.add_typer(backtest_agent_app, name="backtest-agent")
+
+
+@backtest_agent_app.command("run")
+def bt_agent_run(
+    symbol: str = typer.Option("BTCUSDT", "--symbol", help="交易對"),
+    interval: str = typer.Option("30m", "--interval", help="K線間隔"),
+    bars: int = typer.Option(100, "--bars", help="回放 bar 數 (不含 warmup)"),
+    skip_debate: bool = typer.Option(False, "--skip-debate", help="跳過研究員辯論 (省 ~5 LLM calls/bar)"),
+    quiet: bool = typer.Option(False, "--quiet", help="關閉 LLM 流式輸出"),
+    resume: bool = typer.Option(False, "--resume", help="跳過 JSONL 已完成的 bar"),
+    no_cache: bool = typer.Option(False, "--no-cache", help="禁用 LLM response cache"),
+    yes: bool = typer.Option(False, "--yes", help="跳過成本估算確認"),
+    bars_path: str = typer.Option("replay/data/bars.json", "--bars-path", help="bars JSON 路徑"),
+    log_path: str = typer.Option("replay/data/leg_a_decisions.jsonl", "--log-path", help="決策 JSONL 輸出路徑"),
+    usage_db: str = typer.Option("vibe_trading.db", "--usage-db", help="usage ledger db 路徑"),
+):
+    """運行完整 13-agent LLM 管線逐 bar 回放"""
+    from vibe_trading.backtest.agent_models import AgentReplayConfig
+    from vibe_trading.backtest.agent_replay import run_replay
+
+    config = AgentReplayConfig(
+        symbol=symbol,
+        interval=interval,
+        bars_path=bars_path,
+        start=120,
+        end=120 + bars,
+        skip_debate=skip_debate,
+        quiet=quiet,
+        resume=resume,
+        use_cache=not no_cache,
+        yes=yes,
+        log_path=log_path,
+        usage_db_path=usage_db,
+    )
+    asyncio.run(run_replay(config))
+
+
+@backtest_agent_app.command("report")
+def bt_agent_report(
+    log_path: str = typer.Argument("replay/data/leg_a_decisions.jsonl", help="決策 JSONL 路徑"),
+    symbol: str = typer.Option("BTCUSDT", "--symbol", help="交易對"),
+    interval: str = typer.Option("30m", "--interval", help="K線間隔"),
+    usage_db: str = typer.Option("vibe_trading.db", "--usage-db", help="usage ledger db 路徑"),
+):
+    """聚合決策 JSONL 生成 P&L/決策分布/LLM 成本報告"""
+    from vibe_trading.backtest.agent_report import build_report, format_report
+
+    result = build_report(
+        log_path=log_path,
+        symbol=symbol,
+        interval=interval,
+        usage_db_path=usage_db,
+    )
+    console.print(format_report(result))
+
+
+@backtest_agent_app.command("fetch")
+def bt_agent_fetch(
+    symbol: str = typer.Option("BTCUSDT", "--symbol", help="交易對"),
+    interval: str = typer.Option("30m", "--interval", help="K線間隔"),
+    days: int = typer.Option(14, "--days", help="回放窗口天數"),
+    warmup_bars: int = typer.Option(120, "--warmup-bars", help="warmup bar 數"),
+    out: str = typer.Option("replay/data/bars.json", "--out", help="輸出 bars JSON 路徑"),
+):
+    """從 Binance 抓取歷史 K 線 (public REST, 免 API key)"""
+    from vibe_trading.backtest.agent_fetch import fetch_bars
+
+    fetch_bars(symbol=symbol, interval=interval, days=days, warmup_bars=warmup_bars, out=out)
+
+
 @shadow_app.command("analyze")
 def shadow_analyze(
     csv_path: str = typer.Argument(..., help="Binance 交易歷史 CSV 文件路徑"),

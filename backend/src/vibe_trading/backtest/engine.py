@@ -88,12 +88,15 @@ class BacktestEngine:
         actual_entry = entry_price * (1 + slippage_rate)
         actual_exit = exit_price * (1 - slippage_rate)
         
-        # Calculate raw P&L
-        raw_pnl = (actual_exit - actual_entry) * position_size
+        # position_size is the USDT amount deployed; convert to quantity (units)
+        quantity = position_size / actual_entry if actual_entry else 0.0
+        
+        # Calculate raw P&L: price diff × quantity
+        raw_pnl = (actual_exit - actual_entry) * quantity
         
         # Apply fees on both entry and exit
-        entry_fee = actual_entry * position_size * fee_rate
-        exit_fee = actual_exit * position_size * fee_rate
+        entry_fee = actual_entry * quantity * fee_rate
+        exit_fee = actual_exit * quantity * fee_rate
         total_fees = entry_fee + exit_fee
         
         pnl = raw_pnl - total_fees
