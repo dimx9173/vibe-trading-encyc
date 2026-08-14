@@ -8,6 +8,8 @@ tags: [development, contributing, changelog]
 
 本文档描述了 Vibe Trading 项目的开发计划和未来方向。
 
+> 注：本文件为早期版本路线图（v0.1/v0.2）。最新进度请参考仓库根目录 `ROADMAP.md`（P0–P4 全部完成，18/18 项）。
+
 ## 当前版本：v0.1.x
 
 ### 核心功能 ✅
@@ -15,10 +17,15 @@ tags: [development, contributing, changelog]
 - [x] 12 Agent 协作架构
 - [x] 4 阶段决策流程
 - [x] 智能辩论系统
-- [x] BM25 记忆系统
+- [x] BM25 记忆系统（已升级：FTS5 + 压缩，见 P3.2）
 - [x] Paper Trading 模式
 - [x] Web 监控系统
 - [x] K线级决策追溯
+- [x] Alpha Zoo 因子库（23 因子 + IC/IR bench）
+- [x] 回测引擎套件（MC/WF/Bootstrap）
+- [x] Hypothesis Registry + Research Goal
+- [x] 策略导出（NL→Pine/MQL5）
+- [x] OKX 实盘 + Broker Connector
 
 ## 下一版本：v0.2.0
 

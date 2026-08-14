@@ -1,10 +1,10 @@
 # 外部數據層重構規格書（更新版）
 
 ## 版本資訊
-- **版本**: 2.0.0
+- **版本**: 2.1.0
 - **日期**: 2026-08-14
-- **狀態**: 已批准，準備實施
-- **預估工期**: 14 天（4 個階段）
+- **狀態**: ✅ 已實施（Phase 1-3 核心 + 插件）；⏸ 證據門控/統一報告（Phase 4）未實施
+- **預估工期**: 14 天（4 個階段）→ 實際 Phase 1-3 於 2026-08-14 完成
 - **架構原則**: 核心技術指標 + 可選新聞插件 + 證據門控
 
 ---
@@ -38,10 +38,10 @@
 - ✅ 統一緩存（LRU + TTL）
 - ✅ 健康監測（熔斷器模式）
 
-**證據門控**：
-- ✅ Paper mode 14 天追蹤
-- ✅ 績效評估（Sharpe > 0.8, Max DD < 20%）
-- ✅ 半自動決策（系統建議 + 人工確認）
+**證據門控**（⏸ 未實施 — 見任務清單 Task 4.1/4.2；fa372f5 曾宣稱完成但實際無 `evidence_gate.py`）：
+- ⏸ Paper mode 14 天追蹤
+- ⏸ 績效評估（Sharpe > 0.8, Max DD < 20%）
+- ⏸ 半自動決策（系統建議 + 人工確認）
 
 ### 1.3 預期效益
 
@@ -298,7 +298,7 @@ class DecisionEnhancer:
         ...
 ```
 
-### 3.4 回測引擎適配
+### 3.4 回測引擎適配（設計參考 — 實際以 `backtest/data_loader.py` facade 取代專用 adapter）
 
 ```python
 class BacktestEngine:
@@ -347,7 +347,7 @@ class BacktestEngine:
         )
 ```
 
-### 3.5 證據門控機制
+### 3.5 證據門控機制（⚠️ 設計參考 — 未實施，無 `evidence_gate.py`）
 
 ```python
 class EvidenceGate:
@@ -520,45 +520,44 @@ trading:
 **目標**: 整合新聞/情緒和清算數據插件
 
 **任務**:
-1. ✅ 註冊 CryptoPanic API Key
+1. ⏸ 註冊 CryptoPanic API Key（人工操作，未完成）
 2. ✅ 實現 `CryptoPanicSentiment` 插件
 3. ✅ 實現 `RSSSentiment` 插件
 4. ✅ 實現 `BinanceLiquidationWS` 插件
 5. ✅ 實現多交易所聚合器
-6. ✅ 實現 `DecisionEnhancer` 裝飾器
-7. ✅ 編寫插件測試
+6. ❌ 實現 `DecisionEnhancer` 裝飾器（未實施）
+7. ✅ 編寫插件測試（`tests/test_data_sources.py` 涵蓋）
 
 **交付物**:
-- `plugins/sentiment/cryptopanic.py`
-- `plugins/sentiment/rss.py`
-- `plugins/liquidation/binance_ws.py`
-- `plugins/liquidation/aggregator.py`
-- `decision_enhancer.py`
-- `tests/test_plugins.py`
+- ✅ `plugins/sentiment/cryptopanic.py`
+- ✅ `plugins/sentiment/rss.py`
+- ✅ `plugins/liquidation/binance_ws.py`
+- ✅ `plugins/liquidation/aggregator.py`
+- ❌ `decision_enhancer.py`（不存在）
 
 ---
 
-### Phase 4: 證據門控與遷移（4 天）
+### Phase 4: 證據門控與遷移（4 天）— ⚠️ 未實施（除遷移部分）
 
 **目標**: 實現證據門控和系統遷移
 
 **任務**:
-1. ✅ 實現 `EvidenceGate` 證據門控
-2. ✅ 實現績效追蹤（SQLite）
-3. ✅ 實現回測引擎適配
-4. ✅ 實現統一報告格式
-5. ✅ 遷移現有代碼到新架構
-6. ✅ 編寫端到端測試
+1. ❌ 實現 `EvidenceGate` 證據門控（不存在）
+2. ❌ 實現績效追蹤（SQLite）（不存在）
+3. 🟡 實現回測引擎適配（以 `backtest/data_loader.py` facade 取代）
+4. ❌ 實現統一報告格式（不存在）
+5. 🟡 遷移現有代碼到新架構（coordinator 已遷移；backtest engine 未）
+6. ❌ 編寫端到端測試
 7. ✅ 更新文檔
-8. ✅ 部署到生產環境
+8. ❌ 部署到生產環境
 
 **交付物**:
-- `evidence_gate.py`
-- `performance_tracker.py`
-- `backtest_adapter.py`
-- `tests/test_evidence_gate.py`
-- `docs/external-data-layer.md`
-- 遷移指南
+- ❌ `evidence_gate.py`（不存在）
+- ❌ `performance_tracker.py`（不存在）
+- ❌ `backtest_adapter.py`（不存在）
+- ❌ `tests/test_evidence_gate.py`（不存在）
+- ✅ `docs/external-data-layer.md`（已更新）
+- ⏸ 遷移指南
 
 ---
 

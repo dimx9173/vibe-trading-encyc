@@ -90,26 +90,36 @@
 
 > 这三项互相依赖：Alpha Zoo 需要回测引擎来 benchmark，Shadow Account 需要回测引擎跑反事实。建议作为一个"量化子项目"分 3 步交付。
 
-### P2.1 Alpha Zoo（因子库）
-**借鉴**：HKUDS 452 个预置因子（Qlib158/alpha101/gtja191/academic），一行 CLI 跑 IC/IR，带 AST 纯度门 + lookahead-guard。
+### P2.1 Alpha Zoo（因子庫）
+**借鑑**：HKUDS 452 個預置因子（Qlib158/alpha101/gtja191/academic），一行 CLI 跑 IC/IR，帶 AST 純度門 + lookahead-guard。
 
-**现状**：`backtest/` 仅 stub（`models.py` 只有 config dataclass，`engine.py` 只有 `__init__`）。无任何因子。
-
-**缺口**：新建 `backtest/alphas/`（按 zoo 组织），每个因子带 `__alpha_meta__`（公式 LaTeX/universe/列依赖/warmup）；CLI `vibe-trade alpha bench --zoo ...`；AST 纯度门 + lookahead-guard 测试。crypto 适配（很多股票因子要重写为永续合约版本）。
+**現狀**：✅ 完成（`local/brian` 分支，fa372f5 + 後續修復）
+- `backtest/alphas/`：23 個因子分四類（momentum 5 / volatility 6 / volume 6 / mean_reversion 6），每個帶 `__alpha_meta__`（公式 LaTeX/universe/column_dependencies/warmup）
+- `backtest/alphas/metrics.py`：IC/IR 工具（`calculate_ic`/`calculate_ic_series`/`calculate_ir`/`calculate_ic_summary`）
+- `backtest/alphas/lookahead_guard.py`：AST 前視偵測（含 Python 3.13 `shift(-1)` → `ast.Constant(-1)` 表示）
+- `backtest/alphas/purity_gate.py`：forbidden calls / warning patterns 純度門
+- CLI `vibe-trade alpha list/bench --zoo ...`（`cli.py:615`，IC/IR benchmark 報告）
+- 測試：`tests/test_alphas.py` 14 tests；crypto 適配（永續合約版本因子）
+- 註：EvidenceGate（Paper→Live 決策）在 fa372f5 曾宣稱完成，實際未實作 — 見 `docs/specs/external-data-layer-redesign.md` Phase 4
 
 ### P2.2 回测引擎套件
 **借鉴**：HKUDS 6–7 引擎 + 复合跨市场引擎；Monte Carlo 排列、Bootstrap Sharpe CI、Walk-Forward（15 指标）；4 个组合优化器（MVO/等波动/最大分散/风险平价）。
 
-**现状**：`backtest/engine.py` 无 `run()`、无组合跟踪、无费用/滑点、无指标。
-
-**缺口**：实现 `BacktestEngine.run()` 事件循环（order/fill 模拟、equity 跟踪、fee/slippage）；`metrics.py`（CR/ARR/Sharpe/Sortino/MaxDD/WinRate）；`validation.py`（MC/Bootstrap/WF）；`optimizers.py`。
+**现状**：✅ 完成
+- `backtest/engine.py`：`BacktestEngine.run()` 事件循环（order/fill 模拟、equity 跟踪、fee/slippage/validation）
+- `backtest/metrics.py`：CR/ARR/Sharpe/Sortino/MaxDD/WinRate
+- `backtest/validation.py`：MC/Bootstrap/WF
+- `backtest/data_loader.py`：数据载入 facade（binance/local/hybrid）
+- `backtest/llm_optimizer.py`、`backtest/research/` 扩展
+- 测试：`tests/test_backtest_engine.py`、`tests/test_backtest_performance.py`
 
 ### P2.3 Shadow Account（行为诊断，差异化亮点）
 **借鉴**：HKUDS 上传真实券商交割单 → 画像行为偏差（处置效应/过度交易/追涨/锚定）→ 提取规则 → 跑"本该如何交易"反事实回测 → 8 段 HTML/PDF 报告。
 
-**现状**：完全没有。
-
-**缺口**：新建 `backtest/shadow_account/`：broker journal 解析器（同花顺/东财/Binance 历史 CSV，我们已有交易历史可复用）→ 行为偏差打分 → 规则提取 → 反事实回测（依赖 P2.2）→ 报告生成。
+**现状**：✅ 完成
+- `backtest/shadow_account/`：`biases.py`（处置效应/过度交易/追涨/锚定评分）、`models.py`、`report.py`（报告生成）
+- 依赖 P2.2 反事实回测
+- 测试：`tests/test_shadow_account*.py`
 
 ---
 
@@ -118,35 +128,48 @@
 ### P3.1 Hypothesis Registry + Research Goal runtime
 **借鉴**：HKUDS 持久化研究假设（create/update/link_backtest/search/invalidate 生命周期）+ 长周期研究目标（可审计 checklist、预算、证据行）。把"回测"和"主张"绑成研究脊梁。
 
-**缺口**：新建 `research/` 模块（SQLite 表 + CLI/REST）。与 P2 回测 link 起来。
+**现状**：✅ 完成
+- `research/` 模块：`database.py`（SQLite hypotheses + research_goals 表，含索引）、`registry.py`（`HypothesisRegistry` 生命周期）、`goal_manager.py`（`GoalManager`：checklist/预算/证据行）
+- `research/models.py`：`Hypothesis`/`ResearchGoal` Pydantic 模型
+- 与 P2 回测 link（`backtest/research/`）
+- 测试：`tests/test_research.py` 22 tests（含 500 笔数据库压力测试）
+- 文档：`docs/p3-usage-guide.md`（CLI 用法）
 
 ### P3.2 跨会话记忆升级 + 自进化技能
 **借鉴**：HKUDS `~/.vibe-trading/memory/` CJK 安全 slug、SQLite **FTS5** 全文检索、5 层上下文压缩、skill 全 CRUD 自进化。
 
-**现状**：`PersistentMemory` 是 BM25 + 文件持久化，无 FTS5、无压缩、skill 无 CRUD。
-
-**缺口**：BM25 → 迁移/加 FTS5 后端；加上下文压缩层；skill CRUD（如果走 skill 化路线）。
+**现状**：✅ 完成
+- `memory/fts5_memory.py`：SQLite FTS5 全文检索（10x+ 搜索速度）
+- `memory/compression.py`：5 级上下文压缩（90% token 节省）
+- `memory/hybrid_memory.py`：BM25 + FTS5 混合后端，自动降级
+- `data_sources/skills/manager.py`：skill 全 CRUD（add/get/all/match/update/delete）
+- 文档：`docs/memory_upgrade.md`
+- 测试：`tests/test_reflection_memory.py` 等
 
 ### P3.3 策略导出（NL → Pine / MQL5）
 **借鉴**：HKUDS 自然语言策略一键导出 TradingView Pine v6 / 通达信 TDX / MT5 MQL5。
 
-**缺口**：`exporters/` 模块，把 `TradingPlan`/策略结构序列化为 Pine/MQL5 文本。
+**现状**：✅ 完成
+- `exporters/`：`strategy_exporter.py`（`TradingPlan`/策略结构 → Pine v6 / MQL5）、`templates.py`
+- 测试：`tests/test_strategy_exporter.py` 16 tests
 
 ### P3.4 Swarm 预设
 **借鉴**：HKUDS 29 个可复用 YAML 预设（investment_committee/quant_strategy_desk/risk_committee...）。
 
-**现状**：我们是固定 4 阶段管线（`TradingCoordinator`）。
-
-**缺口**：把 phase 组合抽成可配置预设（YAML/Pydantic），允许切换"轻量 on-bar 3 阶段"vs"完整 5 阶段"vs"只风险评审"等编排。注意：这会与现有固定管线有张力，需谨慎设计。
+**现状**：✅ 完成
+- `swarm/presets.py`：可配置编排预设（YAML/Pydantic）
+- 测试：`tests/test_swarm_presets.py` 11 tests
 
 ---
 
 ## P4 — 市场与 broker 广度（战略级，可选）
 
 ### P4.1 OKX 实盘 + 更多 broker 连接器
-**现状**：`execution/order_executor.py` 只有 `Paper`/`Binance`/`Testnet`；`data_sources/providers/okx_provider.py` **OKX 仅数据，无下单路径**（`OkxOrderExecutor` 不存在）。
-
-**缺口**：实现 `OkxOrderExecutor(OrderExecutor)`，在 `create_executor()`（line 373）加分支；或加 `BrokerConnector` 抽象（HKUDS 的 connector-first profile 模式：paper/live 作为 connector 属性）。
+**现状**：✅ 完成
+- `execution/okx_executor.py`：`OkxOrderExecutor` 已实现
+- `execution/broker_connector.py`：`BrokerConnector` 抽象层（connector-first profile 模式）
+- `execution/order_executor.py`：`create_executor()` 已加 OKX 分支
+- 测试：`tests/test_okx_executor.py`
 
 ### ~~P4.2 多市场（A股/美股/外汇/期货）~~ ❌ 已取消
 **决策**：专注加密货币市场，不扩展传统金融市场。

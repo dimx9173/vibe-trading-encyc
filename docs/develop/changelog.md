@@ -25,6 +25,17 @@ tags: [development, contributing, changelog]
 - **Backtest Engine**：MA-crossover 策略 + 订单模拟器（`backtest/`）
 - **skip_debate 选项**：`SKIP_DEBATE=true` 跳过 debate phase（快速验证用）
 - **三層日誌輪替**：replay A 的 log rotation（c22e9c1）
+- **P2.1 Alpha Zoo**：23 因子四分类（momentum/volatility/volume/mean_reversion）+ IC/IR bench + AST 纯度门 + lookahead-guard（fa372f5）
+- **P2.2 回测引擎套件**：`BacktestEngine.run()` + metrics + MC/WF/Bootstrap validation + fee/slippage（fa372f5）
+- **P2.3 Shadow Account**：行为偏差画像（处置效应/过度交易/追涨/锚定）+ 反事实回测报告（fa372f5）
+- **P3.1 Hypothesis Registry**：SQLite hypotheses + research_goals + GoalManager（fa372f5）
+- **P3.2 跨会话记忆升级**：FTS5 全文检索 + 5 级上下文压缩 + BM25/FTS5 混合后端 + skill CRUD（fa372f5）
+- **P3.3 策略导出**：`exporters/` NL→Pine v6 / MQL5（fa372f5）
+- **P3.4 Swarm 预设**：可配置编排（investment_committee 等）（fa372f5）
+- **P4.1 OKX 实盘**：`OkxOrderExecutor` + `BrokerConnector` 抽象层（fa372f5）
+- **外部数据层 2.0**：UnifiedDataSource / LRUCache / CircuitBreaker / HealthMonitor / SmartRouter + 插件架构（fa372f5）
+- **ResearchDatabase 压力测试**：500 笔 save/query/update/delete 循环 + 效能断言（cd2ede7）
+- **P3 使用指南**：`docs/p3-usage-guide.md`（cd2ede7）
 
 ### 变更
 
@@ -32,6 +43,8 @@ tags: [development, contributing, changelog]
 - Makefile 支持通过 `SYMBOL` 和 `INTERVAL` 变量启动不同交易对和K线周期
 - **Paper ledger 持久化**：`state_file` + `--reset-paper`，重启自动还原（d140d36, 8abb462）
 - **Backtest SMA 优化**：O(N·P) → O(N) sliding window，30x 加速（30033a5）
+- **B9 订单规范化**：PM 路径订单 notional cap（settings `execution_max_single_order_notional=100`）在 risk gate 前执行（0dcb9a8）
+- **spec/task 文档**：external-data-layer 规格更新为 2.1.0，诚实标注 Phase 4（证据门控/统一报告）未实施
 
 ### 修复
 
@@ -40,6 +53,9 @@ tags: [development, contributing, changelog]
 - **Debate timeout 防护**：45s timeout + 3 retries，防止 reasoning model thinking loop（fc7f089）
 - **Agent prompt 统一**：universal `prompt_with_timeout` for all agent LLM calls（d641576）
 - **Tool call 错误处理**：extract TextContent only + error_message field + retry compensation（fb5bb3d）
+- **PM prompt 为 None**：`_build_decision_prompt` 补 `return prompt`，修复 PortfolioManagerAgent LLM 调用崩溃（cd2ede7）
+- **rate limit 统计崩溃**：`_log_improvements_stats` 用 int 剩余令牌取代 `.get('minute')`（cd2ede7）
+- **cache.py 兼容**：还原 MemoryCache/HybridCache/get_global_cache/cached 导出 + LRUCache wrapper，修复多模块 import 失败（cd2ede7）
 
 ### 移除
 
