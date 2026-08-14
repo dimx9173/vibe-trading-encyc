@@ -375,7 +375,7 @@ FEED_URLS = [
 
 **行動項目**:
 - [x] 更新 `trading_coordinator.py` 使用新架構
-- [ ] 更新 `backtest/engine.py` 使用新數據層
+- [x] 更新 `backtest/engine.py` 使用新數據層（`run_from_loader` → `BacktestDataLoader.load_klines`）
 - [ ] 更新配置文件格式
 - [x] 保留舊 API 兼容層
 - [x] 更新文檔

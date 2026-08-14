@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from vibe_trading.backtest.models import (
     BacktestConfig,
@@ -155,7 +155,7 @@ class BacktestEngine:
     def _stats_from_trades(
         trades: List[Trade],
         initial_balance: float,
-    ) -> Dict[str, float]:
+    ) -> Dict[str, Any]:
         """Single-pass statistics: P&L, win rate, drawdown, Sharpe."""
         if not trades:
             return {
@@ -268,6 +268,61 @@ class BacktestEngine:
             trades=trades,
             **stats,
         )
+
+    async def run_from_loader(
+        self,
+        loader,
+        symbol: Optional[str] = None,
+        interval: Optional[str] = None,
+        start: Optional[datetime] = None,
+        end: Optional[datetime] = None,
+        limit: Optional[int] = None,
+        **kwargs,
+    ) -> BacktestResult:
+        """Run backtest with K-lines loaded from the unified data layer.
+
+        Uses BacktestDataLoader (KlineStorage-backed) — the same data path as
+        live trading, with no news/sentiment/liquidation plugins (Task 4.3/4.5).
+
+        Args:
+            loader: BacktestDataLoader instance (or any object with
+                    async load_klines(symbol, interval, start, end, limit)).
+            symbol: override config.symbol; default = config.symbol
+            interval: override config.interval; default = config.interval
+            start/end/limit: window for the underlying data layer
+            **kwargs: forwarded to run() (fast_period/slow_period/position_pct)
+
+        Returns:
+            BacktestResult identical in shape to run().
+        """
+        symbol = symbol or self.config.symbol
+        interval = interval or self.config.interval
+
+        klines = await loader.load_klines(
+            symbol=symbol,
+            interval=interval,
+            start=start,
+            end=end,
+            limit=limit,
+        )
+
+        if not klines:
+            return self._empty_result()
+
+        # Normalize unified Kline objects → engine dict format
+        kline_dicts = [
+            {
+                "open_time_ms": int(k.open_time.timestamp() * 1000),
+                "open": float(k.open),
+                "high": float(k.high),
+                "low": float(k.low),
+                "close": float(k.close),
+                "volume": float(k.volume),
+            }
+            for k in klines
+        ]
+
+        return self.run(kline_dicts, **kwargs)
 
     def _empty_result(self) -> BacktestResult:
         return BacktestResult(
