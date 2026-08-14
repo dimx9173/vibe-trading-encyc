@@ -190,14 +190,24 @@ class PerformanceTracker:
         trades: Optional[List[TradeRecord]] = None,
         risk_free_rate: float = 0.0,
     ) -> float:
-        """Sharpe ratio of per-trade PnL (annualized scale-free trade-level measure)"""
+        """Sharpe ratio of per-trade returns (PnL / notional), scale-free.
+
+        Each trade's return is ``realized_pnl / (quantity * entry_price)`` so
+        the metric reflects trade quality, not position size. Zero-notional
+        trades are skipped; <2 valid trades yields 0.0.
+        """
         trades = trades if trades is not None else self.get_trades()
-        if len(trades) < 2:
+
+        returns = []
+        for t in trades:
+            notional = t.quantity * t.entry_price
+            if notional > 0:
+                returns.append(t.realized_pnl / notional)
+        if len(returns) < 2:
             return 0.0
 
-        pnls = [t.realized_pnl for t in trades]
-        mean = sum(pnls) / len(pnls)
-        variance = sum((p - mean) ** 2 for p in pnls) / (len(pnls) - 1)
+        mean = sum(returns) / len(returns)
+        variance = sum((r - mean) ** 2 for r in returns) / (len(returns) - 1)
 
         if variance == 0:
             return 0.0
@@ -206,19 +216,30 @@ class PerformanceTracker:
         return (mean - risk_free_rate) / std
 
     def max_drawdown(self, trades: Optional[List[TradeRecord]] = None) -> float:
-        """Max peak-to-trough drawdown of cumulative PnL curve"""
+        """Max drawdown of the cumulative PnL curve as a ratio (0..1+).
+
+        Standard definition: per-point ``(peak - cumulative) / peak`` of the
+        cumulative PnL curve, maximised over time. Trades are sorted
+        chronologically regardless of input order, so DB (DESC) and explicit
+        (ASC) inputs yield identical results. Ratio can exceed 1.0 when
+        cumulative PnL goes negative.
+        """
         trades = trades if trades is not None else self.get_trades()
         if not trades:
             return 0.0
 
-        peak = 0.0
-        max_dd = 0.0
-        cumulative = 0.0
+        ordered = sorted(trades, key=lambda t: t.closed_at)
 
-        for t in trades:
+        peak = 0.0
+        cumulative = 0.0
+        max_dd = 0.0
+
+        for t in ordered:
             cumulative += t.realized_pnl
-            peak = max(peak, cumulative)
-            max_dd = max(max_dd, peak - cumulative)
+            if cumulative > peak:
+                peak = cumulative
+            if peak > 0:
+                max_dd = max(max_dd, (peak - cumulative) / peak)
 
         return max_dd
 

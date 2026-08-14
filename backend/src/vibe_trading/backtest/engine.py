@@ -22,6 +22,17 @@ def _ms_to_dt(ms: int) -> datetime:
     return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc)
 
 
+def _open_time_ms(open_time: Any) -> int:
+    """Normalize Kline.open_time to int milliseconds epoch.
+
+    Unified data layer returns ``binance_client.Kline`` (int ms) while tests
+    and ``base.Kline`` use ``datetime`` — both must work.
+    """
+    if isinstance(open_time, datetime):
+        return int(open_time.timestamp() * 1000)
+    return int(open_time)
+
+
 class BacktestEngine:
     """Minimal backtest engine with MA-crossover strategy + order simulator."""
 
@@ -312,7 +323,7 @@ class BacktestEngine:
         # Normalize unified Kline objects → engine dict format
         kline_dicts = [
             {
-                "open_time_ms": int(k.open_time.timestamp() * 1000),
+                "open_time_ms": _open_time_ms(k.open_time),
                 "open": float(k.open),
                 "high": float(k.high),
                 "low": float(k.low),

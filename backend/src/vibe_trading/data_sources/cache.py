@@ -6,15 +6,17 @@
 import asyncio
 import hashlib
 import json
-import logging
 import pickle
 import time
+from collections import OrderedDict
 from datetime import datetime, timedelta
-from functools import wraps, lru_cache
+from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
 
-logger = logging.getLogger(__name__)
+from pi_logger import get_logger
+
+logger = get_logger(__name__)
 
 T = TypeVar('T')
 
@@ -413,12 +415,12 @@ def sync_cached(
     maxsize: int = 128,
 ):
     """
-    同步缓存装饰器（使用lru_cache）
+    同步缓存装饰器（TTL + LRU 淘汰）
 
     Args:
-        ttl: 过期时间（仅用于内存缓存）
+        ttl: 过期时间（秒）；过期后重新调用函数
         key_prefix: 缓存键前缀
-        maxsize: LRU缓存大小
+        maxsize: 最大缓存条目数（LRU 淘汰）
 
     使用示例:
         @sync_cached(ttl=600, key_prefix="calc")
@@ -427,17 +429,51 @@ def sync_cached(
     """
 
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
-        func_cached = lru_cache(maxsize=maxsize)(func)
+        store: "OrderedDict[str, Tuple[float, Any]]" = OrderedDict()
+        hits = 0
+        misses = 0
+
+        def _make_key(args: tuple, kwargs: dict) -> str:
+            parts = [key_prefix, func.__name__]
+            parts.extend(str(a) for a in args)
+            parts.extend(f"{k}={v}" for k, v in sorted(kwargs.items()))
+            return ":".join(parts)
 
         @wraps(func)
-        def wrapper(*args, **kwargs) -> T:
-            # 对于同步函数，使用lru_cache
-            # 注意：lru_cache不支持TTL，需要手动清理
-            return func_cached(*args, **kwargs)
+        def wrapper(*args: Any, **kwargs: Any) -> T:
+            nonlocal hits, misses
+            key = _make_key(args, kwargs)
+            now = time.time()
+            entry = store.get(key)
+            if entry is not None:
+                expires_at, value = entry
+                if now < expires_at:
+                    store.move_to_end(key)
+                    hits += 1
+                    return value
+                del store[key]
 
-        # 添加缓存清理方法
-        wrapper.cache_clear = func_cached.cache_clear
-        wrapper.cache_info = func_cached.cache_info
+            misses += 1
+            value = func(*args, **kwargs)
+            store[key] = (now + ttl, value)
+            store.move_to_end(key)
+            while len(store) > maxsize:
+                store.popitem(last=False)
+            return value
+
+        def cache_clear() -> None:
+            store.clear()
+
+        def cache_info() -> dict:
+            return {
+                "hits": hits,
+                "misses": misses,
+                "maxsize": maxsize,
+                "currsize": len(store),
+            }
+
+        wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
+        wrapper.cache_info = cache_info  # type: ignore[attr-defined]
 
         return wrapper
 

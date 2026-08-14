@@ -59,7 +59,28 @@ class BacktestDataLoader:
         end: Optional[datetime],
         limit: Optional[int],
     ) -> Sequence[object]:
-        """Dispatch to the underlying data source."""
+        """Dispatch to the underlying data source.
+
+        BINANCE → Binance futures REST API; LOCAL → KlineStorage;
+        HYBRID → LOCAL first, fall back to BINANCE when empty.
+        """
+        if source is DataSource.BINANCE:
+            return await self._load_from_binance(symbol, interval, start, end, limit)
+
+        local = await self._load_from_local(symbol, interval, start, end, limit)
+        if source is DataSource.HYBRID and not local:
+            return await self._load_from_binance(symbol, interval, start, end, limit)
+        return local
+
+    async def _load_from_local(
+        self,
+        symbol: str,
+        interval: str,
+        start: Optional[datetime],
+        end: Optional[datetime],
+        limit: Optional[int],
+    ) -> Sequence[object]:
+        """Load K-lines from the local KlineStorage."""
         from vibe_trading.data_sources.kline_storage import KlineQuery, KlineStorage
 
         def _to_ms(dt: Optional[datetime]) -> Optional[int]:
@@ -78,3 +99,35 @@ class BacktestDataLoader:
             return await storage.query_klines(query)
         finally:
             await storage.close()
+
+    async def _load_from_binance(
+        self,
+        symbol: str,
+        interval: str,
+        start: Optional[datetime],
+        end: Optional[datetime],
+        limit: Optional[int],
+    ) -> Sequence[object]:
+        """Load K-lines directly from the Binance futures REST API."""
+        from vibe_trading.config.binance_config import BinanceConfig
+        from vibe_trading.data_sources.binance_client import (
+            Kline,
+            KlineInterval,
+            BinanceRestClient,
+        )
+
+        def _to_ms(dt: Optional[datetime]) -> Optional[int]:
+            return int(dt.timestamp() * 1000) if dt is not None else None
+
+        client = BinanceRestClient(BinanceConfig.from_env())
+        try:
+            raw = await client.get_klines(
+                symbol,
+                KlineInterval(interval),
+                limit=limit or 500,
+                start_time=_to_ms(start),
+                end_time=_to_ms(end),
+            )
+            return [Kline.from_rest(row) for row in raw]
+        finally:
+            await client.close()

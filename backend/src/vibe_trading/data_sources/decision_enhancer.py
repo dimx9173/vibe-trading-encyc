@@ -8,10 +8,11 @@ unavailable — the base decision always proceeds.
 Part of the external data layer Phase 3 (Task 3.6).
 """
 import functools
-import logging
 from typing import Any, Awaitable, Callable, Dict, Optional
 
-logger = logging.getLogger(__name__)
+from pi_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class DecisionEnhancer:
