@@ -662,6 +662,7 @@ Please provide your FINAL DECISION as a JSON object with this exact schema:
 
 Include the JSON in a ```json code block. Be specific and careful — this decision will be executed.
 """
+        return prompt
 
 
 async def create_trader(tool_context: ToolContext, enable_streaming: bool = False) -> TraderAgent:

@@ -1005,7 +1005,7 @@ class TradingCoordinator:
         # API限流统计
         limiter = self._rate_limiter.get_limiter("binance_rest")
         remaining = limiter.get_remaining_requests()
-        logger.info(f"  🚦 [限流] 剩余令牌: {remaining.get('minute', 0)}/分钟")
+        logger.info(f"  🚦 [限流] 剩余令牌: {remaining}/分钟")
 
         # Token统计
         token_stats = self._token_optimizer.get_stats()

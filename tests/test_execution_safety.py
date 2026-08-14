@@ -118,7 +118,8 @@ async def test_submit_trade_order_tool_does_not_place_rejected_order():
     executor.update_price("BTCUSDT", 50_000)
     gate = PreTradeRiskGate(
         executor=executor,
-        policy=RiskPolicy(max_single_order_notional=100, max_total_exposure=1_000),
+        # B9 cap 先將 notional 縮至 100（settings cap）；policy 須低於 cap 才能測「拒絕」契約
+        policy=RiskPolicy(max_single_order_notional=50, max_total_exposure=1_000),
     )
     context = ToolContext(symbol="BTCUSDT", interval="30m", executor=executor)
     context.risk_gate = gate
@@ -289,7 +290,8 @@ async def test_submit_trade_order_tool_records_fill_and_position_snapshot(tmp_pa
     assert len(trace["fills"]) == 1
     assert trace["fills"][0]["order_id"] == result.details["order_id"]
     assert len(trace["position_snapshots"]) == 1
-    assert trace["position_snapshots"][0]["positions"][0]["notional"] == pytest.approx(500)
+    # B9 cap: qty 0.01 × 50000 = 500 notional 被縮至 settings cap 100 → snapshot notional 100
+    assert trace["position_snapshots"][0]["positions"][0]["notional"] == pytest.approx(100)
 
 
 @pytest.mark.asyncio

@@ -234,7 +234,7 @@ async def test_submit_trade_order_tool_uses_bound_executor():
             symbol="BTCUSDT",
             side="BUY",
             order_type="MARKET",
-            quantity=0.01,
+            quantity=0.001,  # notional 50 < B9 cap 100 → 不觸發 cap，驗證 quantity 完整傳遞
             position_side="LONG",
             rationale="test approved by portfolio manager",
         ),
@@ -247,7 +247,7 @@ async def test_submit_trade_order_tool_uses_bound_executor():
     assert result.details["side"] == "BUY"
     positions = await executor.get_positions()
     assert len(positions) == 1
-    assert positions[0].position_amount == pytest.approx(0.01)
+    assert positions[0].position_amount == pytest.approx(0.001)
 
 
 @pytest.mark.asyncio
