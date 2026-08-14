@@ -110,7 +110,7 @@
 - `backtest/metrics.py`：CR/ARR/Sharpe/Sortino/MaxDD/WinRate
 - `backtest/validation.py`：MC/Bootstrap/WF
 - `backtest/data_loader.py`：数据载入 facade（binance/local/hybrid）
-- `backtest/llm_optimizer.py`、`backtest/research/` 扩展
+- `backtest/llm_optimizer.py` 扩展
 - 测试：`tests/test_backtest_engine.py`、`tests/test_backtest_performance.py`
 
 ### P2.3 Shadow Account（行为诊断，差异化亮点）
@@ -131,7 +131,7 @@
 **现状**：✅ 完成
 - `research/` 模块：`database.py`（SQLite hypotheses + research_goals 表，含索引）、`registry.py`（`HypothesisRegistry` 生命周期）、`goal_manager.py`（`GoalManager`：checklist/预算/证据行）
 - `research/models.py`：`Hypothesis`/`ResearchGoal` Pydantic 模型
-- 与 P2 回测 link（`backtest/research/`）
+- 与 P2 回测 link（`research/registry.py` add_backtest_result / add_live_result）
 - 测试：`tests/test_research.py` 22 tests（含 500 笔数据库压力测试）
 - 文档：`docs/p3-usage-guide.md`（CLI 用法）
 
@@ -157,8 +157,8 @@
 **借鉴**：HKUDS 29 个可复用 YAML 预设（investment_committee/quant_strategy_desk/risk_committee...）。
 
 **现状**：✅ 完成
-- `swarm/presets.py`：可配置编排预设（YAML/Pydantic）
-- 测试：`tests/test_swarm_presets.py` 11 tests
+- `coordinator/presets/`：可配置編排預設（YAML/Pydantic，models/loader/orchestrator）
+- 測試：`tests/test_presets.py` 19 tests
 
 ---
 

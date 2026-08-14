@@ -186,84 +186,87 @@ custom_template = library.create_custom_template(
 ### 获取预设
 
 ```python
-from vibe_trading.coordinator.presets.config import get_preset_manager
+from vibe_trading.coordinator.presets import PresetLoader
 
-manager = get_preset_manager()
+loader = PresetLoader()
 
-# 获取所有预设
-presets = manager.get_all_presets()
-
-# 获取特定预设
-investment_preset = manager.get_preset("investment_committee")
-risk_preset = manager.get_preset("risk_committee")
-quant_preset = manager.get_preset("quant_strategy_desk")
+# 获取所有内建预设（lightweight / full / risk_only / analysis_only）
+presets = loader.load_builtin_presets()
+lightweight = presets["lightweight"]
+full = presets["full"]
 ```
 
 ### 预设结构
 
 ```python
-# Investment Committee 预设
-# - Stage 1: Analysis (并行)
-#   - Technical Analyst
-#   - Fundamental Analyst
-#   - News Analyst
-#   - Sentiment Analyst
-# - Stage 2: Research (并行)
-#   - Bull Researcher
-#   - Bear Researcher
-# - Stage 3: Risk Assessment (并行)
-#   - Aggressive Risk
-#   - Neutral Risk
-#   - Conservative Risk
-# - Stage 4: Decision (串行)
-#   - Trader
-#   - Portfolio Manager
+# Investment Committee 预设（full）
+# - Phase 1: analyzing（并行）
+#   - Technical Analyst / Fundamental Analyst / News Analyst / Sentiment Analyst
+# - Phase 2: debating（并行）
+#   - Bull Researcher / Bear Researcher
+# - Phase 3: assessing_risk（并行）
+#   - Aggressive Risk / Neutral Risk / Conservative Risk
+# - Phase 4: planning（串行）
+#   - Trader / Portfolio Manager
 ```
 
 ### 创建自定义预设
 
 ```python
-from vibe_trading.coordinator.presets.config import SwarmPreset, PipelineStage, AgentConfig
-
-custom_preset = manager.create_custom_preset(
-    name="我的预设",
-    description="自定义交易管道",
-    stages=[
-        PipelineStage(
-            name="分析阶段",
-            agents=[
-                AgentConfig(name="technical_analyst", priority=1),
-                AgentConfig(name="sentiment_analyst", priority=2)
-            ],
-            parallel=True,
-            timeout_seconds=600
-        ),
-        PipelineStage(
-            name="决策阶段",
-            agents=[
-                AgentConfig(name="trader", priority=1)
-            ],
-            parallel=False,
-            dependencies=["分析阶段"],
-            timeout_seconds=300
-        )
-    ],
-    global_timeout_seconds=1800,
-    max_concurrent_agents=5
+from vibe_trading.coordinator.presets import (
+    AgentConfig,
+    PhaseConfig,
+    PipelinePhase,
+    PresetLoader,
+    PresetMode,
+    SwarmPreset,
 )
 
-# 保存预设
-manager.save_preset(custom_preset)
+custom = SwarmPreset(
+    name="my_preset",
+    description="自定义交易管道",
+    mode=PresetMode.FULL,
+    phases={
+        PipelinePhase.ANALYZING: PhaseConfig(
+            enabled=True,
+            agents={
+                "technical_analyst": AgentConfig(
+                    enabled=True, parallel=True, timeout_seconds=600
+                ),
+                "sentiment_analyst": AgentConfig(
+                    enabled=True, parallel=True, timeout_seconds=600
+                ),
+            },
+        ),
+        PipelinePhase.PLANNING: PhaseConfig(
+            enabled=True,
+            agents={"trader": AgentConfig(enabled=True)},
+        ),
+    },
+    global_timeout_seconds=1800,
+)
+
+# 校验
+loader = PresetLoader()
+issues = loader.validate_preset(custom)
+assert not issues
+
+# 保存预设（YAML）
+path = loader.save_preset(custom)
 ```
 
 ### 加载预设
 
 ```python
 # 从 YAML 文件加载
-preset = manager.load_preset("my_preset.yaml")
+preset = loader.load_preset_from_file(path)
 
-# 应用到管道
-await pipeline.apply_preset(preset)
+# 执行管道（注册阶段处理器后）
+from vibe_trading.coordinator.presets import PipelineOrchestrator
+
+orchestrator = PipelineOrchestrator(preset)
+orchestrator.register_phase_handler(PipelinePhase.ANALYZING, my_analyze_handler)
+results = await orchestrator.execute(context={})
 ```
 
 ---

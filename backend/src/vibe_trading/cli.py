@@ -851,21 +851,18 @@ def hyp_create(
     title: str = typer.Argument(..., help="假設標題"),
     description: str = typer.Option("", "--desc", "-d", help="假設描述"),
     tags: str = typer.Option("", "--tags", "-t", help="標籤（逗號分隔）"),
-    factors: str = typer.Option("", "--factors", "-f", help="Alpha 因子（逗號分隔）"),
 ):
     """創建新的研究假設"""
-    from vibe_trading.backtest.research import HypothesisRegistry
+    from vibe_trading.research.registry import HypothesisRegistry
 
     registry = HypothesisRegistry()
     tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-    factor_list = [f.strip() for f in factors.split(",") if f.strip()]
 
-    hyp = registry.create(
+    hyp = asyncio.run(registry.create(
         title=title,
         description=description,
         tags=tag_list,
-        alpha_factors=factor_list,
-    )
+    ))
 
     success(f"假設已創建: {hyp.id}", tag="RESEARCH")
     console.print(f"  標題: {hyp.title}")
@@ -879,13 +876,17 @@ def hyp_list(
     tags: str = typer.Option(None, "--tags", "-t", help="標籤篩選（逗號分隔）"),
 ):
     """列出研究假設"""
-    from vibe_trading.backtest.research import HypothesisRegistry, HypothesisStatus
+    from vibe_trading.research.models import HypothesisStatus
+    from vibe_trading.research.registry import HypothesisRegistry
 
     registry = HypothesisRegistry()
-    status_filter = HypothesisStatus(status) if status else None
-    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
-
-    hyps = registry.list(status=status_filter, tags=tag_list)
+    hyps = asyncio.run(registry.get_all())
+    if status:
+        status_filter = HypothesisStatus(status)
+        hyps = [h for h in hyps if h.status == status_filter]
+    if tags:
+        tag_list = {t.strip() for t in tags.split(",") if t.strip()}
+        hyps = [h for h in hyps if tag_list.issubset(set(h.tags))]
 
     table = Table(title="研究假設")
     table.add_column("ID", style="cyan")
@@ -916,19 +917,19 @@ def goal_create(
     tags: str = typer.Option("", "--tags", "-t", help="標籤（逗號分隔）"),
 ):
     """創建新的研究目標"""
-    from vibe_trading.backtest.research import GoalManager
+    from vibe_trading.research.goal_manager import GoalManager
 
     manager = GoalManager()
     checklist_items = [item.strip() for item in checklist.split(",") if item.strip()]
     tag_list = [t.strip() for t in tags.split(",") if t.strip()]
 
-    goal = manager.create(
+    goal = asyncio.run(manager.create(
         title=title,
         description=description,
         checklist_items=checklist_items,
         budget_backtests=budget,
         tags=tag_list,
-    )
+    ))
 
     success(f"研究目標已創建: {goal.id}", tag="RESEARCH")
     console.print(f"  標題: {goal.title}")
@@ -942,12 +943,14 @@ def goal_list(
     status: str = typer.Option(None, "--status", "-s", help="狀態篩選"),
 ):
     """列出研究目標"""
-    from vibe_trading.backtest.research import GoalManager, GoalStatus
+    from vibe_trading.research.goal_manager import GoalManager
+    from vibe_trading.research.models import GoalStatus
 
     manager = GoalManager()
-    status_filter = GoalStatus(status) if status else None
-
-    goals = manager.list(status=status_filter)
+    goals = asyncio.run(manager.get_all())
+    if status:
+        status_filter = GoalStatus(status)
+        goals = [g for g in goals if g.status == status_filter]
 
     table = Table(title="研究目標")
     table.add_column("ID", style="cyan")
@@ -958,7 +961,7 @@ def goal_list(
     table.add_column("更新時間")
 
     for goal in goals:
-        progress = f"{goal.completion_percentage:.0f}%"
+        progress = f"{goal.get_completion_percentage():.0f}%"
         budget = f"{goal.budget_used}/{goal.budget_backtests}"
         table.add_row(
             goal.id,

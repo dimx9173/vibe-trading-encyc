@@ -664,25 +664,21 @@ mql5_code = mql5_exporter.export(trading_plan)
 管道編排預設系統。
 
 ```python
-from vibe_trading.coordinator.presets.config import get_preset_manager
+from vibe_trading.coordinator.presets import PresetLoader
 
-manager = get_preset_manager()
+loader = PresetLoader()
 
-# 獲取預設
-presets = manager.get_all_presets()
-
-# 獲取特定預設
-investment_preset = manager.get_preset("investment_committee")
-risk_preset = manager.get_preset("risk_committee")
-quant_preset = manager.get_preset("quant_strategy_desk")
+# 獲取內建預設
+presets = loader.load_builtin_presets()
+lightweight = presets["lightweight"]
+full = presets["full"]
 ```
 
 **功能**：
 - ✅ YAML 預設配置
 - ✅ 管道編排預設
-- ✅ Investment Committee 預設
-- ✅ Risk Committee 預設
-- ✅ Quant Strategy Desk 預設
+- ✅ Lightweight / Full / Risk Only / Analysis Only 內建預設
+- ✅ PipelineOrchestrator 執行
 
 ---
 
@@ -713,17 +709,19 @@ quant_preset = manager.get_preset("quant_strategy_desk")
 - `research/goal_manager.py` - 目標管理器
 - `exporters/strategy_exporter.py` - 策略導出器
 - `exporters/templates.py` - 策略模板
-- `coordinator/presets/config.py` - 預設配置
+- `coordinator/presets/models.py` - 預設數據模型（Pydantic）
+- `coordinator/presets/loader.py` - 預設載入器
+- `coordinator/presets/orchestrator.py` - 管道編排器
 
 ---
 
 ## 測試覆蓋
 
 ### 單元測試
-- `tests/test_data_sources.py` - 26 個測試
-- `tests/test_research.py` - 21 個測試
+- `tests/test_data_sources.py` - 27 個測試
+- `tests/test_research.py` - 22 個測試
 - `tests/test_strategy_exporter.py` - 16 個測試
-- `tests/test_swarm_presets.py` - 11 個測試
+- `tests/test_presets.py` - 19 個測試
 
 **總計**: 74 個測試，全部通過 ✅
 
