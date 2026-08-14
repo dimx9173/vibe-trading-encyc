@@ -591,10 +591,10 @@ Week 7:   評估績效，決定 Live 配置
 
 ### 6.2 性能驗收
 
-- [ ] 單一 API 調用 < 500ms (P95) — 未實測（依賴外部 API 延遲）
+- [x] 單一 API 調用 < 500ms (P95) — 已實測（`scripts/measure_api_latency.py`：Binance 245ms / OKX 349ms / alternative.me 101ms P95，2026-08-14）
 - [x] 智能路由決策 < 10ms — 已實測（`tests/test_performance_benchmarks.py`，priority 計算）
 - [x] 緩存命中 < 1ms — 已實測（LRU get/set ~3µs）
-- [ ] 多源聚合 < 1s (3 個源) — 未實測（依賴外部 API）
+- [x] 多源聚合 < 1s (3 個源) — 已實測（`scripts/measure_api_latency.py`：3 源並行聚合 P95 330ms，2026-08-14）
 - [x] 500 筆交易記錄 + 指標計算 < 10s — 已實測（`tests/test_e2e_data_layer.py` 壓力測試）
 - [x] 100 筆績效指標計算 < 2ms — 已實測（本機 SQLite）
 
