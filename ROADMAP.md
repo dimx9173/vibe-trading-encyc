@@ -100,7 +100,7 @@
 - `backtest/alphas/purity_gate.py`：forbidden calls / warning patterns 純度門
 - CLI `vibe-trade alpha list/bench --zoo ...`（`cli.py:615`，IC/IR benchmark 報告）
 - 測試：`tests/test_alphas.py` 14 tests；crypto 適配（永續合約版本因子）
-- 註：EvidenceGate（Paper→Live 決策）在 fa372f5 曾宣稱完成，實際未實作 — 見 `docs/specs/external-data-layer-redesign.md` Phase 4
+- 註：EvidenceGate（Paper→Live 決策）已於 2026-08-14 補實作 — `data_sources/evidence_gate.py` + `performance_tracker.py` + `decision_enhancer.py` + `report_generator.py`，見 `docs/specs/external-data-layer-redesign.md` v2.2.0
 
 ### P2.2 回测引擎套件
 **借鉴**：HKUDS 6–7 引擎 + 复合跨市场引擎；Monte Carlo 排列、Bootstrap Sharpe CI、Walk-Forward（15 指标）；4 个组合优化器（MVO/等波动/最大分散/风险平价）。

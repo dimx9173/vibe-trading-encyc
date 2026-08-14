@@ -6,7 +6,7 @@
 - **開始日期**: 2026-08-14
 - **預計完成**: 2026-08-28（14 天）
 - **優先級**:  P0（高）
-- **狀態**: ✅ Phase 1-3 已實施（2026-08-14）；⏸ Phase 4（證據門控/回測適配/統一報告）未實施 — 見各 Task 標記
+- **狀態**: ✅ Phase 1-4 已實施（2026-08-14）；⏸ Task 3.1（人工 API 註冊）與 Task 4.7（部署）待人工/DevOps
 
 ---
 
@@ -20,8 +20,8 @@
 
 **新增**:
 - ✅ 插件架構（可選啟用）
-- ⏸ 證據門控機制（**未實施** — Task 4.1/4.2）
-- ✅ 回測/即時一致性保證（Task 4.3 部分：回測硬編碼不調新聞，經 `backtest/data_loader.py` facade）
+- ✅ 證據門控機制（Task 4.1 `EvidenceGate` + Task 4.2 `PerformanceTracker`）
+- ✅ 回測/即時一致性保證（Task 4.3 `BacktestDataLoader` facade）
 - ✅ Skill 系統整合
 
 ---
@@ -289,14 +289,14 @@ FEED_URLS = [
 - **檔案**: `backend/src/vibe_trading/data_sources/decision_enhancer.py`
 - **工時**: 4 小時
 - **優先級**: 🔴 P0
-- **狀態**: ❌ 未實施 — 該檔案不存在；新聞/清算數據由 coordinator 直接調用插件（`trading_coordinator.py:1166/1205`），未走裝飾器增強層
+- **狀態**: ✅ 已實施（2026-08-14）— 裝飾器模式 `enhance()` + `gather_context()`；插件不可用/故障時降級不阻斷決策
 
 **驗收標準**:
-- [ ] 裝飾器模式集成
-- [ ] 新聞情緒增強邏輯
-- [ ] 清算數據增強邏輯
-- [ ] 插件不可用時降級
-- [ ] 單元測試通過
+- [x] 裝飾器模式集成
+- [x] 新聞情緒增強邏輯
+- [x] 清算數據增強邏輯
+- [x] 插件不可用時降級
+- [x] 單元測試通過（`tests/test_e2e_data_layer.py` 插件三態）
 
 ---
 
@@ -308,14 +308,14 @@ FEED_URLS = [
 - **檔案**: `backend/src/vibe_trading/data_sources/evidence_gate.py`
 - **工時**: 4 小時
 - **優先級**: 🔴 P0
-- **狀態**: ❌ 未實施 — 該檔案不存在；Paper→Live 決策未實作（fa372f5 commit message 宣稱的 Evidence gate 實際未落地）
+- **狀態**: ✅ 已實施（2026-08-14）— `EvidenceGate` + `EvidenceGateConfig` + `EvidenceGateResult`；依賴 Task 4.2 PerformanceTracker
 
 **驗收標準**:
-- [ ] 績效追蹤（Sharpe, Max DD, Win Rate）
-- [ ] 14 天評估週期
-- [ ] 半自動決策（系統建議 + 人工確認）
-- [ ] SQLite 存儲
-- [ ] 單元測試通過
+- [x] 績效追蹤（Sharpe, Max DD, Win Rate）
+- [x] 14 天評估週期（`evaluate_paper_performance(period_days=14)`）
+- [x] 半自動決策（系統建議 + 人工確認）
+- [x] SQLite 存儲（evaluations 表 + 歷史查詢）
+- [x] 單元測試通過（`tests/test_e2e_data_layer.py` 門控三態）
 
 ---
 
@@ -323,14 +323,14 @@ FEED_URLS = [
 - **檔案**: `backend/src/vibe_trading/data_sources/performance_tracker.py`
 - **工時**: 2 小時
 - **優先級**: 🔴 P0
-- **狀態**: ❌ 未實施 — 該檔案不存在；績效統計由 `backtest/metrics.py` 與 `backtest/shadow_account/` 覆蓋部分需求
+- **狀態**: ✅ 已實施（2026-08-14）— `PerformanceTracker` + `TradeRecord`；SQLite 持久化
 
 **驗收標準**:
-- [ ] 每筆交易記錄
-- [ ] 即時計算績效指標
-- [ ] 數據持久化
-- [ ] 查詢接口
-- [ ] 單元測試通過
+- [x] 每筆交易記錄（`record_trade`）
+- [x] 即時計算績效指標（Win Rate / Profit Factor / Sharpe / Max DD / Total PnL）
+- [x] 數據持久化（SQLite trades 表）
+- [x] 查詢接口（`get_trades` / `get_trades_since` / `get_metrics`）
+- [x] 單元測試通過（500 筆壓力測試）
 
 ---
 
@@ -340,13 +340,13 @@ FEED_URLS = [
 - **檔案**: `backend/src/vibe_trading/data_sources/backtest_adapter.py`
 - **工時**: 4 小時
 - **優先級**: 🔴 P0
-- **狀態**: 🟡 部分實施 — 專用 adapter 檔案不存在；以 `backtest/data_loader.py`（`BacktestDataLoader` facade，支援 binance/local/hybrid）取代；回測硬編碼不調新聞插件
+- **狀態**: ✅ 已實施（2026-08-14）— 以 `backtest/data_loader.py`（`BacktestDataLoader` facade，支援 binance/local/hybrid）取代專用 adapter；新增 `load_klines()` 走 `KlineStorage` 新數據層；回測硬編碼不調新聞插件
 
 **驗收標準**:
-- [x] 回測使用新數據層（經 `BacktestDataLoader` facade）
+- [x] 回測使用新數據層（`load_klines` → `KlineStorage`）
 - [x] 硬編碼不調用新聞插件
-- [x] 回測/即時結果一致
-- [ ] 單元測試通過（data_loader 僅 shell，無專屬測試）
+- [x] 回測/即時結果一致（共用統一數據層）
+- [x] 單元測試通過（`tests/test_e2e_data_layer.py` loader 測試）
 
 ---
 
@@ -354,14 +354,14 @@ FEED_URLS = [
 - **檔案**: `backend/src/vibe_trading/data_sources/report_generator.py`
 - **工時**: 2 小時
 - **優先級**: 🟡 P1
-- **狀態**: ❌ 未實施 — 該檔案不存在；報告由 `backtest/shadow_account/report.py` 與 `exporters/` 覆蓋部分需求
+- **狀態**: ✅ 已實施（2026-08-14）— `ReportGenerator`（backtest/paper 雙模式 + 數據源差異標記 + `compare_reports` 對比 + Markdown/JSON 序列化）
 
 **驗收標準**:
-- [ ] 回測報告格式
-- [ ] Paper 報告格式
-- [ ] 標記數據源差異
-- [ ] 對比報告生成
-- [ ] 單元測試通過
+- [x] 回測報告格式
+- [x] Paper 報告格式
+- [x] 標記數據源差異（`data_source_notes`）
+- [x] 對比報告生成（`compare_reports`）
+- [x] 單元測試通過（`tests/test_e2e_data_layer.py`）
 
 ---
 
@@ -386,14 +386,14 @@ FEED_URLS = [
 - **檔案**: `tests/test_e2e_data_layer.py`
 - **工時**: 2 小時
 - **優先級**: 🔴 P0
-- **狀態**: ❌ 未實施 — 該檔案不存在；既有覆蓋見 `tests/test_data_sources.py`（26 tests）與 `tests/test_backtest_performance.py`
+- **狀態**: ✅ 已實施（2026-08-14）— 13 tests：完整決策流程 / 回測流程 / 插件三態開關 / 證據門控三態 / 500 筆性能測試
 
 **驗收標準**:
-- [ ] 完整決策流程測試
-- [ ] 回測流程測試
-- [ ] 插件開關測試
-- [ ] 證據門控測試
-- [ ] 性能測試通過
+- [x] 完整決策流程測試
+- [x] 回測流程測試
+- [x] 插件開關測試
+- [x] 證據門控測試
+- [x] 性能測試通過
 
 ---
 
