@@ -1,9 +1,9 @@
 # 外部數據層重構規格書（更新版）
 
 ## 版本資訊
-- **版本**: 2.2.0
+- **版本**: 2.2.1
 - **日期**: 2026-08-14
-- **狀態**: ✅ 已實施（Phase 1-4 全部）；⏸ Task 3.1 人工 API 註冊、Task 4.7 部署
+- **狀態**: ✅ 已實施（Phase 1-4 全部）；❌ Task 3.1 已取消（CryptoPanic 無免費方案，情緒資料改用免費 RSS）；⏸ Task 4.7 部署
 - **預估工期**: 14 天（4 個階段）→ 實際 Phase 1-4 於 2026-08-14 完成
 - **架構原則**: 核心技術指標 + 可選新聞插件 + 證據門控
 
@@ -32,7 +32,7 @@
 - ✅ Skill 系統（學習後的交易規則）
 
 **可選插件層**（即時專用）：
-- ✅ 新聞/情緒插件（CryptoPanic + RSS）
+- ✅ 新聞/情緒插件（RSS 免費源為主；CryptoPanic 需付費 key — 無免費方案，Task 3.1 已取消）
 - ✅ 清算數據插件（Binance WebSocket + 多交易所）
 - ✅ 智能路由（動態選擇最佳數據源）
 - ✅ 統一緩存（LRU + TTL）
@@ -520,9 +520,9 @@ trading:
 **目標**: 整合新聞/情緒和清算數據插件
 
 **任務**:
-1. ⏸ 註冊 CryptoPanic API Key（人工操作，未完成）
-2. ✅ 實現 `CryptoPanicSentiment` 插件
-3. ✅ 實現 `RSSSentiment` 插件
+1. ❌ 註冊 CryptoPanic API Key（已取消 — CryptoPanic 無免費方案；免費情緒改用 RSS）
+2. 🟡 實現 `CryptoPanicSentiment` 插件（已實作，但需付費 key 才可用）
+3. ✅ 實現 `RSSSentiment` 插件（免費替代，無需 key）
 4. ✅ 實現 `BinanceLiquidationWS` 插件
 5. ✅ 實現多交易所聚合器
 6. ✅ 實現 `DecisionEnhancer` 裝飾器（2026-08-14）
@@ -632,7 +632,7 @@ Week 7:   評估績效，決定 Live 配置
 
 ### 8.1 API 註冊連結
 
-- **CryptoPanic**: https://cryptopanic.com/developers/api/
+- **CryptoPanic**（❌ 已取消 — 無免費方案，2026-08-14）: https://cryptopanic.com/developers/api/
 - **Coinglass**: https://www.coinglass.com/pro/api
 
 ### 8.2 參考文檔

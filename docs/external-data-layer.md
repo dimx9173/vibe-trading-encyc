@@ -41,11 +41,14 @@ print(result.data)
 ### 2. 使用插件
 
 ```python
-from vibe_trading.data_sources.plugins.sentiment.cryptopanic import CryptoPanicSentiment
+from vibe_trading.data_sources.plugins.sentiment.rss import RSSSentiment
 from vibe_trading.data_sources.plugins.sentiment.null import NullSentiment
 
-# 即時模式：使用真實插件
-sentiment_plugin = CryptoPanicSentiment(api_key="your_key")
+# 即時模式：RSS 免費源（無需 API key；CryptoPanic 已無免費方案）
+sentiment_plugin = RSSSentiment(feed_urls=[
+    "https://www.coindesk.com/arc/outboundfeeds/rss/",
+    "https://cointelegraph.com/rss",
+])
 
 # 回測模式：使用空插件
 sentiment_plugin = NullSentiment()
@@ -202,8 +205,8 @@ class SentimentPlugin(ABC):
 ```
 
 **可用實現**：
-- `CryptoPanicSentiment` - CryptoPanic API
-- `RSSSentiment` - RSS 聚合
+- `RSSSentiment` - RSS 聚合（免費，無需 API key；推薦）
+- `CryptoPanicSentiment` - CryptoPanic API（需付費 key — 已無免費方案）
 - `NullSentiment` - 空實現（回測用）
 
 ---
@@ -418,10 +421,10 @@ from vibe_trading.tools import sentiment_tools
 
 news = await sentiment_tools.get_news_sentiment("BTCUSDT")
 
-# 新代碼
-from vibe_trading.data_sources.plugins.sentiment.cryptopanic import CryptoPanicSentiment
+# 新代碼（免費 RSS 源，無需 API key）
+from vibe_trading.data_sources.plugins.sentiment.rss import RSSSentiment
 
-plugin = CryptoPanicSentiment(api_key="your_key")
+plugin = RSSSentiment(feed_urls=["https://cointelegraph.com/rss"])
 sentiment = await plugin.get_sentiment("BTCUSDT")
 ```
 

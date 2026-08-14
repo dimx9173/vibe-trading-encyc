@@ -46,6 +46,7 @@ tags: [development, contributing, changelog]
 - **Backtest SMA 优化**：O(N·P) → O(N) sliding window，30x 加速（30033a5）
 - **B9 订单规范化**：PM 路径订单 notional cap（settings `execution_max_single_order_notional=100`）在 risk gate 前执行（0dcb9a8）
 - **spec/task 文档**：external-data-layer 规格更新至 2.2.0，Phase 4（证据门控/决策增强/统一报告）已实施并标记完成（2026-08-14）
+- **Task 3.1 取消**：CryptoPanic 已无免费方案，情绪数据改用免费 RSS 源（`RSSSentiment` 无需 API key）；`CryptoPanicSentiment` 保留供付费用户（2026-08-14）
 
 ### 修复
 

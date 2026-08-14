@@ -6,7 +6,7 @@
 - **開始日期**: 2026-08-14
 - **預計完成**: 2026-08-28（14 天）
 - **優先級**:  P0（高）
-- **狀態**: ✅ Phase 1-4 已實施（2026-08-14）；⏸ Task 3.1（人工 API 註冊）與 Task 4.7（部署）待人工/DevOps
+- **狀態**: ✅ Phase 1-4 已實施（2026-08-14）；❌ Task 3.1 已取消（CryptoPanic 無免費方案，改用 RSS）；⏸ Task 4.7（部署）待 DevOps
 
 ---
 
@@ -23,6 +23,7 @@
 - ✅ 證據門控機制（Task 4.1 `EvidenceGate` + Task 4.2 `PerformanceTracker`）
 - ✅ 回測/即時一致性保證（Task 4.3 `BacktestDataLoader` facade）
 - ✅ Skill 系統整合
+- ✅ 免費情緒替代：`RSSSentiment`（RSS 源，無需 API key）— CryptoPanic 無免費方案，Task 3.1 已取消
 
 ---
 
@@ -204,9 +205,9 @@
 - **負責**: 專案負責人
 - **工時**: 30 分鐘
 - **優先級**:  P0
-- **狀態**: ⏸ 人工操作 — 需註冊帳號取得 API key（程式整合已完成，見 Task 3.2）
+- **狀態**: ❌ 已取消（2026-08-14）— CryptoPanic 已無免費方案；免費情緒資料改用 Task 3.3 `RSSSentiment`（無需 API key）。`CryptoPanicSentiment` 插件保留（付費用戶可自行配置 key）
 
-**行動項目**:
+**行動項目**（已取消，原因：供應商無免費方案）:
 - [ ] 訪問 https://cryptopanic.com/developers/api/
 - [ ] 註冊帳號
 - [ ] 獲取 API Key
