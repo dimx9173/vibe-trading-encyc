@@ -420,3 +420,58 @@ class TestFullFlowWithAgents:
         stats = {"cache_hits": 0, "cache_misses": 0, "api_calls": 0, "messages_sent": 0}
         reports = await coordinator._run_analysts_parallel(ctx, "cid", stats)
         assert reports == {"technical": "指標分析結果"}
+
+
+class TestLogImprovements:
+    @pytest.mark.asyncio
+    async def test_log_stats(self, coordinator):
+        coordinator._current_state_machine = MagicMock()
+        coordinator._current_state_machine.get_state_summary.return_value = {
+            "decision_id": "d1", "state_history": ["a", "b"]}
+        coordinator._message_broker.get_statistics = MagicMock(
+            return_value={"total_messages": 5})
+        coordinator._cache.get_stats = MagicMock(
+            return_value={"memory": {"hit_rate": 0.5, "size": 10}})
+        coordinator._rate_limiter.get_limiter = MagicMock(
+            return_value=MagicMock(get_remaining_requests=MagicMock(return_value=10)))
+        coordinator._token_optimizer.get_stats = MagicMock(
+            return_value={"total_tokens": 100})
+        coordinator._log_improvements_stats(1.5, {})  # 不 raise
+
+    @pytest.mark.asyncio
+    async def test_reset_agent_states(self, coordinator):
+        inner = MagicMock()
+        wrapper = MagicMock()
+        wrapper._agent = inner
+        coordinator._analysts = {"tech": wrapper}
+        coordinator._researchers = {}
+        coordinator._risk_analysts = {}
+        coordinator._trader = wrapper
+        coordinator._portfolio_manager = None
+        coordinator._reset_agent_states()  # 不 raise
+        inner.reset.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_reset_agent_states_no_inner(self, coordinator):
+        wrapper = MagicMock()
+        wrapper._agent = None
+        coordinator._analysts = {"tech": wrapper}
+        coordinator._researchers = {}
+        coordinator._risk_analysts = {}
+        coordinator._trader = None
+        coordinator._portfolio_manager = None
+        coordinator._reset_agent_states()  # 不 raise
+
+    @pytest.mark.asyncio
+    async def test_reset_agent_reset_fails(self, coordinator):
+        inner = MagicMock()
+        inner.reset.side_effect = RuntimeError("boom")
+        inner._state.is_streaming = False
+        wrapper = MagicMock()
+        wrapper._agent = inner
+        coordinator._analysts = {"tech": wrapper}
+        coordinator._researchers = {}
+        coordinator._risk_analysts = {}
+        coordinator._trader = None
+        coordinator._portfolio_manager = None
+        coordinator._reset_agent_states()  # fail-safe 不 raise
