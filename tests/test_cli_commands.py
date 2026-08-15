@@ -408,3 +408,70 @@ class TestRunMultiThreadSystem:
                 symbol="BTCUSDT", interval="30m", mode=TradingMode.PAPER,
                 execute_trades=False, executor=MagicMock())
         # 不 raise
+
+
+class TestAlphaMine:
+    def test_alpha_mine_no_data(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        loader = MagicMock()
+        loader.load_klines = AsyncMock(return_value=[])
+        with _p("vibe_trading.backtest.data_loader.BacktestDataLoader",
+                return_value=loader):
+            result = runner.invoke(app, [
+                "research", "alpha-mine", "--bars", "100",
+                "--population", "5", "--generations", "2",
+            ])
+        assert result.exit_code == 1  # 無資料 → exit 1
+
+    def test_alpha_mine_success(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        loader = MagicMock()
+        loader.load_klines = AsyncMock(return_value=[MagicMock()] * 100)
+        # screener 假資料
+        fake_series = {"momentum_rev": [0.1] * 100, "pressure": [0.2] * 100}
+        fake_fwd = [0.01] * 100
+        with _p("vibe_trading.backtest.data_loader.BacktestDataLoader",
+                return_value=loader), \
+             _p("vibe_trading.factors.screener.make_screener",
+                return_value={"series": fake_series, "fwd": fake_fwd}), \
+             _p("vibe_trading.factors.miner.evolve",
+                return_value=[(["ADD", "momentum_rev", 0], 0.1)]), \
+             _p("vibe_trading.factors.screener.score_formula",
+                return_value={"ic": 0.1, "sharpe": 0.5, "samples": 100}), \
+             _p("vibe_trading.factors.screener.passes_gate", return_value=False):
+            result = runner.invoke(app, [
+                "research", "alpha-mine", "--bars", "100",
+                "--population", "5", "--generations", "2",
+            ])
+        assert result.exit_code == 0
+        assert "MINER" in result.output
+
+    def test_alpha_mine_registers(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        loader = MagicMock()
+        loader.load_klines = AsyncMock(return_value=[MagicMock()] * 100)
+        fake_series = {"momentum_rev": [0.1] * 100}
+        with _p("vibe_trading.backtest.data_loader.BacktestDataLoader",
+                return_value=loader), \
+             _p("vibe_trading.factors.screener.make_screener",
+                return_value={"series": fake_series, "fwd": [0.01] * 100}), \
+             _p("vibe_trading.factors.miner.evolve",
+                return_value=[(["ADD", "momentum_rev", 0], 0.2)]), \
+             _p("vibe_trading.factors.screener.score_formula",
+                return_value={"ic": 0.2, "sharpe": 0.8, "samples": 100}), \
+             _p("vibe_trading.factors.screener.passes_gate", return_value=True):
+            registry = MagicMock()
+            hyp = MagicMock()
+            hyp.id = "H1"
+            registry.create = AsyncMock(return_value=hyp)
+            with _p("vibe_trading.research.registry.HypothesisRegistry",
+                    return_value=registry):
+                result = runner.invoke(app, [
+                    "research", "alpha-mine", "--bars", "100",
+                    "--population", "5", "--generations", "2",
+                ])
+        assert result.exit_code == 0
+        assert "H1" in result.output
