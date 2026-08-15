@@ -371,3 +371,52 @@ class TestFetchBenchmark:
     async def test_get_reflector_no_memory(self, coordinator):
         coordinator.memory = None
         assert coordinator._get_reflector() is None
+
+
+class TestFullFlowWithAgents:
+    @pytest.mark.asyncio
+    async def test_full_flow_with_mock_agents(self, coordinator):
+        """mock 全部 agent → analyze_and_decide 完整 5 階段."""
+        coordinator._analysts = {
+            "technical": _FakeAnalyst("看漲突破"),
+            "fundamental": _FakeAnalyst("基本面良好"),
+            "news": _FakeAnalyst("利好新聞"),
+            "sentiment": _FakeAnalyst("情緒正面"),
+        }
+        coordinator._researchers = {"manager": MagicMock()}
+        coordinator._risk_analysts = {
+            "aggressive": MagicMock(), "neutral": MagicMock(),
+            "conservative": MagicMock(),
+        }
+        coordinator._trader = MagicMock()
+        coordinator._portfolio_manager = MagicMock()
+        # mock 各階段
+        with patch.object(coordinator, "_run_research_debate",
+                          new=AsyncMock(return_value="Decision: BUY\nRationale: 看漲")), \
+             patch.object(coordinator, "_run_risk_assessment",
+                          new=AsyncMock(return_value={"neutral": "低風險"})), \
+             patch.object(coordinator, "_run_trader",
+                          new=AsyncMock(return_value="trading plan")), \
+             patch.object(coordinator, "_run_portfolio_manager",
+                          new=AsyncMock(return_value={
+                              "decision": "BUY", "rationale": "看漲",
+                              "confidence": 0.8, "execution_instructions": None,
+                          })):
+            decision = await coordinator.analyze_and_decide(
+                current_price=50000.0, account_balance=10000.0)
+        assert decision is not None
+        assert len(coordinator.get_decision_history()) >= 1
+
+    @pytest.mark.asyncio
+    async def test_run_analysts_with_indicators(self, coordinator):
+        """technical analyst 有 analyze_with_indicators → 走指標路徑."""
+        class _TechWithIndicators:
+            name = "tech"
+            async def analyze_with_indicators(self, data):
+                return "指標分析結果"
+        coordinator._analysts = {"technical": _TechWithIndicators()}
+        ctx = MagicMock(symbol="BTCUSDT", interval="30m", current_price=1.0,
+                        indicators={"rsi": 50}, timestamp=0)
+        stats = {"cache_hits": 0, "cache_misses": 0, "api_calls": 0, "messages_sent": 0}
+        reports = await coordinator._run_analysts_parallel(ctx, "cid", stats)
+        assert reports == {"technical": "指標分析結果"}
