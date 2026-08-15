@@ -134,3 +134,59 @@ class TestHandleCallback:
         cb = MagicMock()
         cb.data = "unknown"
         assert await notifier.handle_callback(cb) is False
+
+
+class TestBatch:
+    @pytest.mark.asyncio
+    async def test_send_batch(self, notifier):
+        from datetime import datetime
+        notifier.bot.send_message = AsyncMock(return_value=True)
+        notifs = [
+            Notification(id="n1", priority=NotificationPriority.LOW,
+                         title="t1", message="m1",
+                         timestamp=datetime.now().timestamp()),
+        ]
+        await notifier._send_batch_notifications(notifs)
+        notifier.bot.send_message.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_send_batch_empty(self, notifier):
+        await notifier._send_batch_notifications([])  # 不 raise
+
+    @pytest.mark.asyncio
+    async def test_send_batch_error(self, notifier):
+        from datetime import datetime
+        from telegram.error import TelegramError
+        notifier.bot.send_message = AsyncMock(side_effect=TelegramError("down"))
+        notifs = [
+            Notification(id="n1", priority=NotificationPriority.LOW,
+                         title="t", message="m",
+                         timestamp=datetime.now().timestamp()),
+        ]
+        await notifier._send_batch_notifications(notifs)  # 錯誤被吞
+
+    def test_on_notification_critical(self, notifier):
+        from datetime import datetime
+        n = Notification(id="n1", priority=NotificationPriority.CRITICAL,
+                         title="t", message="m",
+                         timestamp=datetime.now().timestamp())
+        notifier._on_notification(n)  # 不 raise
+
+    @pytest.mark.asyncio
+    async def test_notification_loop_stops(self, notifier):
+        notifier._running = True
+        notifier.queue.dequeue = AsyncMock(return_value=None)
+        notifier.queue.get_pending_notifications = AsyncMock(return_value=[])
+        notifier.queue.clear_low_priority = AsyncMock()
+
+        iterations = []
+
+        async def _sleep(sec):
+            iterations.append(1)
+            if len(iterations) >= 2:
+                notifier._running = False
+
+        with patch("vibe_trading.notifications.telegram_notifier.asyncio.sleep",
+                   new=_sleep):
+            await notifier._notification_loop()
+        assert len(iterations) >= 1
