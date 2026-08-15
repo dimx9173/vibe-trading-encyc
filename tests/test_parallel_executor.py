@@ -180,3 +180,66 @@ class TestSequentialExecutor:
             [_FakeAgent("a"), _FakeAgent("b")], {})
         assert summary.total_agents == 2
         assert summary.successful == 2
+
+
+class TestRunPhase3:
+    @pytest.mark.asyncio
+    async def test_risk_agents_success(self):
+        ex = ParallelExecutor()
+        summary = await ex.run_phase_3_risk_agents(
+            [_FakeAgent("risk1"), _FakeAgent("risk2")], {}, timeout_per_agent=2.0)
+        assert summary.total_agents == 2
+        assert summary.successful == 2
+        assert summary.phase_name == "Phase 3: Risk Agents"
+
+    @pytest.mark.asyncio
+    async def test_risk_agents_failure(self):
+        ex = ParallelExecutor()
+        summary = await ex.run_phase_3_risk_agents(
+            [_FakeAgent("ok"), _FakeAgent("bad", fail=True)], {},
+            timeout_per_agent=2.0)
+        assert summary.successful == 1
+        assert summary.failed == 1
+
+
+class TestParallelWithDeps:
+    @pytest.mark.asyncio
+    async def test_sequential_dependencies(self):
+        ex = ParallelExecutor()
+
+        async def task_a(ctx):
+            return "A"
+
+        async def task_b(ctx):
+            return "B"
+
+        tasks = [("a", task_a, []), ("b", task_b, ["a"])]
+        summary = await ex.run_parallel_with_dependencies(tasks, {}, timeout=2.0)
+        assert summary.total_agents == 2
+        assert summary.successful == 2
+
+    @pytest.mark.asyncio
+    async def test_task_failure(self):
+        ex = ParallelExecutor()
+
+        async def task_a(ctx):
+            raise RuntimeError("fail")
+
+        async def task_b(ctx):
+            return "B"
+
+        tasks = [("a", task_a, []), ("b", task_b, ["a"])]
+        summary = await ex.run_parallel_with_dependencies(tasks, {}, timeout=2.0)
+        # a 失敗但 b 仍執行 (結果收集)
+        assert len(summary.results) >= 1
+
+    @pytest.mark.asyncio
+    async def test_circular_dependency(self):
+        ex = ParallelExecutor()
+
+        async def task_a(ctx):
+            return "A"
+
+        tasks = [("a", task_a, ["a"])]  # 自依賴 → 死鎖
+        summary = await ex.run_parallel_with_dependencies(tasks, {}, timeout=1.0)
+        assert summary.total_agents == 1
