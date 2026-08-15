@@ -985,6 +985,80 @@ def hyp_list(
     console.print(f"\n共 {len(hyps)} 個假設")
 
 
+@research_app.command("alpha-mine")
+def alpha_mine(
+    symbol: str = typer.Option("BTCUSDT", "--symbol", help="交易對"),
+    interval: str = typer.Option("30m", "--interval", help="K線間隔"),
+    bars: int = typer.Option(500, "--bars", help="歷史 K 線數"),
+    population: int = typer.Option(50, "--population", help="演化池大小"),
+    generations: int = typer.Option(20, "--generations", help="演化代數"),
+    ic_threshold: float = typer.Option(0.05, "--ic-threshold", help="IC 達標閾值"),
+    min_samples: int = typer.Option(20, "--min-samples", help="最小樣本數"),
+):
+    """演化式因子挖掘 + IC 評分 + 假說庫註冊 (Phase 3, 無 RL)"""
+    from vibe_trading.factors.miner import evolve
+    from vibe_trading.factors.screener import make_screener, score_formula, passes_gate
+    from vibe_trading.factors.vm import ARITY
+
+    # 1. 載入歷史 K 線 (BacktestDataLoader, 與 replay 同資料路徑)
+    from vibe_trading.backtest.data_loader import BacktestDataLoader
+    loader = BacktestDataLoader()
+    klines = asyncio.run(loader.load_klines(symbol=symbol, interval=interval, limit=bars))
+    if not klines:
+        console.print(f"[red]無法載入 {symbol} {interval} 歷史資料[/red]")
+        raise typer.Exit(1)
+
+    # 2. 建構評分器
+    screener = make_screener(list(klines))
+    features = list(screener["series"].keys())
+
+    def fitness(ast):
+        sc = score_formula(ast, screener["series"], screener["fwd"], min_samples=min_samples)
+        return abs(sc["ic"]) if sc else None
+
+    info(f"開始演化搜尋: {symbol} {interval} ({len(klines)} bars, "
+         f"pop={population}, gen={generations})", tag="MINER")
+
+    # 3. 演化搜尋
+    candidates = evolve(features, fitness, population=population,
+                        generations=generations, seed=42, top_k=10)
+
+    # 4. 評分 + 達標註冊假說庫
+    registry_created = 0
+    table = Table(title=f"Alpha Mining 結果 ({symbol} {interval})")
+    table.add_column("公式", style="cyan")
+    table.add_column("IC", justify="right")
+    table.add_column("Sharpe", justify="right")
+    table.add_column("樣本", justify="right")
+    table.add_column("狀態", style="green")
+
+    for ast, _ic in candidates:
+        sc = score_formula(ast, screener["series"], screener["fwd"], min_samples=min_samples)
+        if sc is None:
+            continue
+        formula_str = str(ast)
+        passed = passes_gate(sc, ic_threshold)
+        status = "✅ 註冊" if passed else "—"
+        if passed:
+            from vibe_trading.research.registry import HypothesisRegistry
+            registry = HypothesisRegistry()
+            hyp = asyncio.run(registry.create(
+                title=f"Alpha factor: {formula_str[:60]}",
+                description=(
+                    f"IC={sc['ic']:.4f} Sharpe={sc['sharpe']:.2f} "
+                    f"samples={sc['samples']} (mined {symbol} {interval})"
+                ),
+                tags=["alpha-mining", symbol],
+            ))
+            registry_created += 1
+            status = f"✅ {hyp.id}"
+        table.add_row(formula_str, f"{sc['ic']:.4f}", f"{sc['sharpe']:.2f}",
+                      str(sc["samples"]), status)
+
+    console.print(table)
+    success(f"挖掘完成: {len(candidates)} 候選, {registry_created} 註冊入假說庫", tag="MINER")
+
+
 @research_app.command("goal-create")
 def goal_create(
     title: str = typer.Argument(..., help="研究目標標題"),

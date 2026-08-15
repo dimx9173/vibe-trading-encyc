@@ -94,25 +94,14 @@ graph LR
 > **融合**：AlphaGPT 符號挖掘概念 (去 RL) + HKUDS 假說庫 (Research Backbone)  
 > **核心目標**：系統可自主提出因子假說, 張量預篩, 自動沈澱至假說庫
 
-#### 3.1 Alpha Mining Agent（因子挖掘師）
-* 在宏觀線程後台運行, LLM 啟發式搜尋: 結合領域知識輸出公式 Token (StackVM 可執行的 AST)
-* **極速張量回測打分器**（採納評估 A8）：
-  * `[tokens×time]` 矩陣化, 一次跑完所有候選因子
-  * 評分: IC / IR / 多空 Sharpe / 最大回撤, 低方差/高相關性因子負分
-  * **Binance taker 費率 + 深度衝擊模型** (非 AlphaGPT 的 AMM 0.6% 費用)
+#### 3.1 Alpha Mining Agent（因子挖掘師）✅
+* **已交付** (2026-08-15): `factors/miner.py` — 演化式公式搜尋 (變異/交叉/選擇, 深度控制, 確定性 seed); `factors/screener.py` — IC (Spearman via 純 NumPy rankdata)/IR/Sharpe 評分, forward return 用下一 bar 開盤 (無 lookahead); `vibe-trade research alpha-mine` CLI
+* **張量評分**: 候選公式批量評估, 達標 (|IC| ≥ 0.05 且 Sharpe > 0) 自動註冊假說庫
+* **Binance 場景**: 單標的 forward returns (多標的橫截面 IC 留 v2)
 
-#### 3.2 策略自進化閉環
-```mermaid
-graph TD
-    A[Alpha Mining Agent 提出新因子公式] --> B[StackVM 張量回測評分]
-    B --> C{評分是否達標<br>IC > 0.05 & Sharpe > 1.5?}
-    C -->|否| A
-    C -->|是| D[自動註冊入 P3 Hypothesis Registry]
-    D --> E[EvidenceGate 14天 Paper 模擬跟蹤]
-    E --> F{通過顯著性檢驗?}
-    F -->|是| G[升級為正式生產環境分析師工具]
-    F -->|否| H[歸檔/標記淘汰]
-```
+#### 3.2 策略自進化閉環 ✅
+* **已交付** (2026-08-15): 達標公式 → `HypothesisRegistry.create` (testing 狀態) — 閉環到假說庫
+* **留後續**: EvidenceGate 14 天自動 paper 跟蹤 (需排程器); 每週自動挖掘 (cron)
 
 #### 3.3 修正註記: 為何不採納 AlphaGPT RL 循環
 * AlphaGPT `engine.py` 標籤用 `torch.roll(open, -2)` — **未來數據 (lookahead 污染)**, 違反我們 PIT replay 紀律

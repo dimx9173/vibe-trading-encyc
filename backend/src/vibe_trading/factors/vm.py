@@ -87,15 +87,10 @@ def _resolve(name: Any, series: Dict[str, np.ndarray]) -> Optional[np.ndarray]:
     return None
 
 
-def evaluate_formula(ast: List[Any], series: Dict[str, np.ndarray]) -> Optional[float]:
-    """求值公式 AST, 回傳最後 bar 值 (或 None 若無效).
+def evaluate_series(ast: List[Any], series: Dict[str, np.ndarray]) -> Optional[np.ndarray]:
+    """求值公式 AST, 回傳全序列 (screener 用). 無效 → None.
 
-    Args:
-        ast: 公式 AST, 如 ["GATE", "vol_cluster", "momentum", 0.0] 或巢狀
-        series: {因子名: np.ndarray} — 來自 microstructure.compute_all 等
-
-    Returns:
-        float (最後 bar 值) 或 None (公式無效/arity 不符/未知運算元/未知序列)
+    與 evaluate_formula 共用遞迴; evaluate_formula 取最後值.
     """
     if not series:
         return None
@@ -121,7 +116,14 @@ def evaluate_formula(ast: List[Any], series: Dict[str, np.ndarray]) -> Optional[
     result = _eval(ast)
     if result is None or result.size == 0:
         return None
-    last = result[-1]
-    if not np.isfinite(last):
-        return None  # NaN/Inf 結果 → None (不臆斷)
-    return float(last)
+    if not np.all(np.isfinite(result)):
+        return None  # 任何 NaN/Inf → 無效 (screener 要求乾淨序列)
+    return result
+
+
+def evaluate_formula(ast: List[Any], series: Dict[str, np.ndarray]) -> Optional[float]:
+    """求值公式 AST, 回傳最後 bar 值 (或 None 若無效)."""
+    result = evaluate_series(ast, series)
+    if result is None:
+        return None
+    return float(result[-1])
