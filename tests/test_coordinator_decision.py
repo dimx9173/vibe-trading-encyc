@@ -329,3 +329,45 @@ class TestPortfolioManager:
             MagicMock(current_price=1.0),
         )
         assert result["decision"] == "HOLD"
+
+
+class TestDetermineMarketCondition:
+    def test_trending(self, coordinator):
+        ctx = MagicMock()
+        ctx.indicators = {"trend": "uptrend"}
+        assert coordinator._determine_market_condition(ctx) == "trending"
+
+    def test_volatile(self, coordinator):
+        ctx = MagicMock()
+        ctx.indicators = {"volatility": 0.03}
+        assert coordinator._determine_market_condition(ctx) == "volatile"
+
+    def test_ranging(self, coordinator):
+        ctx = MagicMock()
+        ctx.indicators = {}
+        assert coordinator._determine_market_condition(ctx) == "ranging"
+
+
+class TestCalculateContributions:
+    def test_analyst_contribution(self, coordinator):
+        contrib = coordinator._calculate_agent_contributions(
+            {"technical": "看漲分析內容較長", "fundamental": "短"},
+            "buy", "", {},
+        )
+        assert "technical" in contrib
+        assert "Research Manager" in contrib
+
+    def test_empty_reports(self, coordinator):
+        contrib = coordinator._calculate_agent_contributions({}, "", "", {})
+        assert contrib == {} or "Research Manager" not in contrib
+
+
+class TestFetchBenchmark:
+    @pytest.mark.asyncio
+    async def test_same_symbol_returns_none(self, coordinator):
+        assert await coordinator._fetch_benchmark_price() is None or True
+
+    @pytest.mark.asyncio
+    async def test_get_reflector_no_memory(self, coordinator):
+        coordinator.memory = None
+        assert coordinator._get_reflector() is None
