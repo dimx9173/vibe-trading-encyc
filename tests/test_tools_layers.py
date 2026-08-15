@@ -349,3 +349,70 @@ class TestFundingAndInterest:
             result = await market_data_tools.get_open_interest("BTCUSDT")
         assert result["open_interest"] == 1234.5
         assert result["timestamp"] == 999
+
+
+class TestFundamentalTools:
+    @pytest.fixture(autouse=True)
+    def _mods(self):
+        global fundamental_tools
+        from vibe_trading.tools import fundamental_tools
+        yield
+
+    @pytest.mark.asyncio
+    async def test_get_long_short_ratio(self):
+        resp = MagicMock()
+        resp.json = MagicMock(return_value=[{"longShortRatio": "1.5",
+                                             "longAccount": "1.5",
+                                             "shortAccount": "1.0",
+                                             "timestamp": 1000}])
+        client = MagicMock()
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+        client.get = AsyncMock(return_value=resp)
+        with patch.object(fundamental_tools.httpx, "AsyncClient",
+                          return_value=client):
+            result = await fundamental_tools.get_long_short_ratio("BTCUSDT")
+        assert "long_short_ratio" in result
+
+    @pytest.mark.asyncio
+    async def test_get_taker_buy_sell(self):
+        resp = MagicMock()
+        resp.json = MagicMock(return_value=[{"buySellRatio": "2.0",
+                                             "buyVol": "10", "sellVol": "5",
+                                             "timestamp": 1000}])
+        client = MagicMock()
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+        client.get = AsyncMock(return_value=resp)
+        with patch.object(fundamental_tools.httpx, "AsyncClient",
+                          return_value=client):
+            result = await fundamental_tools.get_taker_buy_sell_ratio("BTCUSDT")
+        assert "taker_buy_sell_ratio" in result
+
+    @pytest.mark.asyncio
+    async def test_get_open_interest_fundamental(self):
+        resp = MagicMock()
+        resp.json = MagicMock(return_value=[
+            {"sumOpenInterest": "500", "sumOpenInterestValue": "1000",
+             "timestamp": 1000},
+            {"sumOpenInterest": "400", "sumOpenInterestValue": "800",
+             "timestamp": 900}])
+        client = MagicMock()
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+        client.get = AsyncMock(return_value=resp)
+        with patch.object(fundamental_tools.httpx, "AsyncClient",
+                          return_value=client):
+            result = await fundamental_tools.get_open_interest("BTCUSDT")
+        assert "open_interest" in result
+
+    @pytest.mark.asyncio
+    async def test_http_error_returns_error(self):
+        client = MagicMock()
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+        client.get = AsyncMock(side_effect=RuntimeError("network"))
+        with patch.object(fundamental_tools.httpx, "AsyncClient",
+                          return_value=client):
+            result = await fundamental_tools.get_long_short_ratio("BTCUSDT")
+        assert "error" in result
