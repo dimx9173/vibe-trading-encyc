@@ -1008,9 +1008,10 @@ class TestMonitoring:
         a.harness.get_violation_summary = AsyncMock(return_value={})
         a._check_price_movement = AsyncMock()
         a._check_system_health = AsyncMock()
+        a._get_current_price = AsyncMock(return_value=50000.0)
         with _p.object(pa, "warning", MagicMock()):
             await a._monitoring_check()
-        a._check_price_movement.assert_called_once()
+        a._check_price_movement.assert_called_once_with(50000.0)
 
     @pytest.mark.asyncio
     async def test_get_message_stats(self):
