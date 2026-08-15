@@ -314,6 +314,8 @@ def vendor_routed(
 
         return wrapper
 
+    return decorator
+
 
 # ============================================================================
 # 示例：Binance数据源包装
