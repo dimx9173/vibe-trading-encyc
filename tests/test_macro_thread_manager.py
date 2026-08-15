@@ -223,3 +223,56 @@ class TestThreadManager:
 def asyncio_sleep(sec):
     import asyncio
     return asyncio.sleep(sec)
+
+
+class TestThreadManagerRun:
+    @pytest.mark.asyncio
+    async def test_run_thread_success(self):
+        mgr = ThreadManager()
+        await mgr.register_thread("t", "main_thread", {})
+        await mgr.run_thread("t", async_noop)
+        info = await mgr.get_thread_info("t")
+        assert info is not None
+        assert info.status.value == "stopped"
+
+    @pytest.mark.asyncio
+    async def test_run_thread_not_found(self):
+        mgr = ThreadManager()
+        await mgr.run_thread("nope", async_noop)  # 不 raise
+
+    @pytest.mark.asyncio
+    async def test_run_thread_error(self):
+        mgr = ThreadManager()
+        await mgr.register_thread("t", "main_thread", {})
+
+        async def _fail():
+            raise RuntimeError("boom")
+
+        await mgr.run_thread("t", _fail)
+        info = await mgr.get_thread_info("t")
+        assert info is not None
+        assert info.status.value == "error"
+        assert info.error_count == 1
+
+    @pytest.mark.asyncio
+    async def test_run_thread_wrapper_no_info(self):
+        mgr = ThreadManager()
+        await mgr._run_thread_wrapper("missing", async_noop)  # 不 raise
+
+    @pytest.mark.asyncio
+    async def test_pause_resume(self):
+        from vibe_trading.coordinator.thread_manager import ThreadStatus
+        mgr = ThreadManager()
+        await mgr.register_thread("t", "main_thread", {})
+        info = await mgr.get_thread_info("t")
+        info.status = ThreadStatus.RUNNING
+        assert await mgr.pause_thread("t") is True
+        info = await mgr.get_thread_info("t")
+        assert info.status.value == "paused"
+        assert await mgr.resume_thread("t") is True
+        info = await mgr.get_thread_info("t")
+        assert info.status.value == "running"
+
+
+async def async_noop():
+    return None
