@@ -809,6 +809,7 @@ class TestRunResearchDebate:
 
     @pytest.mark.asyncio
     async def test_full_debate(self, coordinator):
+        from types import SimpleNamespace
         from unittest.mock import patch as _p
         import vibe_trading.coordinator.trading_coordinator as tc
         settings = MagicMock()
