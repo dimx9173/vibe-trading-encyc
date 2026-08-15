@@ -392,3 +392,51 @@ class TestCreateExecutor:
         from vibe_trading.execution.order_executor import BinanceOrderExecutor
         ex = create_executor(TradingMode.LIVE, dry_run=True)
         assert isinstance(ex, BinanceOrderExecutor)
+
+
+class TestExitLadder:
+    def test_moonbag_sell_half(self):
+        ex = PaperOrderExecutor()
+        ex._positions["BTCUSDT_LONG"] = PaperPosition(
+            symbol="BTCUSDT", position_side=PositionSide.LONG,
+            entry_price=50000.0, quantity=2.0, leverage=5)
+        ex.update_price("BTCUSDT", 55000.0)  # +10% → moonbag
+        assert ex._positions["BTCUSDT_LONG"].quantity == 1.0  # 賣半
+        assert ex._realized_pnl > 0
+
+    def test_trailing_exit_sell_all(self):
+        ex = PaperOrderExecutor()
+        ex._positions["BTCUSDT_LONG"] = PaperPosition(
+            symbol="BTCUSDT", position_side=PositionSide.LONG,
+            entry_price=50000.0, quantity=1.0, leverage=5)
+        ex.update_price("BTCUSDT", 52500.0)  # +5% 啟動 trailing
+        assert "BTCUSDT_LONG" in ex._positions
+        ex.update_price("BTCUSDT", 50800.0)  # 從 52500 回撤 3.2% → 全出
+        assert "BTCUSDT_LONG" not in ex._positions
+
+    def test_exit_ladder_not_applicable_other_symbol(self):
+        ex = PaperOrderExecutor()
+        ex._positions["ETHUSDT_LONG"] = PaperPosition(
+            symbol="ETHUSDT", position_side=PositionSide.LONG,
+            entry_price=3000.0, quantity=1.0, leverage=5)
+        ex.update_price("BTCUSDT", 55000.0)  # 不同 symbol → 不動
+        assert "ETHUSDT_LONG" in ex._positions
+
+    def test_update_price_no_position(self):
+        ex = PaperOrderExecutor()
+        ex.update_price("BTCUSDT", 48000.0)  # 無持倉 → 不 crash
+
+
+class TestBinanceDryRun:
+    @pytest.mark.asyncio
+    async def test_dry_run_place_order(self):
+        from vibe_trading.execution.order_executor import BinanceOrderExecutor
+        from vibe_trading.data_sources.binance_client import OrderSide, OrderType
+        ex = BinanceOrderExecutor(api_key="k", api_secret="s", testnet=True,
+                                  dry_run=True)
+        result = await ex.place_order(
+            symbol="BTCUSDT", side=OrderSide.BUY, order_type=OrderType.MARKET,
+            quantity=0.1, price=50000.0,
+            position_side=PositionSide.LONG)
+        assert result.status == "FILLED"
+        assert result.order_id.startswith("dryrun_")
