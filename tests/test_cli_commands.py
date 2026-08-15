@@ -6,6 +6,7 @@ manifest-diff/hyp-create/hyp-list/universe-scan/goal) + 不需要真實網路的
 """
 import json
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from typer.testing import CliRunner
@@ -159,3 +160,50 @@ class TestExportCommands:
     def test_export_to_mql5_missing_file(self, tmp_path: Path):
         result = runner.invoke(app, ["export", "to-mql5", str(tmp_path / "nope.json")])
         assert result.exit_code == 1
+
+
+class TestStartCommand:
+    def test_invalid_mode_aborts(self):
+        result = runner.invoke(app, ["start", "BTCUSDT", "--mode", "bogus"])
+        assert result.exit_code != 0
+
+    def test_paper_mode_runs(self):
+        """paper 模式不需確認 — mock run_multi_thread_system."""
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _patch
+        with _patch.object(cli_mod, "run_multi_thread_system",
+                           new=AsyncMock()) as mock_run:
+            result = runner.invoke(app, ["start", "BTCUSDT", "--mode", "paper"])
+        assert result.exit_code == 0
+        mock_run.assert_called_once()
+
+    def test_create_execution_executor_paper(self):
+        from vibe_trading.cli import TradingMode, create_execution_executor
+        ex = create_execution_executor(TradingMode.PAPER, execute=False)
+        assert ex is not None
+
+
+class TestAnalyzeCommand:
+    def test_analyze_smoke(self):
+        """analyze 需真實 storage/LLM — mock 底層."""
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import MagicMock, patch as _patch
+        decision = MagicMock()
+        decision.decision = "HOLD"
+        decision.rationale = "觀望"
+        decision.confidence = 0.5
+        decision.to_dict.return_value = {"decision": "HOLD"}
+        coord = MagicMock()
+        coord.analyze_and_decide = AsyncMock(return_value=decision)
+        coord.initialize = AsyncMock()
+        storage = MagicMock()
+        storage.init = AsyncMock()
+        storage.close = AsyncMock()
+        with _patch.object(cli_mod, "KlineStorage", return_value=storage), \
+             _patch.object(cli_mod, "TradingCoordinator", return_value=coord), \
+             _patch("vibe_trading.memory.hybrid_memory.create_hybrid_memory_from_settings"), \
+             _patch("vibe_trading.tools.market_data_tools.get_current_price",
+                    new=AsyncMock(return_value={"price": 50000.0})):
+            result = runner.invoke(app, ["analyze", "BTCUSDT"])
+        assert result.exit_code == 0
+        assert "HOLD" in result.output
