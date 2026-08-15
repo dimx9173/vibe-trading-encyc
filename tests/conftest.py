@@ -29,3 +29,28 @@ def pytest_collection_modifyitems(session, config, items):
     for item in items:
         if asyncio.iscoroutinefunction(item.obj):
             item.add_marker("asyncio")
+
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _isolate_checkpoint_db():
+    """
+    Redirect DecisionCheckpointStore to :memory: so coordinator tests
+    never write to the real vibe_trading.db (which the running vbt
+    process uses for crash recovery / decision history).
+    """
+    from vibe_trading.data_sources.checkpoint_storage import (
+        DecisionCheckpointStore,
+    )
+
+    orig_init = DecisionCheckpointStore.__init__
+
+    def _mem_init(self, db_path=":memory:"):
+        orig_init(self, db_path)
+
+    DecisionCheckpointStore.__init__ = _mem_init
+    yield
+    DecisionCheckpointStore.__init__ = orig_init
+
