@@ -227,3 +227,103 @@ class TestBuildDecisionPrompt:
             current_positions=[], account_balance=0, current_price=0,
         )
         assert "BTCUSDT" in prompt
+
+
+class TestTraderPlan:
+    @pytest.mark.asyncio
+    async def test_create_trading_plan_full(self):
+        from vibe_trading.agents.decision.decision_agents import TraderAgent
+        t = TraderAgent()
+        t._tool_context = MagicMock()
+        t._tool_context.symbol = "BTCUSDT"
+        # mock calculators
+        t._stop_loss_calculator = MagicMock()
+        t._stop_loss_calculator.calculate_levels = MagicMock(return_value={
+            "stop_loss_price": 49000.0,
+            "risk_reward_ratio": 2.0,
+            "partial_take_profits": [
+                {"price": 52000.0, "size_pct": 50, "level": 1}],
+            "trailing_stop_config": {"enabled": True},
+        })
+        t._position_size_calculator = MagicMock()
+        t._position_size_calculator.calculate_position_size = MagicMock(
+            return_value={
+                "position_size_coin": 0.02, "position_size_usdt": 1000.0,
+                "leverage": 5, "risk_amount_usdt": 100.0,
+                "stop_distance_pct": 10.0,
+            })
+        t._execution_strategy_calculator = MagicMock()
+        t._execution_strategy_calculator.determine_execution_style = MagicMock(
+            return_value={"execution_style": ExecutionStyle.IMMEDIATE,
+                          "entry_orders": [{"order_type": "market"}],
+                          "reasoning": "fast"})
+        t._execution_strategy_calculator.build_entry_orders = MagicMock(
+            return_value=[{"order_type": "market", "price": 50000.0, "pct": 100, "note": "市價"}])
+        # agent
+        agent = MagicMock()
+        assistant = MagicMock()
+        assistant.role = "assistant"
+        assistant.content = [MagicMock()]
+        assistant.content[0].text = '{"plan_approved": true}'
+        agent.state.messages = [assistant]
+        t._agent = agent
+        from vibe_trading.agents.decision import decision_agents as da
+        with patch.object(da, "prompt_with_timeout",
+                          new=AsyncMock(return_value=True)), \
+             patch.object(da, "parse_structured_output",
+                          return_value=MagicMock(plan_approved=True)):
+            plan = await t.create_trading_plan(
+                direction="LONG",
+                investment_recommendation="buy",
+                risk_assessment={"conservative": "低風險"},
+                current_price=50000.0,
+                account_balance=10000.0,
+            )
+        assert plan.symbol == "BTCUSDT"
+        assert plan.position_side == PositionSide.LONG
+        assert plan.total_position_coin == 0.02
+        assert plan.structured_analysis is not None
+
+    @pytest.mark.asyncio
+    async def test_create_trading_plan_timeout_fallback(self):
+        from vibe_trading.agents.decision.decision_agents import TraderAgent
+        t = TraderAgent()
+        t._tool_context = MagicMock()
+        t._tool_context.symbol = "BTCUSDT"
+        t._stop_loss_calculator = MagicMock()
+        t._stop_loss_calculator.calculate_levels = MagicMock(return_value={
+            "stop_loss_price": 49000.0, "risk_reward_ratio": 2.0,
+            "partial_take_profits": [], "trailing_stop_config": {}})
+        t._position_size_calculator = MagicMock()
+        t._position_size_calculator.calculate_position_size = MagicMock(
+            return_value={"position_size_coin": 0.02, "position_size_usdt": 1000.0,
+                          "leverage": 5, "risk_amount_usdt": 100.0,
+                          "stop_distance_pct": 10.0})
+        t._execution_strategy_calculator = MagicMock()
+        t._execution_strategy_calculator.determine_execution_style = MagicMock(
+            return_value={"execution_style": ExecutionStyle.IMMEDIATE,
+                          "entry_orders": [], "reasoning": "fast"})
+        t._execution_strategy_calculator.build_entry_orders = MagicMock(
+            return_value=[])
+        agent = MagicMock()
+        agent.state.messages = []
+        t._agent = agent
+        from vibe_trading.agents.decision import decision_agents as da
+        with patch.object(da, "prompt_with_timeout",
+                          new=AsyncMock(return_value=False)):
+            plan = await t.create_trading_plan(
+                direction="SHORT",
+                investment_recommendation="sell",
+                risk_assessment={},
+                current_price=50000.0,
+                account_balance=10000.0,
+            )
+        assert plan.direction == "SHORT"
+        assert plan.position_side == PositionSide.SHORT
+
+    @pytest.mark.asyncio
+    async def test_create_trading_plan_not_initialized(self):
+        from vibe_trading.agents.decision.decision_agents import TraderAgent
+        t = TraderAgent()
+        with pytest.raises(RuntimeError):
+            await t.create_trading_plan("LONG", "r", {}, 100.0, 1000.0)
