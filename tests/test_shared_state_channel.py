@@ -2,6 +2,8 @@
 import asyncio
 from datetime import datetime, timedelta
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from vibe_trading.coordinator.shared_state import SharedStateManager
@@ -206,3 +208,73 @@ class TestMessageChannel:
     async def test_get_statistics(self, channel):
         stats = await channel.get_stats()
         assert stats is not None
+
+
+class TestChannelExtras:
+    @pytest.mark.asyncio
+    async def test_unsubscribe_specific_types(self):
+        from vibe_trading.agents.messaging import MessageType
+        ch = MessageChannel(maxsize=10, enable_dedup=False)
+        await ch.subscribe("a", [MessageType.ANALYSIS_REPORT,
+                                 MessageType.MACRO_ANALYSIS])
+        await ch.unsubscribe("a", [MessageType.ANALYSIS_REPORT])
+        assert MessageType.MACRO_ANALYSIS in ch._subscriptions["a"]
+
+    def test_get_subscribers(self):
+        from vibe_trading.agents.messaging import MessageType
+        ch = MessageChannel(maxsize=10, enable_dedup=False)
+        ch._subscriptions = {
+            "a": {MessageType.ANALYSIS_REPORT},
+            "b": {MessageType.ANALYSIS_REPORT, MessageType.MACRO_ANALYSIS},
+        }
+        subs = ch.get_subscribers(MessageType.ANALYSIS_REPORT)
+        assert subs == {"a", "b"}
+        subs2 = ch.get_subscribers(MessageType.MACRO_ANALYSIS)
+        assert subs2 == {"b"}
+
+    @pytest.mark.asyncio
+    async def test_size_and_clear(self):
+        ch = MessageChannel(maxsize=10, enable_dedup=False)
+        await ch.put(_msg(mid="a"))
+        assert await ch.size() == 1
+        await ch.clear()
+        assert await ch.size() == 0
+
+    @pytest.mark.asyncio
+    async def test_reset_stats(self):
+        ch = MessageChannel(maxsize=10, enable_dedup=False)
+        await ch.put(_msg(mid="a"))
+        await ch.get(timeout=1.0)
+        stats_before = await ch.get_stats()
+        assert stats_before.total_messages >= 1
+        await ch.reset_stats()
+        stats_after = await ch.get_stats()
+        assert stats_after.total_messages == 0
+
+    @pytest.mark.asyncio
+    async def test_cleanup_dedup(self):
+        ch = MessageChannel(maxsize=10, enable_dedup=True)
+        msg = _msg(mid="old")
+        from vibe_trading.prime.models import MessagePriority
+        # 直接塞入過期記錄
+        import time as _t
+        ch._seen_messages["hash_old"] = _t.time() - 9999
+        await ch._cleanup_dedup()
+        assert "hash_old" not in ch._seen_messages
+
+    @pytest.mark.asyncio
+    async def test_put_queue_full_removes_low(self):
+        from vibe_trading.prime.message_channel import PriorityMessage
+        from vibe_trading.prime.models import MessagePriority
+        ch = MessageChannel(maxsize=2, enable_dedup=False)
+        # 直接操作 queue 塞滿 (繞過 semaphore)
+        pm1 = PriorityMessage.create(_msg(mid="low1"), MessagePriority.LOW)
+        pm2 = PriorityMessage.create(_msg(mid="low2"), MessagePriority.LOW)
+        ch._queue.extend([pm1, pm2])
+        ch._semaphore = MagicMock()
+        ch._semaphore.acquire = AsyncMock(return_value=True)
+        ch._semaphore.release = MagicMock()
+        assert await ch.put(_msg(mid="new"), MessagePriority.HIGH) is True
+        ids = [pm.message.message_id for pm in ch._queue]
+        assert "new" in ids
+        assert len(ids) <= 2
