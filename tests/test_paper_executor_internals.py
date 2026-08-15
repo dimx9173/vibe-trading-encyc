@@ -322,3 +322,69 @@ class TestLiquidation:
             symbol="ETHUSDT", position_side=PositionSide.LONG,
             entry_price=3000.0, quantity=1.0, leverage=5)
         assert ex.check_liquidation("BTCUSDT", 40000.0) == []
+
+
+class TestCreateExecutor:
+    @pytest.fixture(autouse=True)
+    def _patch_settings(self):
+        from unittest.mock import patch as _p
+        settings = MagicMock()
+        settings.binance_testnet_api_key = "k"
+        settings.binance_testnet_api_secret = "s"
+        settings.okx_api_key = "k"
+        settings.okx_api_secret = "s"
+        settings.okx_passphrase = "p"
+        settings.binance_api_key = "k"
+        settings.binance_api_secret = "s"
+        with _p("vibe_trading.execution.order_executor.get_settings",
+                return_value=settings):
+            yield settings
+
+    def test_paper(self):
+        from vibe_trading.execution.order_executor import create_executor
+        ex = create_executor(TradingMode.PAPER)
+        assert ex is not None
+
+    def test_testnet_missing_keys(self):
+        from vibe_trading.execution.order_executor import create_executor
+        with self._patch_settings() as s:
+            s.binance_testnet_api_key = ""
+            with pytest.raises(ValueError):
+                create_executor(TradingMode.TESTNET)
+
+    def test_testnet_ok(self):
+        from vibe_trading.execution.order_executor import create_executor
+        from vibe_trading.execution.order_executor import BinanceOrderExecutor
+        ex = create_executor(TradingMode.TESTNET)
+        assert isinstance(ex, BinanceOrderExecutor)
+        assert ex.testnet is True
+
+    def test_okx_live_missing(self):
+        from vibe_trading.execution.order_executor import create_executor
+        with self._patch_settings() as s:
+            s.okx_api_key = ""
+            with pytest.raises(ValueError):
+                create_executor(TradingMode.OKX_LIVE)
+
+    def test_okx_live_ok(self):
+        from vibe_trading.execution.order_executor import create_executor
+        ex = create_executor(TradingMode.OKX_LIVE, dry_run=True)
+        assert ex is not None
+
+    def test_okx_testnet_ok(self):
+        from vibe_trading.execution.order_executor import create_executor
+        ex = create_executor(TradingMode.OKX_TESTNET)
+        assert ex is not None
+
+    def test_live_missing(self):
+        from vibe_trading.execution.order_executor import create_executor
+        with self._patch_settings() as s:
+            s.binance_api_key = ""
+            with pytest.raises(ValueError):
+                create_executor(TradingMode.LIVE)
+
+    def test_live_ok(self):
+        from vibe_trading.execution.order_executor import create_executor
+        from vibe_trading.execution.order_executor import BinanceOrderExecutor
+        ex = create_executor(TradingMode.LIVE, dry_run=True)
+        assert isinstance(ex, BinanceOrderExecutor)
