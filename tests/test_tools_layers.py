@@ -214,3 +214,138 @@ class TestMarketDataTools:
         legacy = market_data_tools.convert_standard_to_legacy(k)
         assert legacy.symbol == "BTCUSDT"
         assert legacy.taker_buy_base == 6.0
+
+
+class TestKlineDataTool:
+    @pytest.mark.asyncio
+    async def test_from_storage(self):
+        s = MagicMock()
+        k = MagicMock()
+        k.open_time = 1000; k.open = 1; k.high = 2; k.low = 3
+        k.close = 4; k.volume = 5
+        s.query_klines = AsyncMock(return_value=[k])
+        result = await market_data_tools.get_kline_data(
+            "BTCUSDT", "30m", 10, storage=s)
+        assert result["count"] == 1
+        assert result["latest"]["close"] == 4
+
+    @pytest.mark.asyncio
+    async def test_from_storage_empty(self):
+        s = MagicMock()
+        s.query_klines = AsyncMock(return_value=[])
+        result = await market_data_tools.get_kline_data(
+            "BTCUSDT", "30m", 10, storage=s)
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_from_provider(self):
+        provider = MagicMock()
+        std = MagicMock()
+        std.symbol = "BTCUSDT"; std.interval = "30m"; std.open_time = 1
+        std.open = 1.0; std.high = 2.0; std.low = 3.0; std.close = 4.0
+        std.volume = 5.0; std.close_time = 6; std.quote_volume = 7.0
+        std.trades = 1; std.taker_buy_base = 1.0; std.taker_buy_quote = 1.0
+        std.is_final = True
+        provider.get_klines = AsyncMock(return_value=[std])
+        with patch.object(market_data_tools, "get_binance_provider",
+                          new=AsyncMock(return_value=provider)):
+            result = await market_data_tools.get_kline_data("BTCUSDT")
+        assert result["count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_provider_fail_legacy_fallback(self):
+        provider = MagicMock()
+        provider.get_klines = AsyncMock(side_effect=RuntimeError("down"))
+        legacy = MagicMock()
+        legacy.open_time = 1; legacy.open = 1.0; legacy.high = 2.0
+        legacy.low = 3.0; legacy.close = 4.0; legacy.volume = 5.0
+        with patch.object(market_data_tools, "get_binance_provider",
+                          new=AsyncMock(return_value=provider)), \
+             patch.object(market_data_tools, "_get_klines_legacy",
+                          new=AsyncMock(return_value=[legacy])):
+            result = await market_data_tools.get_kline_data("BTCUSDT")
+        assert result["count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_no_provider_legacy(self):
+        legacy = MagicMock()
+        legacy.open_time = 1; legacy.open = 1.0; legacy.high = 2.0
+        legacy.low = 3.0; legacy.close = 4.0; legacy.volume = 5.0
+        with patch.object(market_data_tools, "get_binance_provider",
+                          new=AsyncMock(return_value=None)), \
+             patch.object(market_data_tools, "_get_klines_legacy",
+                          new=AsyncMock(return_value=[legacy])):
+            result = await market_data_tools.get_kline_data("BTCUSDT")
+        assert result["count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_legacy_empty_error(self):
+        with patch.object(market_data_tools, "get_binance_provider",
+                          new=AsyncMock(return_value=None)), \
+             patch.object(market_data_tools, "_get_klines_legacy",
+                          new=AsyncMock(return_value=[])):
+            result = await market_data_tools.get_kline_data("BTCUSDT")
+        assert "error" in result
+
+
+class TestBinanceProviderHelper:
+    @pytest.mark.asyncio
+    async def test_unavailable(self):
+        with patch.object(market_data_tools, "PROVIDER_AVAILABLE", False):
+            assert await market_data_tools.get_binance_provider() is None
+
+    @pytest.mark.asyncio
+    async def test_create_fail(self):
+        market_data_tools._binance_provider = None
+        with patch.object(market_data_tools, "PROVIDER_AVAILABLE", True), \
+             patch.object(market_data_tools.ProviderFactory, "get_provider",
+                          new=AsyncMock(side_effect=RuntimeError("x"))):
+            assert await market_data_tools.get_binance_provider() is None
+
+    @pytest.mark.asyncio
+    async def test_success_and_cached(self):
+        market_data_tools._binance_provider = None
+        provider = MagicMock()
+        with patch.object(market_data_tools, "PROVIDER_AVAILABLE", True), \
+             patch.object(market_data_tools.ProviderFactory, "get_provider",
+                          new=AsyncMock(return_value=provider)):
+            p1 = await market_data_tools.get_binance_provider()
+            p2 = await market_data_tools.get_binance_provider()
+        assert p1 is provider and p2 is provider
+
+    def test_convert_standard_to_legacy(self):
+        from vibe_trading.data_sources.providers.models import StandardKline
+        std = StandardKline(
+            exchange="binance", symbol="BTCUSDT", interval="30m",
+            open_time=1, open=1.0, high=2.0, low=3.0, close=4.0,
+            volume=5.0, close_time=6, quote_volume=7.0, trades=1,
+            taker_buy_base=1.0, taker_buy_quote=1.0, is_final=True)
+        k = market_data_tools.convert_standard_to_legacy(std)
+        assert k.symbol == "BTCUSDT"
+        assert k.close == 4.0
+
+
+class TestFundingAndInterest:
+    @pytest.mark.asyncio
+    async def test_get_funding_rate(self):
+        client = MagicMock()
+        client.rest._request = AsyncMock(return_value={
+            "lastFundingRate": "0.0001", "nextFundingTime": 123,
+            "markPrice": "50000", "indexPrice": "49999"})
+        client.close = AsyncMock()
+        with patch.object(market_data_tools, "BinanceClient",
+                          return_value=client):
+            result = await market_data_tools.get_funding_rate("BTCUSDT")
+        assert result["funding_rate"] == 0.0001
+
+    @pytest.mark.asyncio
+    async def test_get_open_interest(self):
+        client = MagicMock()
+        client.rest._request = AsyncMock(return_value={
+            "openInterest": "1234.5", "time": 999})
+        client.close = AsyncMock()
+        with patch.object(market_data_tools, "BinanceClient",
+                          return_value=client):
+            result = await market_data_tools.get_open_interest("BTCUSDT")
+        assert result["open_interest"] == 1234.5
+        assert result["timestamp"] == 999
