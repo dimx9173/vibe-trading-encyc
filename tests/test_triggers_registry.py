@@ -482,9 +482,8 @@ class TestRegistryExtras:
         events = await r.evaluate_all(_context())
         assert events == []
         await r.evaluate_all(_context())
-        await r.evaluate_all(_context())
-        events4 = await r.evaluate_all(_context())  # 第 4 次 → 達 3 確認
-        assert len(events4) == 1
+        events3 = await r.evaluate_all(_context())  # 第 3 次 → 達 3 確認
+        assert len(events3) == 1
 
     @pytest.mark.asyncio
     async def test_evaluate_trigger_ok_and_handler(self):
