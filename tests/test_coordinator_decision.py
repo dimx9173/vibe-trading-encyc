@@ -798,6 +798,7 @@ class TestRunResearchDebate:
         from types import SimpleNamespace
         from unittest.mock import patch as _p
         import vibe_trading.coordinator.trading_coordinator as tc
+        coordinator._researchers = {"manager": MagicMock()}
         settings = MagicMock()
         settings.skip_debate = True
         with _p.object(tc, "get_settings", return_value=settings), \
@@ -833,6 +834,6 @@ class TestRunResearchDebate:
             result = await coordinator._run_research_debate(
                 SimpleNamespace(symbol="BTCUSDT", current_price=100.0,
                                 market_data={}),
-                {"technical": "bullish"}, "D1", {})
+                {"technical": "bullish"}, "D1", {"messages_sent": 0})
         assert result == "Buy BTC"
         assert coordinator._message_broker.send.call_count == 5  # 2*2 + 1
