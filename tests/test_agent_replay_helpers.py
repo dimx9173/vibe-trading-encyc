@@ -224,3 +224,44 @@ class TestInstallCacheWrapper:
         assert ok is True
         cache.put.assert_called_once()
         assert calls == ["prompt text"]
+
+
+class TestRunReplay:
+    @pytest.mark.asyncio
+    async def test_no_bars_raises(self, tmp_path):
+        from vibe_trading.backtest.agent_models import AgentReplayConfig
+        bars = tmp_path / "bars.json"
+        bars.write_text("[]")
+        cfg = AgentReplayConfig(bars_path=str(bars), start=0, end=None)
+        with pytest.raises(ValueError):
+            await agent_replay.run_replay(cfg)
+
+    @pytest.mark.asyncio
+    async def test_resume_skips_done(self, tmp_path):
+        from vibe_trading.backtest.agent_models import AgentReplayConfig
+        bars = tmp_path / "bars.json"
+        bars.write_text(__import__("json").dumps([[1700000000000, 100, 105, 95, 102, 1000]]))
+        log = tmp_path / "replay.jsonl"
+        log.write_text(__import__("json").dumps({"bar_open_ms": 1700000000000}) + "\n")
+        cfg = AgentReplayConfig(
+            bars_path=str(bars), log_path=str(log), start=0, end=None,
+            resume=True, yes=True, db_path=str(tmp_path / "r.db"),
+            state_path=str(tmp_path / "s.json"),
+        )
+        # resume 後 replay 空 → confirm 顯示 0 bars
+        with patch.object(agent_replay, "_confirm_run", new=AsyncMock(return_value=True)):
+            result = await agent_replay.run_replay(cfg)
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_cancel_returns_empty(self, tmp_path):
+        from vibe_trading.backtest.agent_models import AgentReplayConfig
+        bars = tmp_path / "bars.json"
+        bars.write_text(__import__("json").dumps([[1700000000000, 100, 105, 95, 102, 1000]]))
+        cfg = AgentReplayConfig(
+            bars_path=str(bars), log_path=str(tmp_path / "r.jsonl"),
+            start=0, end=None, yes=False,
+        )
+        with patch.object(agent_replay, "_confirm_run", new=AsyncMock(return_value=False)):
+            result = await agent_replay.run_replay(cfg)
+        assert result.symbol == "BTCUSDT"
