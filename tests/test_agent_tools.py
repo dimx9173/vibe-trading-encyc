@@ -235,7 +235,7 @@ class TestComposeFactorTool:
         storage = MagicMock()
         storage.query_klines = AsyncMock(return_value=klines)
         tool = agent_tools.create_compose_factor_tool(MagicMock(storage=storage))
-        result = await tool.execute("id", {"symbol": "BTCUSDT", "formula": ["ADD", "close", 0]})
+        result = await tool.execute("id", {"symbol": "BTCUSDT", "formula": ["ADD", "momentum_rev", 0]})
         assert "compose_factor" in result.content[0].text
 
     @pytest.mark.asyncio
@@ -252,4 +252,4 @@ class TestComposeFactorTool:
         storage.query_klines = AsyncMock(return_value=klines)
         tool = agent_tools.create_compose_factor_tool(MagicMock(storage=storage))
         result = await tool.execute("id", {"symbol": "BTCUSDT", "formula": ["NOPE_OP", 1]})
-        assert "公式无效" in result.content[0].text or "错误" in result.content[0].text
+        assert "公式無效" in result.content[0].text or "错误" in result.content[0].text
