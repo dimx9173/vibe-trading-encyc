@@ -50,7 +50,7 @@ class TestCreate:
         factory = SubagentFactory()
         with patch.object(factory, "create_subagent", return_value=None):
             handles = factory.create_all_subagents(MagicMock())
-        assert isinstance(handles, list)
+        assert isinstance(handles, dict)
 
     def test_create_agent_instance_unknown(self):
         factory = SubagentFactory()
