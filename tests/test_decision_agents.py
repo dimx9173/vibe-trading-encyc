@@ -189,3 +189,41 @@ class TestPMDecision:
                 {"technical": "看漲"}, "plan", _trading_plan(), {}, [], 10000, 50000)
         assert result["decision_text"] == "Decision: BUY\nRationale: 突破"
         assert result["execution_plan"] is not None  # total_position_usdt > 0
+
+
+class TestBuildDecisionPrompt:
+    def test_build_prompt_contains_context(self):
+        from vibe_trading.agents.decision.decision_agents import PortfolioManagerAgent
+        pm = PortfolioManagerAgent()
+        pm._tool_context = MagicMock()
+        pm._tool_context.symbol = "BTCUSDT"
+        sc = MagicMock()
+        sc.recommended_action = "BUY"
+        sc.confidence = 0.8
+        sc.supporting_factors = ["技術面"]
+        sc.risk_factors = ["波動大"]
+        prompt = pm._build_decision_prompt(
+            scorecard=sc, analyst_reports={"technical": "看漲"},
+            investment_plan="BUY plan", trading_plan=_trading_plan(),
+            risk_debate={"neutral": "低風險"},
+            current_positions=[], account_balance=10000, current_price=50000,
+        )
+        assert "BTCUSDT" in prompt
+        assert "BUY" in prompt
+
+    def test_build_prompt_no_analysts(self):
+        from vibe_trading.agents.decision.decision_agents import PortfolioManagerAgent
+        pm = PortfolioManagerAgent()
+        pm._tool_context = MagicMock()
+        pm._tool_context.symbol = "BTCUSDT"
+        sc = MagicMock()
+        sc.recommended_action = "HOLD"
+        sc.confidence = 0.5
+        sc.supporting_factors = []
+        sc.risk_factors = []
+        prompt = pm._build_decision_prompt(
+            scorecard=sc, analyst_reports={}, investment_plan="",
+            trading_plan=_trading_plan(), risk_debate={},
+            current_positions=[], account_balance=0, current_price=0,
+        )
+        assert "BTCUSDT" in prompt
