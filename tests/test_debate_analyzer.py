@@ -131,3 +131,73 @@ class TestModels:
             key_factors=[], risk_factors=[], overall_score=60,
         )
         assert rec.action == "BUY"
+
+
+class TestDebateEvaluatorMethods:
+    def test_calculate_side_score(self):
+        from datetime import datetime
+        ev = DebateEvaluator()
+        args = [
+            Argument(content="看漲", category=ArgumentCategory.TECHNICAL,
+                     strength=ArgumentStrength.STRONG, confidence=0.8,
+                     evidence_based=True, data_mentioned=[], key_points=[],
+                     timestamp=datetime(2026, 1, 1)),
+        ]
+        score = ev._calculate_side_score(args)
+        assert 0 < score <= 100
+
+    def test_calculate_side_score_empty(self):
+        ev = DebateEvaluator()
+        assert ev._calculate_side_score([]) == 0.0
+
+    def test_count_strengths(self):
+        from datetime import datetime
+        ev = DebateEvaluator()
+        args = [
+            Argument(content="a", category=ArgumentCategory.TECHNICAL,
+                     strength=ArgumentStrength.STRONG, confidence=0.8,
+                     evidence_based=True, data_mentioned=[], key_points=[],
+                     timestamp=datetime(2026, 1, 1)),
+            Argument(content="b", category=ArgumentCategory.FUNDAMENTAL,
+                     strength=ArgumentStrength.WEAK, confidence=0.3,
+                     evidence_based=False, data_mentioned=[], key_points=[],
+                     timestamp=datetime(2026, 1, 1)),
+        ]
+        counts = ev._count_strengths(args)
+        assert counts[ArgumentStrength.STRONG] == 1
+        assert counts[ArgumentStrength.WEAK] == 1
+
+    def test_calculate_consensus(self):
+        from datetime import datetime
+        ev = DebateEvaluator()
+        bull = [
+            Argument(content="看漲", category=ArgumentCategory.TECHNICAL,
+                     strength=ArgumentStrength.STRONG, confidence=0.8,
+                     evidence_based=True, data_mentioned=[], key_points=[],
+                     timestamp=datetime(2026, 1, 1)),
+        ]
+        bear = [
+            Argument(content="看跌", category=ArgumentCategory.TECHNICAL,
+                     strength=ArgumentStrength.STRONG, confidence=0.8,
+                     evidence_based=True, data_mentioned=[], key_points=[],
+                     timestamp=datetime(2026, 1, 1)),
+        ]
+        consensus = ev._calculate_consensus(bull, bear)
+        assert 0 < consensus <= 1
+
+    def test_calculate_consensus_empty(self):
+        ev = DebateEvaluator()
+        assert ev._calculate_consensus([], []) == 0.0
+
+    def test_evaluate_dimensions(self):
+        from datetime import datetime
+        ev = DebateEvaluator()
+        bull = [
+            Argument(content="看漲", category=ArgumentCategory.TECHNICAL,
+                     strength=ArgumentStrength.STRONG, confidence=0.8,
+                     evidence_based=True, data_mentioned=[], key_points=[],
+                     timestamp=datetime(2026, 1, 1)),
+        ]
+        dims = ev._evaluate_dimensions(bull, [])
+        assert "technical" in dims
+        assert dims["technical"]["bull"] > 0
