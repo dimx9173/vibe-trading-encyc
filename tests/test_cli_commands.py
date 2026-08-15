@@ -613,3 +613,73 @@ class TestAlphaBench:
             ])
         assert result.exit_code == 0
         assert "共測試 0 個因子" in result.output
+
+
+class TestRunPrimeSystem:
+    @pytest.mark.asyncio
+    async def test_run_basic(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        agent = MagicMock()
+        agent.start = AsyncMock()
+        agent.close = AsyncMock()
+        with _p.object(cli_mod, "PrimeAgent", return_value=agent), \
+             _p.object(cli_mod, "PrimeAgentConfig", return_value=MagicMock()), \
+             _p.object(cli_mod, "PrimeConfig", return_value=MagicMock()), \
+             _p.object(cli_mod, "HarnessConfig", return_value=MagicMock()), \
+             _p.object(cli_mod, "configure", return_value=None):
+            await cli_mod.run_prime_system(
+                symbols=["BTCUSDT"], interval="30m",
+                mode=TradingMode.PAPER, execute_trades=False)
+        agent.start.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_run_save_logs(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        agent = MagicMock()
+        agent.start = AsyncMock()
+        with _p.object(cli_mod, "PrimeAgent", return_value=agent), \
+             _p.object(cli_mod, "PrimeAgentConfig", return_value=MagicMock()), \
+             _p.object(cli_mod, "PrimeConfig", return_value=MagicMock()), \
+             _p.object(cli_mod, "HarnessConfig", return_value=MagicMock()), \
+             _p.object(cli_mod, "configure", return_value=None) as cfg:
+            await cli_mod.run_prime_system(
+                symbols=["BTCUSDT"], interval="30m",
+                mode=TradingMode.PAPER, execute_trades=False,
+                save_logs=True)
+            assert cfg.call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_run_with_web(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        agent = MagicMock()
+        agent.start = AsyncMock()
+        with _p.object(cli_mod, "PrimeAgent", return_value=agent), \
+             _p.object(cli_mod, "PrimeAgentConfig", return_value=MagicMock()), \
+             _p.object(cli_mod, "PrimeConfig", return_value=MagicMock()), \
+             _p.object(cli_mod, "HarnessConfig", return_value=MagicMock()), \
+             _p.object(cli_mod, "configure", return_value=None), \
+             _p.object(cli_mod, "run_web_server", new=AsyncMock()):
+            await cli_mod.run_prime_system(
+                symbols=["BTCUSDT"], interval="30m",
+                mode=TradingMode.PAPER, execute_trades=False,
+                enable_web=True, web_port=8002)
+
+    @pytest.mark.asyncio
+    async def test_run_exception(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        agent = MagicMock()
+        agent.start = AsyncMock(side_effect=RuntimeError("boom"))
+        with _p.object(cli_mod, "PrimeAgent", return_value=agent), \
+             _p.object(cli_mod, "PrimeAgentConfig", return_value=MagicMock()), \
+             _p.object(cli_mod, "PrimeConfig", return_value=MagicMock()), \
+             _p.object(cli_mod, "HarnessConfig", return_value=MagicMock()), \
+             _p.object(cli_mod, "configure", return_value=None), \
+             _p.object(cli_mod, "logger", MagicMock()):
+            await cli_mod.run_prime_system(
+                symbols=["BTCUSDT"], interval="30m",
+                mode=TradingMode.PAPER, execute_trades=False)
+        # 錯誤被吞
