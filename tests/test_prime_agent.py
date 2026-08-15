@@ -600,3 +600,60 @@ class TestStatusAndConstraint:
                      priority=__import__("vibe_trading.prime.models", fromlist=["DecisionPriority"]).DecisionPriority.HIGH,
                      timestamp=__import__("datetime").datetime.now())
         await a._send_reduce_position_signal(d)  # 不 raise
+
+
+class TestEmergencyDecision:
+    @pytest.mark.asyncio
+    async def test_classify_emergency_crash(self):
+        from vibe_trading.prime.models import EmergencyType
+        a = _agent()
+        msg = MagicMock()
+        msg.content = {"price_change": -0.10}
+        msg.message_id = "m1"
+        assert a._classify_emergency(msg) == EmergencyType.CRASH
+
+    @pytest.mark.asyncio
+    async def test_classify_emergency_risk(self):
+        from vibe_trading.prime.models import EmergencyType
+        a = _agent()
+        msg = MagicMock()
+        msg.content = {"var_value": 0.5}
+        assert a._classify_emergency(msg) == EmergencyType.RISK_LIMIT
+
+    @pytest.mark.asyncio
+    async def test_classify_emergency_margin(self):
+        from vibe_trading.prime.models import EmergencyType
+        a = _agent()
+        msg = MagicMock()
+        msg.content = {"margin_ratio": 0.9}
+        assert a._classify_emergency(msg) == EmergencyType.MARGIN_CALL
+
+    @pytest.mark.asyncio
+    async def test_classify_emergency_default(self):
+        from vibe_trading.prime.models import EmergencyType
+        a = _agent()
+        msg = MagicMock()
+        msg.content = {}
+        result = a._classify_emergency(msg)
+        assert result in EmergencyType  # 任一類型
+
+    @pytest.mark.asyncio
+    async def test_emergency_decision_crash(self):
+        from vibe_trading.prime.models import TradingAction
+        a = _agent()
+        msg = MagicMock()
+        msg.content = {"price_change": -0.10}
+        msg.message_id = "m1"
+        d = await a._emergency_decision(msg)
+        assert d.action == TradingAction.CLOSE_ALL
+        assert d.override is True
+
+    @pytest.mark.asyncio
+    async def test_emergency_decision_hold(self):
+        from vibe_trading.prime.models import TradingAction
+        a = _agent()
+        msg = MagicMock()
+        msg.content = {}
+        msg.message_id = "m1"
+        d = await a._emergency_decision(msg)
+        assert d.action == TradingAction.HOLD
