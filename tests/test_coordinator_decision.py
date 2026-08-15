@@ -234,3 +234,98 @@ class TestRunTrader:
 class TestMaturationWindow:
     def test_maturation_window_returns_ms(self, coordinator):
         assert coordinator._maturation_window_ms() > 0
+
+
+class TestRiskAssessment:
+    @pytest.mark.asyncio
+    async def test_no_risk_analysts(self, coordinator):
+        result = await coordinator._run_risk_assessment(
+            "plan", [], 10000.0, "cid", {})
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_with_risk_analysts(self, coordinator):
+        coordinator._risk_analysts = {"aggressive": MagicMock(), "neutral": MagicMock()}
+        with patch("vibe_trading.coordinator.trading_coordinator.run_risk_debate",
+                   new=AsyncMock(return_value={"aggressive": "high risk"})):
+            result = await coordinator._run_risk_assessment(
+                "plan", [], 10000.0, "cid", {"messages_sent": 0})
+        assert result["aggressive"] == "high risk"
+
+
+class TestRunTraderStage:
+    @pytest.mark.asyncio
+    async def test_no_trader(self, coordinator):
+        coordinator._trader = None
+        result = await coordinator._run_trader(
+            "plan", {}, MagicMock(symbol="BTCUSDT", current_price=1.0), 10000.0)
+        assert result == "No trading plan (trader not enabled)"
+
+    @pytest.mark.asyncio
+    async def test_trader_direction_long(self, coordinator):
+        trader = MagicMock()
+        trader.create_trading_plan = AsyncMock(return_value="PLAN")
+        coordinator._trader = trader
+        ctx = MagicMock(symbol="BTCUSDT", current_price=50000.0)
+        result = await coordinator._run_trader("看漲做多", {}, ctx, 10000.0)
+        assert result == "PLAN"
+        # direction 應為 LONG
+        assert trader.create_trading_plan.call_args.kwargs["direction"] == "LONG"
+
+    @pytest.mark.asyncio
+    async def test_trader_direction_short(self, coordinator):
+        trader = MagicMock()
+        trader.create_trading_plan = AsyncMock(return_value="PLAN")
+        coordinator._trader = trader
+        ctx = MagicMock(symbol="BTCUSDT", current_price=50000.0)
+        await coordinator._run_trader("做空看跌", {}, ctx, 10000.0)
+        assert trader.create_trading_plan.call_args.kwargs["direction"] == "SHORT"
+
+    @pytest.mark.asyncio
+    async def test_trader_direction_hold_default(self, coordinator):
+        trader = MagicMock()
+        trader.create_trading_plan = AsyncMock(return_value="PLAN")
+        coordinator._trader = trader
+        ctx = MagicMock(symbol="BTCUSDT", current_price=50000.0)
+        await coordinator._run_trader("中性看法", {}, ctx, 10000.0)
+        assert trader.create_trading_plan.call_args.kwargs["direction"] == "HOLD"
+
+
+class TestPortfolioManager:
+    @pytest.mark.asyncio
+    async def test_no_pm(self, coordinator):
+        coordinator._portfolio_manager = None
+        result = await coordinator._run_portfolio_manager(
+            {}, "plan", "tplan", {}, [], 10000.0,
+            MagicMock(current_price=1.0),
+        )
+        assert result["decision"] == "HOLD"
+
+    @pytest.mark.asyncio
+    async def test_pm_decision(self, coordinator):
+        pm = MagicMock()
+        pm.make_final_decision = AsyncMock(return_value={
+            "decision_text": "Decision: BUY\nRationale: 看漲",
+            "scorecard": MagicMock(confidence=0.8),
+        })
+        coordinator._portfolio_manager = pm
+        result = await coordinator._run_portfolio_manager(
+            {}, "plan", "tplan", {}, [], 10000.0,
+            MagicMock(current_price=1.0),
+        )
+        assert result["decision"] == "BUY"
+        assert result["confidence"] == 0.8
+
+    @pytest.mark.asyncio
+    async def test_pm_hold_decision(self, coordinator):
+        pm = MagicMock()
+        pm.make_final_decision = AsyncMock(return_value={
+            "decision_text": "Decision: HOLD\nRationale: 觀望",
+            "scorecard": MagicMock(confidence=0.4),
+        })
+        coordinator._portfolio_manager = pm
+        result = await coordinator._run_portfolio_manager(
+            {}, "plan", "tplan", {}, [], 10000.0,
+            MagicMock(current_price=1.0),
+        )
+        assert result["decision"] == "HOLD"
