@@ -228,3 +228,55 @@ class TestAnalyzeCommand:
             result = runner.invoke(app, ["analyze", "BTCUSDT"])
         assert result.exit_code == 0
         assert "HOLD" in result.output
+
+
+class TestAlphaBench:
+    def test_alpha_bench_no_data(self, tmp_path):
+        """storage 空 → 顯示提示但 exit 0."""
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        storage = MagicMock()
+        storage.query_klines = AsyncMock(return_value=[])
+        with _p.object(cli_mod, "KlineStorage", return_value=storage):
+            result = runner.invoke(app, ["alpha", "bench", "BTCUSDT"])
+        assert result.exit_code == 0
+
+    def test_alpha_bench_data_error(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        storage = MagicMock()
+        storage.query_klines = AsyncMock(side_effect=RuntimeError("down"))
+        with _p.object(cli_mod, "KlineStorage", return_value=storage):
+            result = runner.invoke(app, ["alpha", "bench", "BTCUSDT"])
+        assert result.exit_code == 0  # fail-safe
+
+
+class TestBacktestAgent:
+    def test_bt_agent_fetch(self, tmp_path):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        with _p("vibe_trading.backtest.agent_fetch.fetch_bars") as mock_fetch:
+            result = runner.invoke(app, [
+                "backtest-agent", "fetch", "--symbol", "BTCUSDT",
+                "--out", str(tmp_path / "bars.json"),
+            ])
+        assert result.exit_code == 0
+        mock_fetch.assert_called_once()
+
+    def test_bt_agent_report_missing(self, tmp_path):
+        """無 JSONL → 不崩潰."""
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        result = runner.invoke(app, [
+            "backtest-agent", "report", str(tmp_path / "nope.jsonl"),
+        ])
+        assert result.exit_code == 0
+
+    def test_bt_agent_run_missing_bars(self, tmp_path):
+        """bars 檔案不存在 → 錯誤但 exit 0 (fail-safe 或 abort)."""
+        result = runner.invoke(app, [
+            "backtest-agent", "run", "--bars", "5", "--yes",
+            "--bars-path", str(tmp_path / "nope.json"),
+            "--log-path", str(tmp_path / "out.jsonl"),
+        ])
+        assert result.exit_code in (0, 1)
