@@ -387,7 +387,7 @@ class TestFundamentalTools:
         with patch.object(fundamental_tools.httpx, "AsyncClient",
                           return_value=client):
             result = await fundamental_tools.get_taker_buy_sell_ratio("BTCUSDT")
-        assert "taker_buy_sell_ratio" in result
+        assert result["buy_sell_ratio"] == 2.0
 
     @pytest.mark.asyncio
     async def test_get_open_interest_fundamental(self):
