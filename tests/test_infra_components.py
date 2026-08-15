@@ -259,3 +259,60 @@ class TestSignalProcessor:
             reasoning="r", key_factors=[], price_target=None,
         )
         assert s.signal == TradingSignal.BUY
+
+
+class TestSignalProcessorExtract:
+    def test_process_full_signal(self):
+        p = SignalProcessor()
+        sig = p.process_signal(
+            "Decision: STRONG BUY\n"
+            "Reason: 因為突破阻力位\n"
+            "Target: 52000\n"
+            "Stop loss: 49000\n"
+            "Position size: 30%\n"
+            "Long term\n"
+            "- 支撐位 48000\n"
+            "- 阻力位 51000",
+        )
+        assert sig.signal == TradingSignal.BUY
+        assert sig.price_target == 52000.0
+        assert sig.stop_loss == 49000.0
+        assert sig.position_size_pct == 30.0
+        assert sig.time_horizon == "long"
+        assert len(sig.key_factors) >= 1
+
+    def test_process_empty(self):
+        p = SignalProcessor()
+        sig = p.process_signal("")
+        assert sig.signal == TradingSignal.UNKNOWN
+
+    def test_confidence_clamped(self):
+        p = SignalProcessor()
+        sig = p.process_signal("short text")
+        assert 0.0 <= sig.confidence <= 1.0
+
+    def test_extract_reasoning_keyword(self):
+        p = SignalProcessor()
+        r = p._extract_reasoning("市場很好。因為突破支撐所以看漲。")
+        assert "因為" in r
+
+    def test_extract_price_target_none(self):
+        p = SignalProcessor()
+        assert p._extract_price_target("無目標價") is None
+
+    def test_extract_stop_loss(self):
+        p = SignalProcessor()
+        sl = p._extract_stop_loss("Stop loss: 48000")
+        assert sl == 48000.0
+
+    def test_extract_position_size(self):
+        p = SignalProcessor()
+        assert p._extract_position_size("Position size: 25%") == 25.0
+        assert p._extract_position_size("仓位: 25%") == 25.0
+        assert p._extract_position_size("無") is None
+
+    def test_extract_time_horizon(self):
+        p = SignalProcessor()
+        assert p._extract_time_horizon("Long term") == "long"
+        assert p._extract_time_horizon("短期") == "short"
+        assert p._extract_time_horizon("無") is None

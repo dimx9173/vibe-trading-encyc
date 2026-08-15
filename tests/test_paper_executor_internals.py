@@ -143,3 +143,45 @@ class TestGetSet:
         assert bal["USDT"]["balance"] == 1234.0
         assert await ex.get_positions() == []
         assert await ex.cancel_order("BTCUSDT", "x") is False  # 無此訂單
+
+
+class TestPendingOrders:
+    def _pending(self, order_type, stop_price):
+        return {
+            "order_id": "o1", "symbol": "BTCUSDT", "side": OrderSide.SELL,
+            "order_type": order_type, "quantity": 0.1,
+            "position_side": PositionSide.LONG, "stop_price": stop_price,
+            "reduce_only": True,
+        }
+
+    def test_stop_market_triggers(self):
+        ex = PaperOrderExecutor()
+        pending = self._pending(OrderType.STOP_MARKET, 49000.0)
+        ex._pending_orders.append(pending)
+        ex._positions["BTCUSDT_LONG"] = PaperPosition(
+            symbol="BTCUSDT", position_side=PositionSide.LONG,
+            entry_price=50000.0, quantity=0.1, leverage=5)
+        ex.update_price("BTCUSDT", 48000.0)  # 觸發 STOP
+        assert pending not in ex._pending_orders
+        assert "BTCUSDT_LONG" not in ex._positions  # 平倉
+
+    def test_stop_market_not_triggered(self):
+        ex = PaperOrderExecutor()
+        pending = self._pending(OrderType.STOP_MARKET, 49000.0)
+        ex._pending_orders.append(pending)
+        ex.update_price("BTCUSDT", 50000.0)  # 未觸發
+        assert pending in ex._pending_orders
+
+    def test_take_profit_triggers(self):
+        ex = PaperOrderExecutor()
+        pending = self._pending(OrderType.TAKE_PROFIT_MARKET, 51000.0)
+        ex._pending_orders.append(pending)
+        ex.update_price("BTCUSDT", 51500.0)  # 觸發 TP
+        assert pending not in ex._pending_orders
+
+    def test_execute_pending_order_direct(self):
+        ex = PaperOrderExecutor()
+        pending = self._pending(OrderType.STOP_MARKET, 49000.0)
+        result = ex._execute_pending_order(pending, 48000.0)
+        assert result is not None
+        assert result.order_id == "o1"
