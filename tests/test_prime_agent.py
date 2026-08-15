@@ -572,7 +572,7 @@ class TestStatusAndConstraint:
         a.harness = MagicMock()
         a.harness.get_violation_summary = AsyncMock(return_value={})
         a.harness.get_all_constraint_statuses = AsyncMock(return_value={})
-        a.state = SimpleNamespace(is_streaming=False, error_message=None, messages=[])
+        a._state = SimpleNamespace(is_streaming=False, error_message=None, messages=[])
         status = await a.get_status()
         assert isinstance(status, dict)
         # 第二版: get_status 若 harness mock 完整也可再跑
