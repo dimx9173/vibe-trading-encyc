@@ -694,9 +694,10 @@ class TestOnTradeCompleted:
 class TestClose:
     @pytest.mark.asyncio
     async def test_close_calls_agent_close(self, coordinator):
+        from types import SimpleNamespace
         with_close = MagicMock()
         with_close.close = AsyncMock(return_value=None)
-        no_close = MagicMock()
+        no_close = SimpleNamespace()  # 無 close attr
         coordinator._analysts = {"a": with_close, "b": no_close}
         coordinator._researchers = {"r": with_close}
         coordinator._risk_analysts = {"k": with_close}
