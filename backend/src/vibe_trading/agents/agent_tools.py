@@ -1191,7 +1191,7 @@ def get_tools_for_agent(agent_role: str) -> list[AgentTool]:
     # 分析师团队 - 专注于各自领域的数据
     if agent_role == "technical_analyst":
         # 技术分析师需要技术分析工具
-        return [
+        tools = [
             all_tools["get_current_price"],
             all_tools["get_24hr_ticker"],
             all_tools["get_order_book"],
@@ -1200,8 +1200,13 @@ def get_tools_for_agent(agent_role: str) -> list[AgentTool]:
             all_tools["analyze_trend"],
             all_tools["detect_support_resistance"],
             all_tools["detect_candlestick_patterns"],
-            all_tools["compose_factor"],
         ]
+        # Fix 2026-08-15: compose_factor 不在 get_all_tools（透過 additional_tools 綁定）
+        # → 動態附加，避免 KeyError 使 technical_analyst 完全拿不到 tools
+        compose = all_tools.get("compose_factor")
+        if compose is not None:
+            tools.append(compose)
+        return tools
 
     elif agent_role == "fundamental_analyst":
         return [

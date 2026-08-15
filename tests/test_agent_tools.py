@@ -174,3 +174,33 @@ class TestToolRegistry:
                           new=AsyncMock(return_value={"price": 100.0})):
             result = await tool.execute("id", {"symbol": "BTCUSDT"})
         assert "100.0" in result.content[0].text
+
+
+class TestToolFactories:
+    def test_get_execution_tools(self):
+        tools = agent_tools.get_execution_tools(MagicMock())
+        assert len(tools) == 1
+        assert tools[0].name == "submit_trade_order"
+
+    def test_get_technical_tools(self):
+        tools = agent_tools.get_technical_tools(MagicMock())
+        assert len(tools) == 1
+        assert tools[0].name == "compose_factor"
+
+    def test_get_tools_for_agent(self):
+        tools = agent_tools.get_tools_for_agent("fundamental_analyst")
+        assert isinstance(tools, list)
+        names = [t.name for t in tools]
+        assert "get_funding_rate" in names
+
+    def test_get_tools_for_unknown_agent(self):
+        tools = agent_tools.get_tools_for_agent("mystery_role")
+        assert isinstance(tools, list)
+
+
+class TestTechnicalAnalystTools:
+    def test_get_tools_for_technical(self):
+        tools = agent_tools.get_tools_for_agent("technical_analyst")
+        names = [t.name for t in tools]
+        assert "get_technical_indicators" in names
+        assert "get_current_price" in names
