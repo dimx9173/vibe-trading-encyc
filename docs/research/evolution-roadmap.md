@@ -114,7 +114,9 @@ graph LR
 ### 🌐 Phase 4：全鏈路 Crypto CEX/DEX 擴展與 MCP 生態（Crypto-Native CEX/DEX & MCP）
 > **戰略定位**：**專注加密貨幣 CEX / DEX 縱深**，建立全鏈路加密執行矩陣與標準化開放生態。
 
-#### 4.1 CEX 與 DEX 雙軌執行矩陣（Tier-1 CEX + Tier-1 DEX）
+#### 4.1 CEX 與 DEX 雙軌執行矩陣（Tier-1 CEX + Tier-1 DEX）✅
+* **已交付** (2026-08-15): `execution/bybit_executor.py` + `bitget_executor.py` (永續, 鏡像 OKX dry-run 模式, v5/v2 REST 簽名) + `hyperliquid_executor.py` (DEX 訂單簿永續, allMids 公開報價) + `jupiter_executor.py` (Solana swap 聚合, 公開 quote) + `execution/sor.py` (跨所最佳報價路由, fail-safe 並行詢價) + `execution/funding_arb.py` (delta-neutral 資金費率套利偵測); `vibe-trade research sor-quote`/`funding-arb` CLI; BrokerType 擴充 6 所
+* **留後續 (v2)**: 真實下單需金鑰/錢包簽名 (TC-06 dry-run 優先); EVM DEX (Uniswap v3); Coin-M 幣本位
 * **中心化交易所（CEX）**：
   * **Binance**（現有）→ 擴展 Coin-M 幣本位合約
   * **OKX / Bybit / Bitget**：永續合約接入

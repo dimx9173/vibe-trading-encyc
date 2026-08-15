@@ -1114,6 +1114,92 @@ def manifest_diff(
     warning("方法論漂移偵測到", tag="MANIFEST")
 
 
+@research_app.command("sor-quote")
+def sor_quote(
+    symbol: str = typer.Option("BTCUSDT", help="標的"),
+):
+    """跨所最佳報價路由 (Phase 4.1 SOR, dry-run mock)"""
+    import asyncio
+
+    from vibe_trading.execution.broker_connector import BrokerConnector, BrokerConfig, BrokerType
+    from vibe_trading.execution.bybit_executor import BybitOrderExecutor
+    from vibe_trading.execution.sor import SmartOrderRouter
+    from vibe_trading.data_sources.binance_client import OrderSide
+
+    # dry-run 執行器 (mock 報價)
+    bybit = BybitOrderExecutor(BrokerConfig(
+        broker_type=BrokerType.BYBIT, api_key="", api_secret="", dry_run=True,
+    ))
+
+    class _MockConnector(BrokerConnector):
+        """dry-run mock: 固定報價."""
+
+        async def place_order(self, *args, **kwargs):
+            raise NotImplementedError
+
+        async def cancel_order(self, symbol: str, order_id: str) -> bool:
+            return True
+
+        async def get_positions(self):
+            return []
+
+        async def get_balance(self):
+            return {}
+
+        async def close(self) -> None:
+            pass
+
+        async def get_mid_price(self, symbol: str) -> float:
+            return 67500.0
+
+    hl = _MockConnector()
+    router = SmartOrderRouter(
+        {BrokerType.BYBIT: bybit, BrokerType.HYPERLIQUID: hl}  # type: ignore[dict-item]
+    )
+
+    async def _run() -> None:
+        quotes = await router.quotes_all(symbol)
+        for broker, price in quotes.items():
+            console.print(f"  {broker.value}: {price:.4f}")
+        best = await router.best_quote(symbol, OrderSide.BUY)
+        if best:
+            success(f"最佳 BUY 路由: {best}", tag="SOR")
+        else:
+            warning("無可用報價 (dry-run 需 mock)", tag="SOR")
+
+    asyncio.run(_run())
+
+
+@research_app.command("funding-arb")
+def funding_arb(
+    binance: float = typer.Option(0.0001, help="Binance 8h 資金費率 (小數)"),
+    okx: float = typer.Option(0.0002, help="OKX 8h 資金費率"),
+    bybit: float = typer.Option(0.00015, help="Bybit 8h 資金費率"),
+    bitget: float = typer.Option(0.0001, help="Bitget 8h 資金費率"),
+    min_annualized: float = typer.Option(0.10, help="最低年化率閾值"),
+):
+    """跨所資金費率套利偵測 (Phase 4.1, Delta-Neutral)"""
+    from vibe_trading.execution.broker_connector import BrokerType
+    from vibe_trading.execution.funding_arb import scan_funding_arb
+
+    rates = {
+        BrokerType.BINANCE: binance,
+        BrokerType.OKX: okx,
+        BrokerType.BYBIT: bybit,
+        BrokerType.BITGET: bitget,
+    }
+    opps = scan_funding_arb(rates, min_annualized=min_annualized)
+    if not opps:
+        console.print("[dim]無符合閾值的套利機會[/dim]")
+        return
+    for o in opps:
+        console.print(
+            f"  long {o.long_broker.value} / short {o.short_broker.value}: "
+            f"年化 {o.annualized_rate:.1%} (費率差 {o.spread_bps:.1f}bp)"
+        )
+    success(f"{len(opps)} 個套利機會 (delta-neutral)", tag="FUNDING-ARB")
+
+
 @research_app.command("goal-create")
 def goal_create(
     title: str = typer.Argument(..., help="研究目標標題"),

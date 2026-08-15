@@ -22,6 +22,10 @@ class BrokerType(str, Enum):
     """Broker 類型"""
     BINANCE = "binance"
     OKX = "okx"
+    BYBIT = "bybit"
+    BITGET = "bitget"
+    HYPERLIQUID = "hyperliquid"
+    JUPITER = "jupiter"
     PAPER = "paper"
 
 

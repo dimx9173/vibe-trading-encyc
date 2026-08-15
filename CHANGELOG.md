@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Added
+- CEX/DEX 執行矩陣 (Phase 4.1): Bybit/Bitget 永續執行器 + Hyperliquid DEX + Jupiter swap (全部 dry-run 優先) + SOR 跨所路由 + 資金費率套利偵測 (`sor-quote`/`funding-arb` CLI)
 - Crypto MCP 計算工具 (Phase 4.4): `quantlib_var_calc`/`alpha_stackvm_eval`/`crypto_universe_scan` + Host/Origin guard (DNS-rebinding 防護)
 - RunManifest 方法論指紋 (Phase 4.3): replay 可重現性可證明 (prompt/tools/套件 content-addressed hash), `manifest-diff` 偵測漂移
 - 動態標的宇宙 + 退出階梯 (Phase 4.2): `universe-scan` (Binance 永續 24h 排名/過濾) + trailing stop/moonbag 退出狀態機 (PaperOrderExecutor 接入)
