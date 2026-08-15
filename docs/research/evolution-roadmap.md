@@ -68,7 +68,8 @@ graph LR
 > **借鑑來源**：`AlphaGPT`（微觀因子 + StackVM, **取工具層, 不取 RL 學習循環**）  
 > **核心目標**：為分析師團隊配備高敏微觀結構指標與動態公式運算元
 
-#### 2.1 微觀結構特徵庫（採納評估 A1, 6 個初版）
+#### 2.1 微觀結構特徵庫（採納評估 A1, 6 個初版）✅
+* **已交付** (2026-08-15): `factors/microstructure.py` — 6 個微觀結構因子, 註冊為 Technical Analyst tool (`vibe-trade research factors` 可列)
 * `pressure`：買賣失衡 — **用我們真實 `taker_buy_base/volume` (每根 kline 已儲存)**, 比 AlphaGPT 蠟燭體代理 (`tanh(3(c-o)/(h-l))`) 更強
 * `fomo`：成交量與主動買入資金流加速度 (5-bar 窗口)
 * `vol_cluster`：滾動實現波動率聚集
@@ -146,9 +147,9 @@ graph LR
 | 階段 | 里程碑代號 | 核心交付物 | 狀態 |
 | :--- | :--- | :--- | :--- |
 | **Phase 1** | `M1-QuantGuard` | • `quantlib` 數學庫 (VaR/CVaR/GARCH/Kelly/TWR/XIRR/L2 衝擊) ✅<br>• Grounding 價格防幻覺硬閘門 ✅<br>• ~~哈希鏈帳本~~ → 移除 (LOW) | **✅ 完成** (2026-08-15) |
-| **Phase 2** | `M2-FactorVM` | • 6 微觀結構特徵庫 (pressure 用真實 taker_buy)<br>• StackVM 符號運算元 (12 ops)<br>• 永續回測保真度 (8h 資金費率 + 分級維持保證金)<br>• Technical Analyst 工具擴展 | 下一個 |
-| **Phase 3** | `M3-AlphaEvolution` | • Alpha Mining Agent (演化式搜尋, **非 RL**)<br>• 張量因子預篩打分器<br>• P3 假說庫自動沈澱閉環 | 待 Phase 2 |
-| **Phase 4** | `M4-CryptoNexus` | • Binance/OKX/Bybit/Bitget 執行器<br>• Hyperliquid & Jupiter DEX 通道<br>• 動態標的宇宙 + 退出階梯<br>• RunManifest 方法論指紋<br>• Crypto MCP Server | 待 Phase 3 |
+| **Phase 2** | `M2-FactorVM` | • 6 微觀結構特徵庫 (pressure 用真實 taker_buy) ✅<br>• StackVM 符號運算元 (12 ops) ✅<br>• 永續回測保真度 (8h 資金費率 + 分級維持保證金) ✅<br>• Technical Analyst 工具擴展 ✅ | **✅ 完成** (2026-08-15) |
+| **Phase 3** | `M3-AlphaEvolution` | • Alpha Mining Agent (演化式搜尋, **非 RL**) ✅<br>• 張量因子預篩打分器 ✅<br>• P3 假說庫自動沈澱閉環 ✅ | **✅ 完成** (2026-08-15) |
+| **Phase 4** | `M4-CryptoNexus` | • Binance/OKX/Bybit/Bitget 執行器 ✅<br>• Hyperliquid & Jupiter DEX 通道 ✅<br>• 動態標的宇宙 + 退出階梯 ✅<br>• RunManifest 方法論指紋 ✅<br>• Crypto MCP Server ✅ | **✅ 完成** (2026-08-15) |
 
 ---
 
