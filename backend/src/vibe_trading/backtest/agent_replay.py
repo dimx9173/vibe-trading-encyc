@@ -336,6 +336,25 @@ async def run_replay(config: AgentReplayConfig) -> AgentReplayResult:
                   f"decision={decision.decision} ({elapsed:.0f}s, total {total:.0f}s)")
 
     await coordinator.close()
+    # Phase 4.3: 方法論指紋 (close 前提取 prompts)
+    try:
+        from vibe_trading.governance.manifest import manifest_from_coordinator
+        manifest = manifest_from_coordinator(coordinator)
+        manifest["config"] = {
+            "symbol": config.symbol,
+            "interval": config.interval,
+            "start": config.start,
+            "end": config.end,
+            "skip_debate": config.skip_debate,
+            "use_cache": config.use_cache,
+        }
+        manifest_path = Path(config.log_path).parent / "manifest.json"
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        logger.info(f"Manifest written: {manifest_path}")
+    except Exception as e:
+        logger.warning(f"Manifest failed: {e}")
     await storage.close()
     if cache:
         await cache.close()

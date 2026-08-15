@@ -128,10 +128,9 @@ graph LR
 * **已交付** (2026-08-15): `factors/universe.py` — Binance 永續 24h tickers 全量排名 (quote volume), 過濾穩定幣/槓桿代幣/低流動性; `vibe-trade research universe-scan` CLI; `execution/exit_ladder.py` — trailing stop (+5% 啟動, 峰值回撤 3% 全出) + moonbag TP (+10% 賣 50%), 接入 PaperOrderExecutor
 * **留後續**：自動輪換交易對進 onbar thread (需重啟機制); 跨所標的 (4.1 完成後)
 
-#### 4.3 RunManifest 方法論指紋（採納評估 A7）
-* content-addressed hash: system prompt + skills (name, content_hash) + tools 清單 + 套件版本
-* **排除 run_id/timestamp** → 兩次相同組成的 run 有相同 hash
-* `diff_manifests` 偵測**方法論漂移** (skill/套件在 run A/B 之間是否變更) — 讓 agent replay 可重現性**可證明**
+#### 4.3 RunManifest 方法論指紋（採納評估 A7）✅
+* **已交付** (2026-08-15): `governance/manifest.py` — content-addressed hash (prompts hash + tools 清單 + 套件版本 + replay config, **排除 run_id/timestamp**); replay run 結束寫 `manifest.json`; `vibe-trade research manifest-diff` 偵測方法論漂移
+* **定位**: 哈希鏈審計帳本的有用替代 (單 operator 無審計方, 可重現性證明更有價值)
 
 #### 4.4 標準化 Crypto MCP Server
 * 核心能力封裝為 MCP 工具: `crypto_get_kline` / `quantlib_var_calc` / `alpha_stackvm_eval` / `agent_replay_run` / `execution_place_order` / `crypto_universe_scan`

@@ -1085,6 +1085,35 @@ def universe_scan(
     success(f"掃描完成: {len(tickers)} 個永續交易對 → {len(ranked)} 個符合條件", tag="UNIVERSE")
 
 
+@research_app.command("manifest-diff")
+def manifest_diff(
+    a: str = typer.Argument(..., help="manifest A 路徑"),
+    b: str = typer.Argument(..., help="manifest B 路徑"),
+):
+    """比較兩次 run 的方法論指紋 (Phase 4.3)"""
+    import json as _json
+    from pathlib import Path as _Path
+
+    from vibe_trading.governance.manifest import diff_manifests
+
+    ma = _json.loads(_Path(a).read_text(encoding="utf-8"))
+    mb = _json.loads(_Path(b).read_text(encoding="utf-8"))
+
+    if ma.get("manifest_hash") == mb.get("manifest_hash"):
+        success("方法論一致 (相同 manifest_hash)", tag="MANIFEST")
+        return
+
+    diffs = diff_manifests(ma, mb)
+    any_diff = False
+    for section, keys in diffs.items():
+        if keys:
+            any_diff = True
+            console.print(f"[yellow]{section} 漂移: {', '.join(keys)}[/yellow]")
+    if not any_diff:
+        console.print("[yellow]hash 不同但無欄位級差異 (可能是套件版本變更)[/yellow]")
+    warning("方法論漂移偵測到", tag="MANIFEST")
+
+
 @research_app.command("goal-create")
 def goal_create(
     title: str = typer.Argument(..., help="研究目標標題"),
