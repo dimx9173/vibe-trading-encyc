@@ -185,3 +185,50 @@ class TestPendingOrders:
         result = ex._execute_pending_order(pending, 48000.0)
         assert result is not None
         assert result.order_id == "o1"
+
+
+class TestPlaceOrder:
+    @pytest.mark.asyncio
+    async def test_place_order_opens_long(self):
+        ex = PaperOrderExecutor(initial_balance=10000.0)
+        result = await ex.place_order(
+            "BTCUSDT", OrderSide.BUY, OrderType.MARKET, 0.1,
+            position_side=PositionSide.LONG,
+        )
+        assert result.status in ("FILLED", "PENDING", "SUBMITTED")
+        assert "BTCUSDT_LONG" in ex._positions
+
+    @pytest.mark.asyncio
+    async def test_place_order_zero_qty_fills(self):
+        ex = PaperOrderExecutor()
+        result = await ex.place_order(
+            "BTCUSDT", OrderSide.BUY, OrderType.MARKET, 0.0)
+        assert result.status == "FILLED"  # paper 模式無 qty 驗證
+
+    @pytest.mark.asyncio
+    async def test_conditional_no_stop_rejected(self):
+        ex = PaperOrderExecutor()
+        result = await ex.place_order(
+            "BTCUSDT", OrderSide.BUY, OrderType.STOP_MARKET, 0.1)
+        assert result.status == "REJECTED"
+
+    @pytest.mark.asyncio
+    async def test_place_order_short_close(self):
+        ex = PaperOrderExecutor(initial_balance=10000.0)
+        ex._positions["BTCUSDT_SHORT"] = PaperPosition(
+            symbol="BTCUSDT", position_side=PositionSide.SHORT,
+            entry_price=50000.0, quantity=0.1, leverage=5)
+        result = await ex.place_order(
+            "BTCUSDT", OrderSide.BUY, OrderType.MARKET, 0.1,
+            position_side=PositionSide.SHORT, reduce_only=True,
+        )
+        assert "BTCUSDT_SHORT" not in ex._positions  # 平倉
+
+    @pytest.mark.asyncio
+    async def test_place_order_pending_stop(self):
+        ex = PaperOrderExecutor()
+        result = await ex.place_order(
+            "BTCUSDT", OrderSide.BUY, OrderType.STOP_MARKET, 0.1,
+            stop_price=49000.0,
+        )
+        assert result.status in ("PENDING", "FILLED")
