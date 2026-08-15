@@ -154,3 +154,53 @@ class TestStatePropagator:
         )
         p.add_analyst_report(ctx, report)
         assert ctx.analyst_reports["sent"] is report
+
+
+class TestStatePropagatorUpdate:
+    def test_update_debate_bull(self):
+        from vibe_trading.coordinator.state_propagator import DebatePhase
+        p = StatePropagator()
+        ctx = p.create_initial_state("BTCUSDT", "30m")
+        p.update_debate_state(ctx, "bull", "看漲論點", round_number=1)
+        assert ctx.debate_state.bull_history == ["看漲論點"]
+        assert ctx.debate_state.current_phase == DebatePhase.BEAR_TURN
+        assert len(ctx.messages) == 1
+
+    def test_update_debate_bear(self):
+        from vibe_trading.coordinator.state_propagator import DebatePhase
+        p = StatePropagator()
+        ctx = p.create_initial_state("BTCUSDT", "30m")
+        p.update_debate_state(ctx, "bear", "看跌論點", round_number=1)
+        assert ctx.debate_state.current_phase == DebatePhase.BULL_TURN
+
+    def test_set_judgment(self):
+        from vibe_trading.coordinator.state_propagator import DebatePhase
+        p = StatePropagator()
+        ctx = p.create_initial_state("BTCUSDT", "30m")
+        p.set_judgment(ctx, "BUY", 0.8, "看漲")
+        assert ctx.debate_state.judge_decision == "BUY"
+        assert ctx.debate_state.confidence == 0.8
+        assert ctx.debate_state.current_phase == DebatePhase.COMPLETED
+
+    def test_update_risk_debate(self):
+        from vibe_trading.coordinator.state_propagator import RiskDebatePhase
+        p = StatePropagator()
+        ctx = p.create_initial_state("BTCUSDT", "30m")
+        p.update_risk_debate(ctx, "aggressive", "高風險", {"risk_level": "high"})
+        assert ctx.risk_debate_state.aggressive_history == ["高風險"]
+        assert ctx.risk_debate_state.current_phase == RiskDebatePhase.CONSERVATIVE
+        assert ctx.risk_debate_state.risk_parameters["risk_level"] == "high"
+
+    def test_update_risk_debate_conservative(self):
+        from vibe_trading.coordinator.state_propagator import RiskDebatePhase
+        p = StatePropagator()
+        ctx = p.create_initial_state("BTCUSDT", "30m")
+        p.update_risk_debate(ctx, "conservative", "保守", {})
+        assert ctx.risk_debate_state.current_phase == RiskDebatePhase.NEUTRAL
+
+    def test_update_risk_debate_neutral(self):
+        from vibe_trading.coordinator.state_propagator import RiskDebatePhase
+        p = StatePropagator()
+        ctx = p.create_initial_state("BTCUSDT", "30m")
+        p.update_risk_debate(ctx, "neutral", "中性", {})
+        assert ctx.risk_debate_state.current_phase == RiskDebatePhase.CONSENSUS

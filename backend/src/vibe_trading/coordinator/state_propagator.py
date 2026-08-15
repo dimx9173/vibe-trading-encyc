@@ -400,7 +400,7 @@ class StatePropagator:
             risk_state.current_phase = RiskDebatePhase.NEUTRAL
         elif speaker == "neutral":
             risk_state.neutral_history.append(content)
-            risk_state.current_phase = RiskDebatePhase.CONSensus
+            risk_state.current_phase = RiskDebatePhase.CONSENSUS
 
         # 更新风险参数
         risk_state.risk_parameters.update(risk_params)
