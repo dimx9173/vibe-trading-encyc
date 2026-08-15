@@ -288,13 +288,17 @@ class TestThreadManagerExtras:
 
     @pytest.mark.asyncio
     async def test_wait_for_main_thread_stop_timeout(self):
+        # 不真實等待 30s: patch wait_for 直接 raise
+        import asyncio
         mgr = ThreadManager()
         ss = MagicMock()
         ss.subscribe = MagicMock()
         ss.unsubscribe = MagicMock()
         mgr.shared_state = ss
-        with pytest.raises(__import__("asyncio").TimeoutError):
-            await mgr._wait_for_main_thread_stop()
+        with patch("vibe_trading.coordinator.thread_manager.asyncio.wait_for",
+                   new=AsyncMock(side_effect=asyncio.TimeoutError)):
+            with pytest.raises(asyncio.TimeoutError):
+                await mgr._wait_for_main_thread_stop()
 
     @pytest.mark.asyncio
     async def test_wait_for_main_thread_stop_sets(self):
