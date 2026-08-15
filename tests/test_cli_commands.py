@@ -475,3 +475,58 @@ class TestAlphaMine:
                 ])
         assert result.exit_code == 0
         assert "H1" in result.output
+
+
+class TestSwarmShowValidate:
+    def _make_preset(self):
+        from types import SimpleNamespace
+        import enum
+        class PhaseE(enum.Enum):
+            RESEARCH = "research"
+        class ModeE(enum.Enum):
+            PAPER = "paper"
+        agent = SimpleNamespace(enabled=True)
+        phase = SimpleNamespace(enabled=True, timeout_seconds=30,
+                                agents={"analyst": agent})
+        return SimpleNamespace(
+            name="daily", mode=ModeE.PAPER, description="desc",
+            global_timeout_seconds=120,
+            phases={PhaseE.RESEARCH: phase})
+
+    def test_swarm_show_exists(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        loader = MagicMock()
+        preset = self._make_preset()
+        loader.load_builtin_presets = MagicMock(return_value={"daily": preset})
+        with _p("vibe_trading.coordinator.presets.PresetLoader",
+                return_value=loader):
+            result = runner.invoke(app, ["swarm", "show", "daily"])
+        assert result.exit_code == 0
+        assert "daily" in result.output
+
+    def test_swarm_validate_exists_pass(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        loader = MagicMock()
+        loader.load_builtin_presets = MagicMock(
+            return_value={"daily": self._make_preset()})
+        loader.validate_preset = MagicMock(return_value=[])
+        with _p("vibe_trading.coordinator.presets.PresetLoader",
+                return_value=loader):
+            result = runner.invoke(app, ["swarm", "validate", "daily"])
+        assert result.exit_code == 0
+        assert "验证通过" in result.output or "驗證通過" in result.output
+
+    def test_swarm_validate_exists_issues(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        loader = MagicMock()
+        loader.load_builtin_presets = MagicMock(
+            return_value={"daily": self._make_preset()})
+        loader.validate_preset = MagicMock(return_value=["issue1", "issue2"])
+        with _p("vibe_trading.coordinator.presets.PresetLoader",
+                return_value=loader):
+            result = runner.invoke(app, ["swarm", "validate", "daily"])
+        assert result.exit_code == 0
+        assert "issue1" in result.output
