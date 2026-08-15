@@ -96,27 +96,27 @@ class TestStreamPrinter:
         assert p._line_buffer == ""
 
     def test_update_text_stream(self):
+        from pi_agent_core.types import TextContent
         p = StreamPrinter("a")
         p.on_event(self._evt("message_start"))
-        block = MagicMock()
-        block.text = "hello\nworld"
+        block = TextContent(type="text", text="hello\nworld")
         p.on_event(self._evt("message_update", self._msg([block])))
         assert p._buffer == "hello\nworld"
         assert p._last_printed_len == len("hello\nworld")
 
     def test_update_thinking(self):
+        from pi_ai import ThinkingContent
         p = StreamPrinter("a")
         p.on_event(self._evt("message_start"))
-        block = MagicMock()
-        block.thinking = "deep thoughts"
+        block = ThinkingContent(type="thinking", thinking="deep thoughts")
         p.on_event(self._evt("message_update", self._msg([block])))
         assert p._buffer == ""
 
     def test_message_end_flushes(self):
+        from pi_agent_core.types import TextContent
         p = StreamPrinter("a")
         p.on_event(self._evt("message_start"))
-        block = MagicMock()
-        block.text = "done"
+        block = TextContent(type="text", text="done")
         p.on_event(self._evt("message_update", self._msg([block])))
         p.on_event(self._evt("message_end"))
         assert p._started is False
