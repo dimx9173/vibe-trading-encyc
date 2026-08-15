@@ -401,3 +401,88 @@ class TestWebSocketDetailed:
             _aio.run(state.send_update("test", {"k": 1}))
             msg = ws.receive_json()
             assert msg["type"] == "test"
+
+
+class TestEmitTerminalLog:
+    def test_emit_appends(self, client):
+        with patch.object(web_server, "_schedule_async", new=MagicMock()):
+            state.logs = []
+            web_server.emit_terminal_log("hello world", level="info")
+        assert len(state.logs) == 1
+        assert state.logs[0]["message"] == "hello world"
+
+    def test_emit_empty_skipped(self, client):
+        with patch.object(web_server, "_schedule_async", new=MagicMock()):
+            state.logs = []
+            web_server.emit_terminal_log("   ")
+        assert state.logs == []
+
+    def test_emit_strips_ansi(self, client):
+        with patch.object(web_server, "_schedule_async", new=MagicMock()):
+            state.logs = []
+            web_server.emit_terminal_log("\x1b[31mred\x1b[0m")
+        assert state.logs[0]["message"] == "red"
+
+    def test_emit_schedule_no_loop(self):
+        # 無 running loop → coro.close() 路徑
+        import asyncio
+        try:
+            asyncio.get_running_loop()
+            loop_running = True
+        except RuntimeError:
+            loop_running = False
+        if not loop_running:
+            state.logs = []
+            web_server.emit_terminal_log("x")
+            assert len(state.logs) == 1
+
+
+class TestAddExecution:
+    def test_add_execution(self, client):
+        state.current_kline = {"open_time_ms": 1000, "time": "2026-01-01"}
+        with patch.object(web_server.journal_storage, "upsert_bar",
+                          new=AsyncMock()) as upsert:
+            r = client.post("/api/execution", json={
+                "symbol": "BTCUSDT", "interval": "30m",
+                "open_time_ms": 1000, "tool_name": "submit_trade_order",
+                "args": {"price": 50000},
+            })
+        assert r.status_code == 200
+        assert r.json()["success"] is True
+        upsert.assert_called_once()
+
+    def test_add_execution_no_open_time(self, client):
+        state.current_kline = None
+        with patch.object(web_server.journal_storage, "upsert_bar",
+                          new=AsyncMock()) as upsert:
+            r = client.post("/api/execution", json={"tool_name": "x"})
+        assert r.status_code == 200
+        upsert.assert_not_called()
+
+    def test_executions_capped(self, client):
+        state.executions = []
+        state.current_kline = None
+        for i in range(505):
+            client.post("/api/execution", json={"tool_name": f"t{i}"})
+        assert len(state.executions) <= 500
+
+
+class TestResetData:
+    def test_reset(self, client):
+        state.klines = [{"close": 1.0}]
+        state.decisions = [{"d": 1}]
+        state.logs = [{"m": 1}]
+        state.executions = [{"e": 1}]
+        r = client.post("/api/reset")
+        assert r.status_code == 200
+        assert state.klines == [] and state.decisions == []
+        assert state.logs == [] and state.executions == []
+
+
+class TestWsPing:
+    def test_ping_pong(self, client):
+        with client.websocket_connect("/ws") as ws:
+            first = ws.receive_text()  # init 消息
+            assert '"type": "init"' in first
+            ws.send_text("ping")
+            assert ws.receive_text() == "pong"
