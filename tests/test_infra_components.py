@@ -316,3 +316,51 @@ class TestSignalProcessorExtract:
         assert p._extract_time_horizon("Long term") == "long"
         assert p._extract_time_horizon("短期") == "short"
         assert p._extract_time_horizon("無") is None
+
+
+class TestFileCache:
+    @pytest.fixture
+    def fc(self, tmp_path):
+        from vibe_trading.data_sources.cache import FileCache
+        return FileCache(cache_dir=tmp_path / "cache")
+
+    @pytest.mark.asyncio
+    async def test_set_get(self, fc):
+        await fc.set("k", "v")
+        assert await fc.get("k") == "v"
+
+    @pytest.mark.asyncio
+    async def test_get_missing(self, fc):
+        assert await fc.get("nope") is None
+
+    @pytest.mark.asyncio
+    async def test_get_expired(self, fc):
+        await fc.set("k", "v", ttl=-1)
+        assert await fc.get("k") is None
+
+    @pytest.mark.asyncio
+    async def test_delete(self, fc):
+        await fc.set("k", "v")
+        await fc.delete("k")
+        assert await fc.get("k") is None
+
+    @pytest.mark.asyncio
+    async def test_clear(self, fc):
+        await fc.set("a", 1)
+        await fc.set("b", 2)
+        await fc.clear()
+        assert await fc.get("a") is None
+        assert await fc.get("b") is None
+
+    @pytest.mark.asyncio
+    async def test_corrupt_file(self, fc, tmp_path):
+        await fc.set("k", "v")
+        # 破壞 cache 檔
+        for f in (tmp_path / "cache").glob("*.cache"):
+            f.write_bytes(b"corrupt")
+        assert await fc.get("k") is None  # fail-safe
+
+    def test_stats(self, fc):
+        stats = fc.get_stats()
+        assert "hits" in stats
+        assert "misses" in stats
