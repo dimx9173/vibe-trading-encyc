@@ -243,11 +243,14 @@ class TestBinanceWSClient:
         cfg = BinanceConfig(api_key="k", api_secret="s")
         client = BinanceWebSocketClient(cfg)
         with patch("vibe_trading.data_sources.binance_client.websockets") as mock_ws:
-            mock_ws.connect = AsyncMock(return_value=MagicMock())
+            ws = MagicMock()
+            ws.close = AsyncMock()
+            mock_ws.connect = AsyncMock(return_value=ws)
             await client.connect()
             assert client._running is True
             await client.disconnect()
             assert client._running is False
+            ws.close.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_connect_twice(self):
