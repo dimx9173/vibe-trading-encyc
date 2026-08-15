@@ -176,3 +176,25 @@ class TestMultiTimeframe:
         o, h, l, c, v = _series(150)
         result = ti.multi_timeframe_analysis(o, h, l, c, v)
         assert isinstance(result, dict)
+
+
+class TestCandlestickEmpty:
+    def test_no_data(self):
+        ti = TechnicalIndicators()
+        assert "error" in ti.detect_candlestick_patterns()
+
+    def test_insufficient_data(self):
+        ti = TechnicalIndicators()
+        o, h, l, c, v = _series(10)
+        ti.load_data(o, h, l, c, v)
+        assert "error" in ti.detect_candlestick_patterns(lookback=20)
+
+    def test_patterns_full(self):
+        ti = TechnicalIndicators()
+        o, h, l, c, v = _series(100)
+        ti.load_data(o, h, l, c, v)
+        result = ti.detect_candlestick_patterns(lookback=50)
+        assert isinstance(result, dict)
+        assert "single" in result["patterns"]
+        assert "reversal" in result["patterns"]
+        assert "continuation" in result["patterns"]
