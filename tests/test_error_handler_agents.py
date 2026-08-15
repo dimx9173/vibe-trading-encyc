@@ -4,6 +4,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from vibe_trading.triggers.base_trigger import TriggerEvent, TriggerSeverity
+from vibe_trading.coordinator.emergency_handler import EmergencyAction
+
 from vibe_trading.agents.llm_error_handler import (
     LLMErrorHandler,
     LLMRetryConfig,
@@ -200,3 +203,95 @@ class TestEmergencyHandler:
             event_queue=MagicMock(), notifier=None,
         )
         await h.initialize(symbol="BTCUSDT")  # 不 raise
+
+
+class TestEmergencyHandlerFlow:
+    @pytest.mark.asyncio
+    async def test_handle_critical(self):
+        from vibe_trading.coordinator.emergency_handler import EmergencyHandler
+        from vibe_trading.agents.decision.emergency_agent import (
+            EmergencyAssessment, EmergencyDecision,
+        )
+        h = EmergencyHandler(
+            thread_manager=MagicMock(), shared_state=MagicMock(),
+            event_queue=MagicMock(), notifier=None,
+        )
+        h._risk_agent = MagicMock()
+        h._risk_agent.emergency_assess = AsyncMock(return_value=EmergencyAssessment(
+            should_act=True, action_type="CLOSE_POSITION",
+            urgency="IMMEDIATE", rationale="r",
+        ))
+        h._decision_agent = MagicMock()
+        h._decision_agent.emergency_decide = AsyncMock(return_value=EmergencyDecision(
+            action="EXECUTE", decision_type="CLOSE_ALL", rationale="crash",
+        ))
+        event = TriggerEvent(
+            event_id="e1", trigger_name="crash", severity=TriggerSeverity.CRITICAL,
+            data={}, timestamp=1, symbol="BTCUSDT",
+        )
+        with patch.object(h, "_handle_critical_event", new=AsyncMock(
+                return_value=EmergencyAction(
+                    action="EXECUTED", decision=EmergencyDecision(
+                        action="EXECUTE", decision_type="CLOSE_ALL")))):
+            action = await h.handle_emergency_event(event, [], 10000.0)
+        assert action.action == "EXECUTED"
+        assert h._executed == 1
+
+    @pytest.mark.asyncio
+    async def test_handle_high(self):
+        from vibe_trading.coordinator.emergency_handler import EmergencyHandler
+        from vibe_trading.agents.decision.emergency_agent import (
+            EmergencyAssessment, EmergencyDecision,
+        )
+        h = EmergencyHandler(
+            thread_manager=MagicMock(), shared_state=MagicMock(),
+            event_queue=MagicMock(), notifier=None,
+        )
+        h._risk_agent = MagicMock()
+        h._risk_agent.emergency_assess = AsyncMock(return_value=EmergencyAssessment(
+            should_act=False, action_type="HOLD", urgency="HIGH", rationale="r"))
+        event = TriggerEvent(
+            event_id="e2", trigger_name="spike", severity=TriggerSeverity.HIGH,
+            data={}, timestamp=1, symbol="BTCUSDT",
+        )
+        with patch.object(h, "_handle_high_event", new=AsyncMock(
+                return_value=EmergencyAction(action="DEFERRED", decision=None))):
+            action = await h.handle_emergency_event(event, [], 10000.0)
+        assert action.action == "DEFERRED"
+
+    @pytest.mark.asyncio
+    async def test_handle_normal(self):
+        from vibe_trading.coordinator.emergency_handler import EmergencyHandler
+        from vibe_trading.agents.decision.emergency_agent import (
+            EmergencyAssessment, EmergencyDecision,
+        )
+        h = EmergencyHandler(
+            thread_manager=MagicMock(), shared_state=MagicMock(),
+            event_queue=MagicMock(), notifier=None,
+        )
+        h._risk_agent = MagicMock()
+        h._risk_agent.emergency_assess = AsyncMock(return_value=EmergencyAssessment(
+            should_act=False, action_type="HOLD", urgency="LOW", rationale="r"))
+        event = TriggerEvent(
+            event_id="e3", trigger_name="info", severity=TriggerSeverity.LOW,
+            data={}, timestamp=1, symbol="BTCUSDT",
+        )
+        with patch.object(h, "_handle_normal_event", new=AsyncMock(
+                return_value=EmergencyAction(action="IGNORED", decision=None))):
+            action = await h.handle_emergency_event(event, [], 10000.0)
+        assert action.action == "IGNORED"
+
+    @pytest.mark.asyncio
+    async def test_risk_assessment_error(self):
+        from vibe_trading.coordinator.emergency_handler import EmergencyHandler
+        h = EmergencyHandler(
+            thread_manager=MagicMock(), shared_state=MagicMock(),
+            event_queue=MagicMock(), notifier=None,
+        )
+        h._risk_agent = None  # 未初始化
+        event = TriggerEvent(
+            event_id="e4", trigger_name="crash", severity=TriggerSeverity.CRITICAL,
+            data={}, timestamp=1, symbol="BTCUSDT",
+        )
+        action = await h.handle_emergency_event(event, [], 10000.0)
+        assert action.action == "ERROR"
