@@ -5,6 +5,11 @@
 ## [Unreleased]
 
 ### Added
+- **測試覆蓋率 85% 里程碑達成**: 50% → 85% (2332 tests, 18006/21183 stmts) — 120 波 Wave D 測試補強, 涵蓋 cli/coordinator/prime/web/execution/triggers/constraints/memory/providers/indicators 全模組 (測試檔 55+)
+- **測試期間修復 8 個真實 bug**: `vendor_routed` 缺 return、`TriggerConfirmation` 欄位缺失/遞迴 property、`MessageChannel.get` event starvation、PM cross-lessons list concat、risk level string max、`RiskDebatePhase.CONSENSUS` 大小寫、`get_tools_for_agent` KeyError、sentiment cache undefined response
+- 測試套件效能: 修復 30s 真等待測試 (mock wait_for), 全量 85s → 55s
+
+### Added
 - 測試覆蓋率提升 (Wave A+B): 50% → 56% — `test_alpha_zoo` (56)/`test_technical_indicators` (22)/`test_storage_layers` (28, 4 storage 87-89%)/`test_vendor_router` (21)/`test_cli_commands` (19, cli 0→42%)/`test_coordinator_decision` (13, coordinator 55→63%)
 - **修 bug**: `vendor_routed` 裝飾器缺 `return decorator` (回 None, 由新測試發現)
 
