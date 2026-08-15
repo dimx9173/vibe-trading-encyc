@@ -396,7 +396,13 @@ class TestFullFlowWithAgents:
              patch.object(coordinator, "_run_risk_assessment",
                           new=AsyncMock(return_value={"neutral": "低風險"})), \
              patch.object(coordinator, "_run_trader",
-                          new=AsyncMock(return_value="trading plan")), \
+                          new=AsyncMock(return_value=MagicMock(
+                              entry_orders=[{"order_type": "market", "price": 50000.0}],
+                              total_position_usdt=100.0,
+                              to_dict=MagicMock(return_value={}),
+                              entry_price=50000.0,
+                              direction="LONG",
+                          ))), \
              patch.object(coordinator, "_run_portfolio_manager",
                           new=AsyncMock(return_value={
                               "decision": "BUY", "rationale": "看漲",
@@ -500,3 +506,51 @@ class TestInsuranceBranches:
             return_value=None)
         result = await coordinator._auto_execute_insurance("did", "BUY", plan)
         assert result is None or isinstance(result, dict)
+
+
+class TestGroundingFail:
+    @pytest.mark.asyncio
+    async def test_grounding_fail_degrades(self, coordinator):
+        """grounding gate 駁回 → 決策降級 HOLD + 清空執行計畫."""
+        coordinator._analysts = {
+            "technical": _FakeAnalyst("看漲"), "fundamental": _FakeAnalyst("好"),
+            "news": _FakeAnalyst("利好"), "sentiment": _FakeAnalyst("正面"),
+        }
+        coordinator._researchers = {"manager": MagicMock()}
+        coordinator._risk_analysts = {"neutral": MagicMock()}
+        coordinator._trader = MagicMock()
+        coordinator._portfolio_manager = MagicMock()
+        # storage 回 klines 觸發 grounding (真 Kline 供 pandas)
+        from datetime import datetime, timezone as _tz
+        from vibe_trading.data_sources.base import Kline
+        kl = [Kline(
+            symbol="BTCUSDT", interval="30m",
+            open_time=int(datetime(2026, 1, 1, tzinfo=_tz.utc).timestamp() * 1000) + i * 1000,
+            open=50000.0 + i, high=51000.0 + i, low=49000.0 + i,
+            close=50000.0 + i, volume=100.0,
+        ) for i in range(60)]
+        coordinator.storage = MagicMock()
+        coordinator.storage.query_klines = AsyncMock(return_value=kl)
+        with patch.object(coordinator, "_run_research_debate",
+                          new=AsyncMock(return_value="Decision: BUY\nRationale: 看漲")), \
+             patch.object(coordinator, "_run_risk_assessment",
+                          new=AsyncMock(return_value={"neutral": "低風險"})), \
+             patch.object(coordinator, "_run_trader",
+                          new=AsyncMock(return_value=MagicMock(
+                              entry_orders=[{"order_type": "market", "price": 50000.0}],
+                              total_position_usdt=100.0,
+                              to_dict=MagicMock(return_value={}),
+                              entry_price=50000.0,
+                              direction="LONG",
+                          ))), \
+             patch.object(coordinator, "_run_portfolio_manager",
+                          new=AsyncMock(return_value={
+                              "decision": "BUY", "rationale": "看漲",
+                              "confidence": 0.8, "execution_instructions": None,
+                          })), \
+             patch("vibe_trading.execution.grounding_gate.validate_trading_plan_prices",
+                   return_value={"passed": False, "violations": ["價格偏差 5%"]}):
+            decision = await coordinator.analyze_and_decide(current_price=50000.0)
+        assert decision.decision == "HOLD"
+        assert "Grounding" in decision.rationale
+        assert decision.confidence <= 0.5
