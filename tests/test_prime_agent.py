@@ -332,3 +332,78 @@ class TestSubagentMessage:
         prompt = a._format_message_as_prompt(msg)
         assert "risk" in prompt
         assert "warning" in prompt
+
+
+class TestParseDecision:
+    def test_parse_buy(self):
+        from vibe_trading.prime.models import TradingAction
+        a = _agent()
+        d = a._parse_decision_from_text("建議买入 BTC")
+        assert d is not None
+        assert d.action == TradingAction.BUY
+
+    def test_parse_sell(self):
+        from vibe_trading.prime.models import TradingAction
+        a = _agent()
+        d = a._parse_decision_from_text("建議卖出")
+        assert d is not None
+        assert d.action == TradingAction.SELL
+
+    def test_parse_hold(self):
+        from vibe_trading.prime.models import TradingAction
+        a = _agent()
+        d = a._parse_decision_from_text("建議持有")
+        assert d is not None
+        assert d.action == TradingAction.HOLD
+
+    def test_parse_unknown(self):
+        a = _agent()
+        assert a._parse_decision_from_text("無明確方向") is None
+
+
+class TestEmergency:
+    @pytest.mark.asyncio
+    async def test_is_emergency_situation(self):
+        a = _agent()
+        msg = MagicMock()
+        msg.message_type.value = "warning"
+        msg.content = {"severity": "critical"}
+        result = await a._is_emergency_situation(msg)
+        assert result in (True, False)  # 不 raise
+
+    @pytest.mark.asyncio
+    async def test_execute_decision(self):
+        from vibe_trading.prime.models import Decision, SystemState, TradingAction
+        a = _agent()
+        a.system_state = SystemState()
+        d = Decision(action=TradingAction.HOLD, reason="測試", symbol="BTCUSDT",
+                     confidence=0.5, override=True,
+                     priority=__import__("vibe_trading.prime.models", fromlist=["DecisionPriority"]).DecisionPriority.NORMAL,
+                     timestamp=__import__("datetime").datetime.now())
+        await a._execute_decision(d)  # 不 raise (不 append history)
+
+    @pytest.mark.asyncio
+    async def test_execute_emergency_decision(self):
+        from vibe_trading.prime.models import Decision, SystemState, TradingAction
+        a = _agent()
+        a.system_state = MagicMock()
+        a.stats = {"emergency_decisions": 0}
+        d = Decision(action=TradingAction.CLOSE_ALL, reason="crash", symbol="BTCUSDT",
+                     confidence=1.0, override=True,
+                     priority=__import__("vibe_trading.prime.models", fromlist=["DecisionPriority"]).DecisionPriority.CRITICAL,
+                     timestamp=__import__("datetime").datetime.now())
+        from unittest.mock import patch as _patch
+        with _patch.object(a, "_send_close_all_signal", new=AsyncMock()):
+            await a._execute_emergency_decision(d)  # 不 raise
+
+
+class TestHoldSignal:
+    @pytest.mark.asyncio
+    async def test_send_hold_signal(self):
+        from vibe_trading.prime.models import Decision, TradingAction
+        a = _agent()
+        d = Decision(action=TradingAction.HOLD, reason="觀望", symbol="BTCUSDT",
+                     confidence=0.5, override=False,
+                     priority=__import__("vibe_trading.prime.models", fromlist=["DecisionPriority"]).DecisionPriority.NORMAL,
+                     timestamp=__import__("datetime").datetime.now())
+        await a._send_hold_signal(d)  # 不 raise
