@@ -332,3 +332,43 @@ class TestSendHelpers:
             await web_server.send_execution(
                 agent="tech", tool_name="t", tool_call_id="c", args={}, result={})
         # 不 raise
+
+
+class TestLogHelpers:
+    def test_emit_terminal_log(self):
+        web_server._terminal_mirror_installed = False
+        web_server.emit_terminal_log("測試訊息")  # 不 raise
+
+    def test_install_terminal_log_mirror(self):
+        web_server._terminal_mirror_installed = False
+        web_server.install_terminal_log_mirror()  # 不 raise
+        # 重複安裝 → 直接 return
+        web_server.install_terminal_log_mirror()
+
+    def test_web_log_stream_write(self):
+        s = web_server.WebLogStream.__new__(web_server.WebLogStream)
+        s.wrapped = MagicMock()
+        s.wrapped.isatty.return_value = False
+        s.wrapped.encoding = "utf-8"
+        s.level = "info"
+        s._buffer = ""
+        s.write("一行日誌\n")
+        s.flush()
+        assert s.isatty() is False
+        assert s.encoding == "utf-8"
+
+    def test_schedule_async_no_loop(self):
+        async def _coro():
+            return None
+        web_server._schedule_async(_coro())  # 無 running loop → close coroutine
+
+    def test_schedule_async_with_loop(self):
+        import asyncio
+
+        async def _coro():
+            return None
+
+        async def _test():
+            web_server._schedule_async(_coro())  # 有 loop → create_task
+
+        asyncio.run(_test())
