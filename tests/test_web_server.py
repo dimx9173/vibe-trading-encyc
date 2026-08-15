@@ -194,3 +194,67 @@ def asyncio_run(coro):
         return loop.run_until_complete(coro)
     finally:
         loop.close()
+
+
+class TestLogs:
+    def test_get_logs(self, client):
+        state.logs = [{"message": "log1"}]
+        r = client.get("/api/logs")
+        assert r.status_code == 200
+        assert r.json() == {"logs": [{"message": "log1"}]}
+
+
+class TestAddKline:
+    def test_post_kline(self, client):
+        state.klines = []  # 重置全域 state
+        with patch.object(web_server.journal_storage, "upsert_bar", new=AsyncMock()), \
+             patch.object(web_server, "calculate_indicators", new=AsyncMock()):
+            r = client.post("/api/kline", json={
+                "time": "2026-01-01T00:00:00",
+                "symbol": "BTCUSDT", "interval": "30m",
+                "open": 100, "high": 105, "low": 95, "close": 102, "volume": 10,
+            })
+        assert r.status_code == 200
+        assert r.json() == {"success": True}
+        assert state.current_symbol == "BTCUSDT"
+
+
+class TestAddDecision:
+    def test_post_decision(self, client):
+        with patch.object(web_server.journal_storage, "upsert_bar", new=AsyncMock()):
+            r = client.post("/api/decision", json={
+                "index": 1, "time": "2026-01-01T00:00:00", "close": 50000.0,
+                "symbol": "BTCUSDT", "decision": "BUY", "rationale": "看漲",
+            })
+        assert r.status_code == 200
+        assert r.json() == {"success": True}
+        assert len(state.decisions) == 1
+
+
+class TestAddLog:
+    def test_post_log(self, client):
+        with patch.object(web_server.journal_storage, "upsert_bar", new=AsyncMock()):
+            r = client.post("/api/log", json={"message": "hello", "level": "info"})
+        assert r.status_code == 200
+        assert r.json() == {"success": True}
+        assert state.logs[-1]["message"] == "hello"
+
+    def test_post_log_no_open_time(self, client):
+        r = client.post("/api/log", json={"message": "no ts"})
+        assert r.status_code == 200
+
+
+class TestAddPhase:
+    def test_post_phase(self, client):
+        r = client.post("/api/phase", json={"phase": "analysts", "status": "completed"})
+        assert r.status_code == 200
+        assert state.phase_status["current"] == "analysts"
+
+
+class TestAddReport:
+    def test_post_report(self, client):
+        r = client.post("/api/report", json={
+            "role": "analyst", "content": "report", "stage": "analysts",
+        })
+        assert r.status_code == 200
+        assert r.json() == {"success": True}
