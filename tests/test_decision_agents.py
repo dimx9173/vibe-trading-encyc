@@ -1,5 +1,5 @@
 """Tests for decision agents pure methods (Wave D — coverage 85% plan)."""
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -159,3 +159,33 @@ class TestPMDecision:
             {}, "plan", _trading_plan(), {}, [], 10000, 50000)
         assert result["execution_plan"] is None
         assert "HOLD" in result["decision_text"]
+
+    @pytest.mark.asyncio
+    async def test_make_final_decision_llm_path(self):
+        """BUY 決策 → LLM 生成 decision_text."""
+        pm = PortfolioManagerAgent()
+        pm._agent = MagicMock()
+        pm.config = MagicMock()
+        pm.config.name = "PM"
+        pm._decision_framework = MagicMock()
+        sc = MagicMock()
+        sc.recommended_action = "BUY"
+        sc.rationale = "看漲"
+        sc.to_dict.return_value = {"action": "BUY"}
+        sc.confidence = 0.8
+        pm._decision_framework.calculate_decision_scorecard.return_value = sc
+        pm._decision_framework.record_decision = MagicMock()
+        # agent state messages 含 assistant 回應
+        from pi_agent_core.types import TextContent
+        pm._agent.state.messages = [
+            MagicMock(role="assistant", content=[TextContent(text="Decision: BUY\nRationale: 突破")]),
+        ]
+        with patch.object(pm, "_build_decision_prompt", return_value="prompt"), \
+             patch("vibe_trading.agents.decision.decision_agents.prompt_with_timeout",
+                   new=AsyncMock(return_value=True)), \
+             patch("vibe_trading.agents.decision.decision_agents.parse_structured_output",
+                   return_value=None):
+            result = await pm.make_final_decision(
+                {"technical": "看漲"}, "plan", _trading_plan(), {}, [], 10000, 50000)
+        assert result["decision_text"] == "Decision: BUY\nRationale: 突破"
+        assert result["execution_plan"] is not None  # total_position_usdt > 0
