@@ -41,21 +41,18 @@ class TestConfig:
 
 
 class TestCreate:
-    @pytest.mark.asyncio
-    async def test_create_subagent_unknown(self):
+    def test_create_subagent_unknown(self):
         factory = SubagentFactory()
-        handle = await factory.create_subagent("nonexistent", MagicMock())
+        handle = factory.create_subagent("nonexistent", MagicMock())
         assert handle is None
 
-    @pytest.mark.asyncio
-    async def test_create_all_subagents(self):
+    def test_create_all_subagents(self):
         factory = SubagentFactory()
-        with patch.object(factory, "create_subagent", new=AsyncMock(return_value=None)):
-            handles = await factory.create_all_subagents(MagicMock())
+        with patch.object(factory, "create_subagent", return_value=None):
+            handles = factory.create_all_subagents(MagicMock())
         assert isinstance(handles, list)
 
-    @pytest.mark.asyncio
-    async def test_create_agent_instance_unknown(self):
+    def test_create_agent_instance_unknown(self):
         factory = SubagentFactory()
-        agent = await factory._create_agent_instance("nope", MagicMock())
+        agent = factory._create_agent_instance("nope", MagicMock())
         assert agent is None
