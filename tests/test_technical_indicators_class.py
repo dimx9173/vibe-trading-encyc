@@ -120,3 +120,59 @@ class TestVolume:
         ti.load_data(o, h, l, c, v)
         result = ti.analyze_volume(lookback=10)
         assert isinstance(result, dict)
+
+
+class TestDivergence:
+    def test_insufficient_data(self):
+        ti = TechnicalIndicators()
+        o, h, l, c, v = _series(20)
+        ti.load_data(o, h, l, c, v)
+        result = ti.detect_divergence()
+        assert result["found"] is False
+
+    def test_no_data(self):
+        ti = TechnicalIndicators()
+        result = ti.detect_divergence()
+        assert result["found"] is False
+
+    def test_detect_with_data(self):
+        ti = TechnicalIndicators()
+        o, h, l, c, v = _series(100)
+        ti.load_data(o, h, l, c, v)
+        result = ti.detect_divergence(lookback=30)
+        assert "divergences" in result
+
+    def test_unknown_indicator(self):
+        ti = TechnicalIndicators()
+        o, h, l, c, v = _series(100)
+        ti.load_data(o, h, l, c, v)
+        result = ti.detect_divergence(indicator="bogus")
+        assert "error" in result
+
+    def test_summarize_divergences(self):
+        ti = TechnicalIndicators()
+        s = ti._summarize_divergences(
+            {"bullish": [{"strength": "strong"}], "bearish": []}, "rsi")
+        assert "看涨背离" in s
+
+    def test_summarize_none(self):
+        ti = TechnicalIndicators()
+        s = ti._summarize_divergences({"bullish": [], "bearish": []}, "macd")
+        assert "未检测到" in s
+
+
+class TestVolume:
+    def test_volume_insufficient(self):
+        ti = TechnicalIndicators()
+        o, h, l, c, v = _series(10)
+        ti.load_data(o, h, l, c, v)
+        result = ti.analyze_volume(lookback=20)
+        assert "error" in result
+
+
+class TestMultiTimeframe:
+    def test_multi_timeframe(self):
+        ti = TechnicalIndicators()
+        o, h, l, c, v = _series(150)
+        result = ti.multi_timeframe_analysis(o, h, l, c, v)
+        assert isinstance(result, dict)
