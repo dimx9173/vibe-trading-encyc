@@ -386,7 +386,7 @@ class TestEmergency:
     async def test_execute_emergency_decision(self):
         from vibe_trading.prime.models import Decision, SystemState, TradingAction
         a = _agent()
-        a.system_state = MagicMock()
+        a.system_state = AsyncMock()
         a.stats = {"emergency_decisions": 0}
         d = Decision(action=TradingAction.CLOSE_ALL, reason="crash", symbol="BTCUSDT",
                      confidence=1.0, override=True,
