@@ -150,3 +150,185 @@ class TestMessageStats:
         assert stats.messages_by_agent["analyst"] == 2
         assert 0.1 <= stats.average_processing_time <= 1.5
         assert stats.last_message_time is not None
+
+
+class TestFinancialStatus:
+    @pytest.mark.asyncio
+    async def test_check_financial_status(self):
+        from vibe_trading.prime.models import SystemState
+        a = _agent()
+        a.system_state = SystemState()
+        a._last_logged_balance = None
+        a._last_logged_position = None
+
+        mgr = MagicMock()
+        mgr.get = AsyncMock(side_effect=lambda k, d: {"account_balance": 20000.0,
+                                                       "current_position": 0.5}[k])
+        with patch("vibe_trading.coordinator.shared_state.get_shared_state_manager",
+                   return_value=mgr):
+            await a._check_financial_status()
+        assert a.system_state.account_balance == 20000.0
+        assert a.system_state.current_position == 0.5
+
+
+class TestRiskMetrics:
+    @pytest.mark.asyncio
+    async def test_check_risk_metrics_high(self):
+        from vibe_trading.prime.models import SystemState
+        a = _agent()
+        a.system_state = SystemState()
+        a.prime_config.margin_threshold = 0.8
+
+        mgr = MagicMock()
+        mgr.get = AsyncMock(return_value=0.95)
+        with patch("vibe_trading.coordinator.shared_state.get_shared_state_manager",
+                   return_value=mgr), \
+             patch.object(a, "_execute_emergency_decision", new=AsyncMock()) as ex:
+            await a._check_risk_metrics()
+        ex.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_check_risk_metrics_low(self):
+        from vibe_trading.prime.models import SystemState
+        a = _agent()
+        a.system_state = SystemState()
+
+        mgr = MagicMock()
+        mgr.get = AsyncMock(return_value=0.3)
+        with patch("vibe_trading.coordinator.shared_state.get_shared_state_manager",
+                   return_value=mgr), \
+             patch.object(a, "_execute_emergency_decision", new=AsyncMock()) as ex:
+            await a._check_risk_metrics()
+        ex.assert_not_called()
+
+
+class TestSubagentMessage:
+    @pytest.mark.asyncio
+    async def test_process_message_constraint_violation(self):
+        from vibe_trading.prime.models import SystemState
+        a = _agent()
+        a.system_state = SystemState()
+        a.harness = MagicMock()
+        a.harness.check_all_constraints = AsyncMock(return_value=False)
+        a.decision_aggregator = MagicMock()
+
+        msg = MagicMock()
+        msg.message_type.value = "report"
+        msg.sender = "analyst"
+        msg.content = {}
+        with patch.object(a, "_handle_constraint_violation", new=AsyncMock()) as h:
+            await a._process_subagent_message(msg)
+        h.assert_called_once()
+        assert a.stats["constraint_violations"] == 1
+
+    @pytest.mark.asyncio
+    async def test_process_message_emergency(self):
+        from vibe_trading.prime.models import SystemState
+        a = _agent()
+        a.system_state = SystemState()
+        a.harness = MagicMock()
+        a.harness.check_all_constraints = AsyncMock(return_value=True)
+        a.decision_aggregator = MagicMock()
+
+        msg = MagicMock()
+        msg.message_type.value = "report"
+        msg.sender = "analyst"
+        msg.content = {}
+        with patch.object(a, "_is_emergency_situation", new=AsyncMock(return_value=True)), \
+             patch.object(a, "_emergency_decision",
+                          new=AsyncMock(return_value=MagicMock())), \
+             patch.object(a, "_execute_decision", new=AsyncMock()) as ex:
+            await a._process_subagent_message(msg)
+        ex.assert_called_once()
+        assert a.stats["emergency_decisions"] == 1
+
+    @pytest.mark.asyncio
+    async def test_process_message_no_signal_prompts(self):
+        from vibe_trading.prime.models import SystemState
+        a = _agent()
+        a.system_state = SystemState()
+        a.harness = MagicMock()
+        a.harness.check_all_constraints = AsyncMock(return_value=True)
+        a.decision_aggregator = MagicMock()
+        a.decision_aggregator.add_signal.return_value = None  # 無法提取信號
+
+        msg = MagicMock()
+        msg.message_type.value = "report"
+        msg.sender = "analyst"
+        msg.content = {}
+        with patch.object(a, "_is_emergency_situation", new=AsyncMock(return_value=False)), \
+             patch.object(a, "_prompt_agent_for_decision", new=AsyncMock()) as p:
+            await a._process_subagent_message(msg)
+        p.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_process_message_signal_aggregates_decision(self):
+        from vibe_trading.prime.models import SystemState
+        a = _agent()
+        a.system_state = SystemState()
+        a.harness = MagicMock()
+        a.harness.check_all_constraints = AsyncMock(return_value=True)
+        a.decision_aggregator = MagicMock()
+        signal = MagicMock()
+        signal.agent_id = "analyst"
+        signal.signal_type.value = "buy"
+        signal.confidence = 0.8
+        a.decision_aggregator.add_signal.return_value = signal
+        a.decision_aggregator.aggregate.return_value = MagicMock()
+
+        msg = MagicMock()
+        msg.message_type.value = "report"
+        msg.sender = "analyst"
+        msg.content = {}
+        with patch.object(a, "_is_emergency_situation", new=AsyncMock(return_value=False)), \
+             patch.object(a, "_execute_decision", new=AsyncMock()) as ex:
+            await a._process_subagent_message(msg)
+        ex.assert_called_once()
+        assert a.stats["decisions_made"] == 1
+
+    @pytest.mark.asyncio
+    async def test_prompt_agent_for_decision(self):
+        a = _agent()
+        a.wait_for_idle = AsyncMock()
+        a.prompt = AsyncMock()
+        msg = MagicMock()
+        msg.sender = "analyst"
+        msg.message_type.value = "report"
+        msg.content = {"text": "看漲"}
+        await a._prompt_agent_for_decision(msg)
+        a.prompt.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_prompt_agent_processing_steer(self):
+        a = _agent()
+        a.wait_for_idle = AsyncMock()
+        a.prompt = AsyncMock(side_effect=RuntimeError("already processing"))
+        msg = MagicMock()
+        msg.sender = "analyst"
+        msg.message_type.value = "report"
+        msg.content = {}
+        with patch.object(a, "_send_as_steering_message") as steer:
+            await a._prompt_agent_for_decision(msg)
+        steer.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_prompt_agent_other_error_raises(self):
+        a = _agent()
+        a.wait_for_idle = AsyncMock()
+        a.prompt = AsyncMock(side_effect=RuntimeError("other"))
+        msg = MagicMock()
+        msg.sender = "analyst"
+        msg.message_type.value = "report"
+        msg.content = {}
+        with pytest.raises(RuntimeError):
+            await a._prompt_agent_for_decision(msg)
+
+    def test_format_message_as_prompt_contains_sender(self):
+        a = _agent()
+        msg = MagicMock()
+        msg.sender = "risk"
+        msg.message_type.value = "warning"
+        msg.content = {"level": "high"}
+        prompt = a._format_message_as_prompt(msg)
+        assert "risk" in prompt
+        assert "warning" in prompt
