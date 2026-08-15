@@ -1,9 +1,9 @@
-"""Tests for PrimeAgent pure logic (Wave D — coverage 85% plan)."""
-from types import SimpleNamespace
+"""Tests for PrimeAgent pure logic (Wave D — coverage 85% plan).
 
 PrimeAgent 構造需 LLM config + pi_agent_core — 用 __new__ 跳過 __init__,
 手動注入 config, 測試監控/價格/格式等純邏輯方法.
 """
+from types import SimpleNamespace
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
