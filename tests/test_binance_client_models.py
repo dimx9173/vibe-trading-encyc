@@ -152,3 +152,83 @@ class TestBinanceRestClient:
         filters = await client.get_symbol_filters()
         assert "BTCUSDT" in filters
         assert filters["BTCUSDT"].tick_size == 0.1
+
+
+class TestBinanceRequest:
+    @pytest.mark.asyncio
+    async def test_request_success(self):
+        from vibe_trading.data_sources.binance_client import (
+            BinanceConfig, BinanceRestClient,
+        )
+        cfg = BinanceConfig(api_key="k", api_secret="s", rest_base_url="https://x")
+        client = BinanceRestClient(cfg)
+        session = MagicMock()
+        session.closed = False
+        resp = MagicMock()
+        resp.status = 200
+        resp.json = AsyncMock(return_value={"symbols": []})
+
+        class _CM:
+            async def __aenter__(self):
+                return resp
+
+            async def __aexit__(self, *a):
+                return None
+
+        session.request = MagicMock(return_value=_CM())
+        client._session = session
+        data = await client._request("GET", "/fapi/v1/exchangeInfo")
+        assert data == {"symbols": []}
+
+    @pytest.mark.asyncio
+    async def test_request_api_error(self):
+        from vibe_trading.data_sources.binance_client import (
+            BinanceConfig, BinanceRestClient,
+        )
+        cfg = BinanceConfig(api_key="k", api_secret="s", rest_base_url="https://x")
+        client = BinanceRestClient(cfg)
+        session = MagicMock()
+        session.closed = False
+        resp = MagicMock()
+        resp.status = 400
+        resp.json = AsyncMock(return_value={"msg": "bad"})
+
+        class _CM:
+            async def __aenter__(self):
+                return resp
+
+            async def __aexit__(self, *a):
+                return None
+
+        session.request = MagicMock(return_value=_CM())
+        client._session = session
+        with pytest.raises(Exception) as exc:
+            await client._request("GET", "/fapi/v1/x")
+        assert "API Error" in str(exc.value)
+
+    @pytest.mark.asyncio
+    async def test_request_signed(self):
+        from vibe_trading.data_sources.binance_client import (
+            BinanceConfig, BinanceRestClient,
+        )
+        cfg = BinanceConfig(api_key="k", api_secret="s", rest_base_url="https://x")
+        client = BinanceRestClient(cfg)
+        session = MagicMock()
+        session.closed = False
+        resp = MagicMock()
+        resp.status = 200
+        resp.json = AsyncMock(return_value={})
+
+        class _CM:
+            async def __aenter__(self):
+                return resp
+
+            async def __aexit__(self, *a):
+                return None
+
+        session.request = MagicMock(return_value=_CM())
+        client._session = session
+        await client._request("GET", "/fapi/v1/order", signed=True)
+        kwargs = session.request.call_args.kwargs
+        assert "timestamp" in kwargs["params"]
+        assert "signature" in kwargs["params"]
