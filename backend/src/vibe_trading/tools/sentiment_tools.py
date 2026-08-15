@@ -314,6 +314,7 @@ async def get_news_sentiment(symbol: Optional[str] = None, limit: int = 10) -> d
 
             # 檢查緩存
             current_time = time.time()
+            response = None
             if _news_cache["data"] and (current_time - _news_cache["timestamp"]) < _news_cache["ttl"]:
                 logger.debug("Using cached CryptoCompare news data")
                 data = _news_cache["data"]
@@ -331,8 +332,8 @@ async def get_news_sentiment(symbol: Optional[str] = None, limit: int = 10) -> d
                     _news_cache["data"] = data
                     _news_cache["timestamp"] = current_time
 
-            # 检查响应
-            if response.status_code != 200 or not data.get("Data"):
+            # 检查响应 (cache 命中時 response=None → 跳過 status 檢查, 資料已驗證過)
+            if (response is not None and response.status_code != 200) or not data.get("Data"):
                 logger.warning(f"CryptoCompare News API error: status={response.status_code}")
                 return {
                     "error": f"API returned error status {response.status_code}",
