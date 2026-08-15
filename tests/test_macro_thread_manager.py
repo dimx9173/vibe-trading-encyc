@@ -276,3 +276,38 @@ class TestThreadManagerRun:
 
 async def async_noop():
     return None
+
+
+class TestThreadManagerExtras:
+    @pytest.mark.asyncio
+    async def test_get_statistics(self):
+        mgr = ThreadManager()
+        await mgr.register_thread("a", "main_thread", {})
+        stats = await mgr.get_statistics()
+        assert stats["total_threads"] == 1
+
+    @pytest.mark.asyncio
+    async def test_wait_for_main_thread_stop_timeout(self):
+        mgr = ThreadManager()
+        ss = MagicMock()
+        ss.subscribe = MagicMock()
+        ss.unsubscribe = MagicMock()
+        mgr.shared_state = ss
+        with pytest.raises(__import__("asyncio").TimeoutError):
+            await mgr._wait_for_main_thread_stop()
+
+    @pytest.mark.asyncio
+    async def test_wait_for_main_thread_stop_sets(self):
+        mgr = ThreadManager()
+        ss = MagicMock()
+
+        def subscribe(key, cb):
+            # 立即觸發
+            from vibe_trading.coordinator.shared_state import StateChangeEvent
+            cb(StateChangeEvent(key="main_thread_stopped",
+                                old_value=False, new_value=True))
+
+        ss.subscribe = subscribe
+        ss.unsubscribe = MagicMock()
+        mgr.shared_state = ss
+        await mgr._wait_for_main_thread_stop()  # 立即完成, 不 raise
