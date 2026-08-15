@@ -221,3 +221,54 @@ class TestRequest:
         await p._request("/api/v5/market/ticker")
         kwargs = session.get.call_args.kwargs
         assert kwargs["headers"].get("x-simulated-trading") == "1"
+
+
+class TestOKXWS:
+    @pytest.mark.asyncio
+    async def test_subscribe_klines(self):
+        p = _provider()
+        p.config.ws_base_url = "wss://x"
+        p._ws = MagicMock()
+        p._ws.send = AsyncMock()
+        await p.subscribe_klines("BTCUSDT", "30m", lambda k: None)
+        assert any("candle30m" in k for k in p._ws_callbacks)
+        p._ws.send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_subscribe_ensures_ws(self):
+        p = _provider()
+        p.config.ws_base_url = "wss://x"
+        with patch("vibe_trading.data_sources.providers.okx_provider.websockets") as mock_ws:
+            mock_ws.connect = AsyncMock(return_value=MagicMock())
+            await p._ensure_ws()
+        assert p._ws is not None
+        assert p._ws_listen_task is not None
+        # 清理 task (避免 asyncio CancelledError 洩漏)
+        p._ws_listen_task.cancel()
+        import asyncio as _aio
+        try:
+            await _aio.wait_for(_aio.shield(p._ws_listen_task), timeout=0.5)
+        except (_aio.CancelledError, _aio.TimeoutError):
+            pass
+
+    @pytest.mark.asyncio
+    async def test_unsubscribe_klines(self):
+        p = _provider()
+        p._ws = MagicMock()
+        p._ws.send = AsyncMock()
+        await p.subscribe_klines("BTCUSDT", "30m", lambda k: None)
+        await p.unsubscribe_klines("BTCUSDT", "30m")
+        assert p._ws_callbacks == {}
+        p._ws.send.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_unsubscribe_no_ws(self):
+        p = _provider()
+        await p.unsubscribe_klines("BTCUSDT", "30m")  # 不 raise
+
+    def test_convert_kline(self):
+        p = _provider()
+        raw = ["1700000000000", "100", "105", "95", "102", "1000", "0", "0", "0"]
+        k = p._convert_kline(raw, "BTCUSDT", "30m")
+        assert k.symbol == "BTCUSDT"
+        assert k.close == 102.0
