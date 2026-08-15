@@ -554,3 +554,66 @@ class TestGroundingFail:
         assert decision.decision == "HOLD"
         assert "Grounding" in decision.rationale
         assert decision.confidence <= 0.5
+
+
+class TestCoordinatorReporting:
+    @pytest.mark.asyncio
+    async def test_get_quality_report(self, coordinator):
+        qt = MagicMock()
+        qt.get_quality_metrics = AsyncMock(return_value=None)
+        qt.generate_report = MagicMock(return_value="report ok")
+        coordinator._quality_tracker = qt
+        report = await coordinator.get_quality_report()
+        assert report == "report ok"
+
+    @pytest.mark.asyncio
+    async def test_get_quality_report_error(self, coordinator):
+        qt = MagicMock()
+        qt.get_quality_metrics = AsyncMock(side_effect=RuntimeError("x"))
+        coordinator._quality_tracker = qt
+        report = await coordinator.get_quality_report()
+        assert "无法生成" in report
+
+    @pytest.mark.asyncio
+    async def test_get_agent_rankings(self, coordinator):
+        qt = MagicMock()
+        qt.get_agent_ranking = MagicMock(return_value=[("a", 0.9)])
+        coordinator._quality_tracker = qt
+        assert await coordinator.get_agent_rankings() == [("a", 0.9)]
+
+    @pytest.mark.asyncio
+    async def test_get_agent_rankings_error(self, coordinator):
+        from unittest.mock import patch as _p
+        import vibe_trading.coordinator.trading_coordinator as tc
+        qt = MagicMock()
+        qt.get_agent_ranking = MagicMock(side_effect=RuntimeError("x"))
+        coordinator._quality_tracker = qt
+        with _p.object(tc, "logger", MagicMock()):
+            assert await coordinator.get_agent_rankings() == []
+
+    @pytest.mark.asyncio
+    async def test_get_top_performers(self, coordinator):
+        from unittest.mock import patch as _p
+        import vibe_trading.coordinator.trading_coordinator as tc
+        qt = MagicMock()
+        qt.get_top_performers = MagicMock(return_value=["a", "b"])
+        coordinator._quality_tracker = qt
+        with _p.object(tc, "logger", MagicMock()):
+            assert await coordinator.get_top_performers(top_n=2) == ["a", "b"]
+
+    @pytest.mark.asyncio
+    async def test_get_underperformers(self, coordinator):
+        from unittest.mock import patch as _p
+        import vibe_trading.coordinator.trading_coordinator as tc
+        qt = MagicMock()
+        qt.get_underperformers = MagicMock(return_value=["z"])
+        coordinator._quality_tracker = qt
+        with _p.object(tc, "logger", MagicMock()):
+            assert await coordinator.get_underperformers(threshold=0.5) == ["z"]
+
+    def test_decision_history_copy(self, coordinator):
+        coordinator._decision_history.append("d1")
+        hist = coordinator.get_decision_history()
+        assert hist == ["d1"]
+        hist.append("d2")
+        assert coordinator.get_decision_history() == ["d1"]
