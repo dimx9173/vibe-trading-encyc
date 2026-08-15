@@ -942,3 +942,80 @@ class TestRealInit:
         assert a.decision_history == []
         assert a._monitoring_running is False
         assert "messages_processed" in a.stats
+
+
+class TestMonitoring:
+    @pytest.mark.asyncio
+    async def test_monitoring_loop_paused_skips(self):
+        a = _agent()
+        a._monitoring_running = True
+        a._monitoring_paused = True
+        a._monitoring_check = AsyncMock()
+        a.prime_config.monitoring_interval = 0.01
+        calls = []
+
+        async def _fake_sleep(sec):
+            calls.append(1)
+            if len(calls) >= 2:
+                a._monitoring_running = False
+
+        with patch("vibe_trading.prime.prime_agent.asyncio.sleep",
+                   new=_fake_sleep):
+            await a._start_monitoring_loop()
+        a._monitoring_check.assert_not_called()  # paused → 跳過
+
+    @pytest.mark.asyncio
+    async def test_monitoring_loop_runs(self):
+        a = _agent()
+        a._monitoring_running = True
+        a._monitoring_paused = False
+        a._monitoring_check = AsyncMock()
+        a.prime_config.monitoring_interval = 0.01
+        calls = []
+
+        async def _fake_sleep(sec):
+            calls.append(1)
+            if len(calls) >= 2:
+                a._monitoring_running = False
+
+        with patch("vibe_trading.prime.prime_agent.asyncio.sleep",
+                   new=_fake_sleep):
+            await a._start_monitoring_loop()
+        assert a._monitoring_check.call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_monitoring_loop_error_raises(self):
+        a = _agent()
+        a._monitoring_running = True
+        a._monitoring_paused = False
+        a._monitoring_check = AsyncMock(side_effect=RuntimeError("boom"))
+        from unittest.mock import patch as _p
+        import vibe_trading.prime.prime_agent as pa
+        with _p.object(pa, "logger", MagicMock()):
+            with pytest.raises(RuntimeError):
+                await a._start_monitoring_loop()
+        assert a.status.value == "error"
+
+    @pytest.mark.asyncio
+    async def test_monitoring_check(self):
+        from unittest.mock import patch as _p
+        import vibe_trading.prime.prime_agent as pa
+        a = _agent()
+        a.system_state = MagicMock()
+        a.message_channel = MagicMock()
+        a.message_channel.size = AsyncMock(return_value=5)
+        a.harness = MagicMock()
+        a.harness.get_violation_summary = AsyncMock(return_value={})
+        a._check_price_movement = AsyncMock()
+        a._check_system_health = AsyncMock()
+        with _p.object(pa, "warning", MagicMock()):
+            await a._monitoring_check()
+        a._check_price_movement.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_message_stats(self):
+        a = _agent()
+        a.message_channel = MagicMock()
+        a.message_channel.get_stats = AsyncMock(return_value={"x": 1})
+        stats = await a.get_message_stats()
+        assert stats == {"x": 1}
