@@ -82,6 +82,80 @@ class TestInitConfig:
         assert state.current_symbol == "ETHUSDT"
 
 
+class TestLoadHistoricalKlines:
+    @pytest.mark.asyncio
+    async def test_load_with_klines(self):
+        state.klines = []
+        kline = MagicMock()
+        kline.open_time = 1700000000000
+        kline.symbol = "BTCUSDT"
+        kline.interval = "30m"
+        kline.open = kline.high = kline.low = kline.close = 50000.0
+        kline.volume = 100.0
+        storage = MagicMock()
+        storage.init = AsyncMock()
+        storage.close = AsyncMock()
+        storage.query_klines = AsyncMock(return_value=[kline])
+        with patch.object(web_server, "kline_storage", storage), \
+             patch.object(web_server, "calculate_indicators", new=AsyncMock()):
+            await web_server.load_historical_klines("BTCUSDT", "30m", 100)
+        assert len(state.klines) == 1
+        assert state.klines[0]["close"] == 50000.0
+
+    @pytest.mark.asyncio
+    async def test_load_empty(self):
+        state.klines = []
+        storage = MagicMock()
+        storage.init = AsyncMock()
+        storage.close = AsyncMock()
+        storage.query_klines = AsyncMock(return_value=[])
+        with patch.object(web_server, "kline_storage", storage):
+            await web_server.load_historical_klines("BTCUSDT", "30m")
+        assert state.klines == []
+
+    @pytest.mark.asyncio
+    async def test_load_error_failsafe(self):
+        storage = MagicMock()
+        storage.init = AsyncMock(side_effect=RuntimeError("down"))
+        storage.close = AsyncMock()
+        with patch.object(web_server, "kline_storage", storage):
+            await web_server.load_historical_klines("BTCUSDT")  # 不 raise
+
+
+class TestCalculateIndicators:
+    @pytest.mark.asyncio
+    async def test_insufficient_data(self):
+        state.klines = [{"open": 1, "high": 2, "low": 1, "close": 1, "volume": 1}] * 10
+        with patch.object(web_server, "technical_indicators") as ti:
+            await web_server.calculate_indicators()
+            ti.load_data.assert_not_called()  # < 50 → 直接 return
+
+    @pytest.mark.asyncio
+    async def test_sufficient_data(self):
+        state.klines = [{"open": 100.0 + i, "high": 105.0 + i, "low": 95.0 + i,
+                         "close": 100.0 + i, "volume": 10.0} for i in range(60)]
+        ti = MagicMock()
+        ti.calculate_all.return_value = __import__("pandas").DataFrame({
+            "rsi": [50.0] * 60, "macd": [1.0] * 60, "macd_signal": [0.5] * 60,
+            "macd_hist": [0.5] * 60, "sma_20": [100.0] * 60, "sma_50": [100.0] * 60,
+            "ema_12": [100.0] * 60, "ema_26": [100.0] * 60,
+            "bb_upper": [102.0] * 60, "bb_middle": [100.0] * 60,
+            "bb_lower": [98.0] * 60, "atr": [1.0] * 60,
+        })
+        with patch.object(web_server, "technical_indicators", ti):
+            await web_server.calculate_indicators()
+        assert "rsi" in state.indicators
+        assert state.indicators["rsi"][0] == 50.0
+
+    @pytest.mark.asyncio
+    async def test_calculate_error_failsafe(self):
+        state.klines = [{"open": 1, "high": 2, "low": 1, "close": 1, "volume": 1}] * 60
+        ti = MagicMock()
+        ti.calculate_all.side_effect = RuntimeError("boom")
+        with patch.object(web_server, "technical_indicators", ti):
+            await web_server.calculate_indicators()  # 不 raise
+
+
 class TestConnectionState:
     def test_broadcast_sends_text(self):
         cs = web_server.ConnectionState()
