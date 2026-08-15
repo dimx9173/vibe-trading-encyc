@@ -657,3 +657,120 @@ class TestEmergencyDecision:
         msg.message_id = "m1"
         d = await a._emergency_decision(msg)
         assert d.action == TradingAction.HOLD
+
+
+class TestEmergencyDecision:
+    def _msg(self, content, msg_type=None):
+        from datetime import datetime
+        from vibe_trading.agents.messaging import MessageType, AgentMessage
+        return AgentMessage(
+            message_id="m1", correlation_id="c1",
+            sender="analyst", receiver="prime",
+            message_type=msg_type or MessageType.INFO,
+            content=content,
+            timestamp=datetime.now(),
+        )
+
+    @pytest.mark.asyncio
+    async def test_crash_decision(self):
+        a = _agent()
+        d = await a._emergency_decision(self._msg({"price_change": -0.1}))
+        assert d.action.value == "close_all"
+        assert d.override is True
+
+    @pytest.mark.asyncio
+    async def test_pump_decision(self):
+        a = _agent()
+        d = await a._emergency_decision(self._msg({"price_change": 0.1}))
+        assert d.action.value == "hold"
+        assert d.override is True
+
+    @pytest.mark.asyncio
+    async def test_risk_limit_decision(self):
+        a = _agent()
+        d = await a._emergency_decision(self._msg({"var_value": 0.9}))
+        assert d.action.value == "reduce_position"
+
+    @pytest.mark.asyncio
+    async def test_margin_call_decision(self):
+        a = _agent()
+        d = await a._emergency_decision(self._msg({"margin_ratio": 0.9}))
+        assert d.action.value == "close_all"
+
+    @pytest.mark.asyncio
+    async def test_system_error_decision(self):
+        from vibe_trading.agents.messaging import MessageType
+        a = _agent()
+        d = await a._emergency_decision(
+            self._msg({"error_type": "network"}, MessageType.ERROR))
+        assert d.action.value == "hold"
+
+
+class TestClassifyEmergency:
+    def _msg(self, content, msg_type=None):
+        from datetime import datetime
+        from vibe_trading.agents.messaging import MessageType, AgentMessage
+        return AgentMessage(
+            message_id="m1", correlation_id="c1",
+            sender="analyst", receiver="prime",
+            message_type=msg_type or MessageType.INFO,
+            content=content,
+            timestamp=datetime.now(),
+        )
+
+    def test_network(self):
+        from vibe_trading.agents.messaging import MessageType
+        a = _agent()
+        assert a._classify_emergency(
+            self._msg({"error_type": "network"}, MessageType.ERROR)
+        ).value == "network_error"
+
+    def test_data(self):
+        from vibe_trading.agents.messaging import MessageType
+        a = _agent()
+        assert a._classify_emergency(
+            self._msg({"error_type": "data"}, MessageType.ERROR)
+        ).value == "data_anomaly"
+
+    def test_unknown_error_type(self):
+        from vibe_trading.agents.messaging import MessageType
+        a = _agent()
+        assert a._classify_emergency(
+            self._msg({"error_type": "other"}, MessageType.ERROR)
+        ).value == "system_error"
+
+    def test_default(self):
+        a = _agent()
+        assert a._classify_emergency(self._msg({})).value == "system_error"
+
+
+class TestExecuteDecision:
+    @pytest.mark.asyncio
+    async def test_buy_sell_close_hold(self):
+        from vibe_trading.prime.models import Decision, TradingAction, DecisionPriority
+        from unittest.mock import patch as _p
+        import vibe_trading.prime.prime_agent as pa
+        a = _agent()
+        with _p.object(pa, "logger", MagicMock()), \
+             _p.object(pa, "warning", MagicMock()):
+            for action in [TradingAction.BUY, TradingAction.SELL,
+                           TradingAction.CLOSE_ALL, TradingAction.HOLD]:
+                await a._execute_decision(Decision(
+                    action=action, reason="r", override=True,
+                    priority=DecisionPriority.HIGH))
+
+    @pytest.mark.asyncio
+    async def test_handle_constraint_violation(self):
+        from datetime import datetime
+        from vibe_trading.agents.messaging import MessageType, AgentMessage
+        from unittest.mock import patch as _p
+        import vibe_trading.prime.prime_agent as pa
+        a = _agent()
+        a.steer = MagicMock()
+        msg = AgentMessage(message_id="m1", correlation_id="c1",
+                           sender="analyst", receiver="prime",
+                           message_type=MessageType.INFO, content={},
+                           timestamp=datetime.now())
+        with _p.object(pa, "warning", MagicMock()):
+            await a._handle_constraint_violation(msg)
+        a.steer.assert_called_once()
