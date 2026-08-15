@@ -2,7 +2,8 @@
 
 > **文檔狀態**：正式技術路線圖（Technical Evolution Roadmap）  
 > **制定日期**：2026-08-15  
-> **核心戰略**：**專注加密貨幣 CEX / DEX 垂直深耕**，全面吸納 `HKUDS/Vibe-Trading`（確定性金融工程與防幻覺治理）與 `AlphaGPT`（神經符號因子與微觀運算元）的核心優勢。
+> **修訂**：2026-08-15 — 基於競品功能全面採納評估 (`feature-adoption-assessment.md`) 修正方向: 標記 Phase 1 完成、移除哈希鏈帳本 (已判定 LOW)、移除 RL 因子挖掘 (lookahead 污染)、加入回測保真度/退出階梯/RunManifest。  
+> **核心戰略**：**專注加密貨幣 CEX / DEX 垂直深耕**，全面吸納 `HKUDS/Vibe-Trading`（確定性金融工程與防幻覺治理）與 `AlphaGPT`（微觀因子與運算元，**取其工具棄其學習循環**）的核心優勢。
 
 ---
 
@@ -10,13 +11,13 @@
 
 主專案（`vibe-trading-encyc`）在 **12-Agent 多角色認知對抗（4階段決策）** 與 **無未來函數的 Agent Replay 體系** 上具備堅實的架構壁壘。
 
-為進一步提升實盤獲利能力、杜絕大模型價格幻覺、並擴展鏈上/鏈下交易場景，本路線圖制定了**四階段（Phase 1 ~ Phase 4）演進規劃**，確立主專案在加密貨幣智能量化交易領域的領先地位：
+本路線圖制定**四階段（Phase 1 ~ Phase 4）演進規劃**。**Phase 1 已完成**；Phase 2 起點為微觀因子包 + 永續回測保真度。
 
 ```mermaid
 graph LR
-    P1["Phase 1: 決策防護基建<br>(QuantLib + Grounding 閘門)"] --> P2["Phase 2: 微觀因子與運算元<br>(12特徵 + StackVM 虛擬機)"]
-    P2 --> P3["Phase 3: 自主因子挖掘與自進化<br>(Alpha Mining Agent + 假說庫)"]
-    P3 --> P4["Phase 4: 全鏈路 Crypto CEX/DEX<br>(Hyperliquid/Jupiter + MCP 生態)"]
+    P1["Phase 1: 決策防護基建 ✅<br>(QuantLib + Grounding Gate 已完成)"] --> P2["Phase 2: 微觀因子與運算元<br>(微觀特徵 + StackVM + 回測保真度)"]
+    P2 --> P3["Phase 3: 因子挖掘與篩選<br>(張量預篩 + 假說庫, 非 RL)"]
+    P3 --> P4["Phase 4: 全鏈路 Crypto CEX/DEX<br>(多交易所 + MCP 生態)"]
 ```
 
 ---
@@ -25,81 +26,87 @@ graph LR
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                   vibe-trading-encyc 技術演進全景架構 (四階段)                         │
+│ Phase 1 ✅: 確定性金融計算庫 (QuantLib)  &  Grounding 防幻覺硬閘門                      │
+│          - Cornish-Fisher VaR / GARCH / EVT / 凱利 / TWR/XIRR / L2 衝擊                │
+│          - TradingPlan 價格 vs OHLC 邊界校驗, 違規降級 HOLD                             │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│ Phase 1: 確定性金融計算庫 (QuantLib)  &  Phase 4 交易計畫 Grounding 防幻覺硬閘門       │
-│          - GARCH 波動率 / EVT / 凱利公式   - 嚴格 OHLC / 盤口邊界比對拒絕機制          │
+│ Phase 2: 微觀結構特徵庫 (Microstructure)  &  StackVM 運算元  &  永續回測保真度          │
+│          - pressure(用真實 taker_buy) / fomo / vol_cluster / close_pos                │
+│          - GATE / JUMP / DECAY / MAX3 運算元 (分析師可組合因子)                        │
+│          - 8h 資金費率結算 + OKX 分級維持保證金 + 標記價強平                            │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│ Phase 2: 微觀結構特徵庫 (Microstructure)  &  StackVM 符號運算元虛擬機                  │
-│          - pressure / fomo / vol_cluster   - GATE / JUMP / DECAY / MAX3 運算元         │
-├────────────────────────────────────────────────────────────────────────────────────────┤
-│ Phase 3: LLM 引導的 Alpha Mining Agent  &  策略自進化 (Self-Evolution Loop)           │
-│          - 啟發式因子生成 / 張量極速回測打分 - 自動沈澱至 P3 假說庫 (Hypothesis Registry)│
+│ Phase 3: 因子張量預篩  &  假說庫自動沈澱 (無 RL)                                        │
+│          - 多標的 [tokens×time] 批量回測, 花 LLM 預算前預篩因子                        │
+│          - 演化式/隨機公式搜尋 (非 RL policy gradient — 見修正註記)                    │
+│          - P3 假說庫 (Hypothesis Registry) 自動沈澱 + EvidenceGate 跟蹤                │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
 │ Phase 4: 加密貨幣 CEX & DEX 雙軌實盤  &  標準化 MCP Server 開放生態                    │
-│          - Binance / OKX / Hyperliquid / Solana Jupiter - 40+ 加密量化 MCP 工具集成     │
+│          - Binance / OKX / Hyperliquid / Jupiter 執行通道                              │
+│          - 動態標的宇宙 + 退出階梯 (trailing/moonbag) + RunManifest 方法論指紋         │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### 🚀 Phase 1：決策可靠度與防護基建（Reliability & Risk Guardrails）
-> **借鑑來源**：`HKUDS/Vibe-Trading`（`src/quantlib` + Grounding Gates + 審計帳本）  
-> **核心目標**：將數學計算與 LLM 嚴格解耦，杜絕大模型在 Prompt 內「心算」與「捏造價格」。
+### ✅ Phase 1：決策可靠度與防護基建（已完成）
+> **借鑑來源**：`HKUDS/Vibe-Trading`（`src/quantlib` + Grounding Gates）  
+> **狀態**: 2026-08-15 完成
 
-#### 1.1 內建模組化金融數學庫（`vibe_trading/quantlib/`）
-* **波動率與風險計量模組**：
-  * 歷史與參數 VaR / CVaR（含 Cornish-Fisher 修正）
-  * 極值理論（EVT - Peaks Over Threshold / GPD 擬合）
-  * GARCH(1,1) / EWMA 動態條件波動率預測
-* **資金管理與執行計量**：
-  * 動態半凱利（Fractional Kelly）與最大回撤限制器
-  * 盤口流動性衝擊成本估算（Orderbook L2 Depth Impact Model）
-  * 不規則現金流分析（TWR / XIRR）
-* **設計原則**：所有量化公式均為純 Python/NumPy/SciPy 實作，單元測試覆蓋率 100%，Agent 必須透過 Tool 取得確定性數值。
+#### 1.1 內建模組化金融數學庫（`vibe_trading/quantlib/`）✅
+* **已交付**：歷史/參數/Cornish-Fisher/EVT VaR + CVaR, GARCH(1,1) + EWMA, Fractional Kelly, 最大回撤限制, TWR/XIRR, L2 盤口衝擊成本 (純 NumPy, 零 scipy 依賴, 24 測試)
+* **已修復**：`advanced_risk_tools._parametric_var` scipy ImportError (隱藏 bug)
+* **後續 (backlog)**：Markov regime, PBO/過擬合診斷, purged CV, Kupiec/Christoffersen VaR 回測 — 見採納評估 backlog
 
-#### 1.2 Phase 4 交易計畫 Grounding 防幻覺硬閘門
-* **價格合理性校驗**：
-  * 交易員（Trader）與投資組合經理（PM）輸出下單計畫時，自動攔截並核對目標入場價、止損價、止盈價。
-  * 若價格超出當前 Bar 實測區間 $[Low \times 0.98, High \times 1.02]$ 或盤口價差，系統直接判定為「Grounding 違規」並強制駁回重試。
-* **不可篡改審計帳本（Audit Ledger）**：
-  * 對每根 Bar 的原始輸入、Agent 對話歷史、工具調用 Trace、最終決策與真實成交進行哈希鏈式（Hash-Chained）持久化存檔。
+#### 1.2 Grounding 防幻覺硬閘門 ✅
+* **已交付**：TradingPlan 結構化價格 vs 當前 bar `[Low×0.98, High×1.02]` 校驗 (stop/TP 放寬 ±10%), 違規降級 HOLD + metadata 記錄 + TG `/decision` 顯示
+* **後續 (backlog)**：unsourced-symbol 檢查 + 有界唯讀恢復循環 (HKUDS GroundingLedger 模式, 採納評估 A6)
+* **~~不可篡改審計帳本~~ → 已移除**：單 operator 無外部審計方, 防篡改無動機 (2026-08-15 判定 LOW)。**替代**: RunManifest 方法論指紋 (Phase 4 A7), 證明 replay 可重現性比防篡改更有價值
 
 ---
 
 ### ⚡ Phase 2：微觀因子運算元與特徵工具庫（Microstructure & StackVM）
-> **借鑑來源**：`AlphaGPT`（`FeatureEngineer` + `StackVM` 運算元引擎）  
-> **核心目標**：為 Phase 1 分析師團隊配備高敏微觀結構指標與動態公式運算元。
+> **借鑑來源**：`AlphaGPT`（微觀因子 + StackVM, **取工具層, 不取 RL 學習循環**）  
+> **核心目標**：為分析師團隊配備高敏微觀結構指標與動態公式運算元
 
-#### 2.1 封裝 12 種加密微觀結構特徵庫（Microstructure Factors）
-* `pressure`：買賣盤口掛單深度不平衡度（Orderbook Imbalance）
-* `fomo`：成交量與主動買入資金流加速度（Volume Surge & Inflow Acceleration）
-* `vol_cluster`：短期與長期波動率聚集比（Volatility Clustering）
-* `close_pos`：當前價格在特定窗口高低價區間的相對分位數（Range Relative Position）
-* `liq_score`：流動性深度與持倉量（OI）健康度評分
-* `momentum_rev` / `rel_strength` / `hl_range` / `vol_trend`：動量反轉、相對強弱與趨勢強度
+#### 2.1 微觀結構特徵庫（採納評估 A1, 6 個初版）
+* `pressure`：買賣失衡 — **用我們真實 `taker_buy_base/volume` (每根 kline 已儲存)**, 比 AlphaGPT 蠟燭體代理 (`tanh(3(c-o)/(h-l))`) 更強
+* `fomo`：成交量與主動買入資金流加速度 (5-bar 窗口)
+* `vol_cluster`：滾動實現波動率聚集
+* `close_pos`：bar 區間相對位置 `(c-l)/(h-l)`
+* `momentum_rev`：5-bar 動量符號翻轉二值訊號
+* `vol_trend`：1-bar 成交量變化
+* **設計**：純 OHLCV 函數, NaN-aware 滾動窗口 (**不可複製 AlphaGPT 的 zero-padding 污染** — 違反 PIT 紀律), 註冊為 Technical Analyst tool
+* **後續**：liq_score (CEX 需深度/24h 成交量代理, 非 DEX pool), 其餘 5 特徵視需要
 
-#### 2.2 輕量級 StackVM 運算元虛擬機（`vibe_trading/factors/vm.py`）
-* **內建 12 種量化運算元**：
-  * 基礎運算：`ADD`, `SUB`, `MUL`, `DIV`, `NEG`, `ABS`, `SIGN`
-  * 條件門控：`GATE(cond, x, y)`（條件成立選 x，否則 y）
-  * 極值跳變：`JUMP(x)`（Z-score > 3 異常檢測）
-  * 時間序列：`DECAY(x, alpha)`（指數衰減疊加）、`DELAY1(x)`（一階滯後）、`MAX3(x)`（當前與前兩期極值）
-* **分析師能力賦能**：Technical Analyst 可直接輸出公式 AST 字串，StackVM 在毫秒級內完成向量化特徵求值並返回給決策流。
+#### 2.2 StackVM 符號運算元虛擬機（採納評估 A2）
+* **內建運算元**（純函式, arity-checked, NaN-safe）：
+  * 基礎：`ADD`, `SUB`, `MUL`, `DIV`(eps-guard), `NEG`, `ABS`, `SIGN`
+  * 條件門控：`GATE(cond, x, y)` — 制度切換 (高價值)
+  * 極值：`JUMP(x)` (Z-score>3 異常偵測)
+  * 時間序列：`DECAY(x)` (指數衰減), `DELAY1(x)`, `MAX3(x)`
+* **分析師能力賦能**：Technical Analyst 可輸出公式 AST 字串, StackVM 毫秒級求值 — 取代固定指標硬編碼
+* **明確不取**：AlphaGPT 的 LoopedTransformer + RL 循環 (見 Phase 3 修正註記)
+
+#### 2.3 永續合約回測保真度（採納評估 A3）
+* **資金費率結算**：00:00/08:00/16:00 UTC 三結算點, per-symbol 去重, `fee = size × mark × rate`
+* **分級維持保證金**：OKX 簡化 tier 表, `margin + unrealized ≤ notional × tier_rate` → 強平
+* **maker/taker 費率** (0.0002/0.0005) + 不利側滑點
+* **接入**：agent replay 成交模擬 (目前無資金費率/強平, 永續策略回測失真)
 
 ---
 
-### 🧠 Phase 3：自主因子挖掘與策略自進化（LLM-Guided Alpha Mining & Self-Evolution）
-> **融合創新**：結合 `AlphaGPT` 的符號挖掘反饋機制與 `HKUDS` 的 Research Backbone（P3 假說庫）  
-> **核心目標**：讓系統具備自主提出策略假說、張量化回測評分、自動沈澱升級為生產工具的能力。
+### 🧠 Phase 3：因子挖掘與篩選（LLM-Guided Alpha Mining, 無 RL）
+> **融合**：AlphaGPT 符號挖掘概念 (去 RL) + HKUDS 假說庫 (Research Backbone)  
+> **核心目標**：系統可自主提出因子假說, 張量預篩, 自動沈澱至假說庫
 
-#### 3.1 構建 Alpha Mining Agent（因子挖掘師）
-* **運作機制**：在宏觀線程（Macro Thread）或後台異步運行，結合 LLM 領域知識（如「當前處於高波動橫盤，需要構建均值回歸+成交量背離因子」）進行啟發式搜尋，輸出新型公式 Token。
-* **極速張量回測打分器（`FastFactorBacktest`）**：
-  * 利用 StackVM 在過去 90 天歷史 K 線矩陣上並行計算候選因子的 IC（資訊係數）、IR（資訊比率）、多空年化 Sharpe 與最大回撤。
-  * 實行無效因子懲罰機制（過低方差、高相關性因子給予負分）。
+#### 3.1 Alpha Mining Agent（因子挖掘師）
+* 在宏觀線程後台運行, LLM 啟發式搜尋: 結合領域知識輸出公式 Token (StackVM 可執行的 AST)
+* **極速張量回測打分器**（採納評估 A8）：
+  * `[tokens×time]` 矩陣化, 一次跑完所有候選因子
+  * 評分: IC / IR / 多空 Sharpe / 最大回撤, 低方差/高相關性因子負分
+  * **Binance taker 費率 + 深度衝擊模型** (非 AlphaGPT 的 AMM 0.6% 費用)
 
-#### 3.2 策略自進化閉環（Self-Evolution Loop）
+#### 3.2 策略自進化閉環
 ```mermaid
 graph TD
     A[Alpha Mining Agent 提出新因子公式] --> B[StackVM 張量回測評分]
@@ -112,47 +119,58 @@ graph TD
     F -->|否| H[歸檔/標記淘汰]
 ```
 
+#### 3.3 修正註記: 為何不採納 AlphaGPT RL 循環
+* AlphaGPT `engine.py` 標籤用 `torch.roll(open, -2)` — **未來數據 (lookahead 污染)**, 違反我們 PIT replay 紀律
+* 獎勵只有 return+drawdown, **無 IC/Sharpe** (先前宣稱不實)
+* 架構綁定 LoopedTransformer/MTPHead — 無法獨立複用
+* **替代**: 演化式/隨機公式搜尋 (對 StackVM AST 做變異/交叉, 用乾淨 PIT 評分) — 達成自進化目的, 無 lookahead 風險
+
 ---
 
 ### 🌐 Phase 4：全鏈路 Crypto CEX/DEX 擴展與 MCP 生態（Crypto-Native CEX/DEX & MCP）
 > **戰略定位**：**專注加密貨幣 CEX / DEX 縱深**，建立全鏈路加密執行矩陣與標準化開放生態。
 
 #### 4.1 CEX 與 DEX 雙軌執行矩陣（Tier-1 CEX + Tier-1 DEX）
-* **中心化交易所（CEX）深度覆蓋**：
-  * **Binance**：現貨、USD-M 永續合約、Coin-M 幣本位合約（最大流動性樞紐）
-  * **OKX**：現貨、永續合約、交割與期權（統一帳戶保證金、低借貸利率）
-  * **Bybit**：永續合約、反向合約（衍生品流動性強、資金費率彈性大）
-  * **Bitget**：現貨、永續合約（散戶動能指標、新幣捕捉）
-  * **戰略賦能**：支援**跨交易所資金費率套利（Delta-Neutral Funding Arbitrage）**、**智能訂單路由（Smart Order Routing, SOR）** 與 **多盤口微觀失衡交叉驗證**。
-* **去中心化協議（DEX）原生接入**：
-  * **Hyperliquid**：鏈上訂單簿永續合約（高流動性、低延遲、無許可 API）
-  * **Solana Jupiter DEX 聚合器**：鏈上 Meme 幣與主流幣極速 Swap（支援私密交易防 MEV 夾子）
-  * **EVM DEX (Uniswap v3 / PancakeSwap)**：以太坊 / Arbitrum / BSC 鏈上多路由撮合
+* **中心化交易所（CEX）**：
+  * **Binance**（現有）→ 擴展 Coin-M 幣本位合約
+  * **OKX / Bybit / Bitget**：永續合約接入
+  * **戰略賦能**：跨交易所資金費率套利 (Delta-Neutral)、智能訂單路由 (SOR)
+* **去中心化協議（DEX）**：
+  * **Hyperliquid**：鏈上訂單簿永續合約
+  * **Solana Jupiter DEX 聚合器**：Meme 幣極速 Swap
+  * **EVM DEX (Uniswap v3)**: 以太坊 / Arbitrum / BSC
 
-#### 4.2 標準化 Crypto MCP Server（Model Context Protocol）
-* 將系統核心能力封裝為 **40+ 標準 MCP 工具**：
-  * `crypto_get_kline` / `crypto_orderbook_depth` / `crypto_funding_rate`
-  * `quantlib_var_calc` / `quantlib_volatility_forecast`
-  * `alpha_stackvm_eval` / `alpha_mine_hypotheses`
-  * `agent_replay_run` / `execution_place_order`
-* **賦能外部生態**：外部 AI 工具（Cursor、Claude Desktop、Antigravity）可一鍵掛載主專案，調用強大的多 Agent 協同決策大腦。
+#### 4.2 動態標的宇宙與退出管理（採納評估 A4 + A5）
+* **動態標的篩選管線**：Binance 24h tickers 按 quote volume 排名 → 過濾穩定幣/槓桿代幣/市值區間 → 取代硬編碼 BTCUSDT/ETHUSDT (`get_trending_symbols` 目前是 stub)
+* **退出階梯**：trailing stop (+5% 啟動, 峰值回撤 3% 全出) + TP1 moonbag (+10% 賣 50%) — 直接進 Binance executor config
+
+#### 4.3 RunManifest 方法論指紋（採納評估 A7）
+* content-addressed hash: system prompt + skills (name, content_hash) + tools 清單 + 套件版本
+* **排除 run_id/timestamp** → 兩次相同組成的 run 有相同 hash
+* `diff_manifests` 偵測**方法論漂移** (skill/套件在 run A/B 之間是否變更) — 讓 agent replay 可重現性**可證明**
+
+#### 4.4 標準化 Crypto MCP Server
+* 核心能力封裝為 MCP 工具: `crypto_get_kline` / `quantlib_var_calc` / `alpha_stackvm_eval` / `agent_replay_run` / `execution_place_order` / `crypto_universe_scan`
+* 鏡像現有 agent tools + quantlib 計算 (採納評估 backlog: quantlib_call 鏡像模式)
+* 安全: Host/Origin guard (DNS-rebinding 防護, HKUDS 模式)
 
 ---
 
 ## 📅 里程碑與交付時程表
 
-| 階段 | 里程碑代號 | 核心交付物 | 預計驗收指標 |
+| 階段 | 里程碑代號 | 核心交付物 | 狀態 |
 | :--- | :--- | :--- | :--- |
-| **Phase 1** | `M1-QuantGuard` | • `quantlib` 數學庫（VaR/GARCH/凱利）<br>• Grounding 價格防幻覺硬閘門<br>• 哈希鏈式不可篡改審計帳本 | 100% 單元測試覆蓋，0 價格幻覺事故 |
-| **Phase 2** | `M2-FactorVM` | • 12 種微觀結構特徵庫<br>• StackVM 符號運算元虛擬機<br>• Technical Analyst 工具擴展 | 特徵計算延遲 $< 5\text{ms}$，AST 解析 100% 容錯 |
-| **Phase 3** | `M3-AlphaEvolution` | • Alpha Mining Agent 挖掘師<br>• 張量極速回測打分器<br>• P3 假說庫自動沈澱閉環 | 每週自動產出 3~5 個高 IC 候選因子並進入 EvidenceGate |
-| **Phase 4** | `M4-CryptoNexus` | • Binance/OKX/Bybit/Bitget 四大 CEX 執行器<br>• Hyperliquid & Jupiter DEX 鏈上通道<br>• 40+ 工具 Crypto MCP Server<br>• 跨所資金費率套利與 SOR 智能路由器 | 支援鏈上/鏈下毫秒級路由，資金費率套利閉環運作，MCP 外部工具無縫接入 |
+| **Phase 1** | `M1-QuantGuard` | • `quantlib` 數學庫 (VaR/CVaR/GARCH/Kelly/TWR/XIRR/L2 衝擊) ✅<br>• Grounding 價格防幻覺硬閘門 ✅<br>• ~~哈希鏈帳本~~ → 移除 (LOW) | **✅ 完成** (2026-08-15) |
+| **Phase 2** | `M2-FactorVM` | • 6 微觀結構特徵庫 (pressure 用真實 taker_buy)<br>• StackVM 符號運算元 (12 ops)<br>• 永續回測保真度 (8h 資金費率 + 分級維持保證金)<br>• Technical Analyst 工具擴展 | 下一個 |
+| **Phase 3** | `M3-AlphaEvolution` | • Alpha Mining Agent (演化式搜尋, **非 RL**)<br>• 張量因子預篩打分器<br>• P3 假說庫自動沈澱閉環 | 待 Phase 2 |
+| **Phase 4** | `M4-CryptoNexus` | • Binance/OKX/Bybit/Bitget 執行器<br>• Hyperliquid & Jupiter DEX 通道<br>• 動態標的宇宙 + 退出階梯<br>• RunManifest 方法論指紋<br>• Crypto MCP Server | 待 Phase 3 |
 
 ---
 
 ## 結論
 
 透過本 Roadmap 的實施，主專案（`vibe-trading-encyc`）將在保有**多 Agent 深度協作認知**與**無未來函數 Replay 回測**的核心優勢下：
-1. 以 **`QuantLib` + `Grounding Gate`** 徹底解決 LLM「心算不準」與「價格幻覺」的致命弱點；
-2. 以 **`StackVM` + `Alpha Mining`** 賦予系統神經符號生成與策略自演化能力；
-3. 以 **`CEX/DEX 雙軌矩陣` + `MCP Server`** 打造專屬於加密貨幣市場的頂級 AI 量化交易作業系統。
+1. 以 **`QuantLib` + `Grounding Gate`**（已完成）解決 LLM「心算不準」與「價格幻覺」；
+2. 以 **`微觀因子 + StackVM`**（Phase 2）賦予系統微觀結構洞察 — **取競品工具層, 棄其 RL 學習循環**；
+3. 以 **`張量預篩 + 假說庫`**（Phase 3）實現無 lookahead 污染的策略自演化；
+4. 以 **`CEX/DEX 雙軌 + 動態標的 + RunManifest + MCP`**（Phase 4）打造可證明可重現的加密 AI 量化作業系統。

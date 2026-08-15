@@ -184,10 +184,10 @@ quadrantChart
   2. **業界領先的 Agent Replay 架構**：建立了嚴格的點對點時間隔離（Tool Isolation）與無未來函數機制，搭配 LLM Cache 解決多 Agent 回測高昂成本的痛點。
   3. **實用直覺的即時互動體系**：Telegram 雙向長輪詢指令機器人與 Web 實時決策看板，非常適合作為個人 7x24 小時智慧交易操盤手。
 * **劣勢（Weaknesses）**：
-  1. **資產與市場單一**：目前高度綁定 Binance 加密貨幣，缺乏傳統股票、外匯與衍生品市場的廣度。
-  2. **數理計算缺少獨立專屬庫**：部分量化指標計算分散在 Agent 工具的 prompt 或零散腳本中，缺乏如 HKUDS `quantlib` 的標準化金融數學底座。
+  1. **資產與市場單一**：目前高度綁定 Binance 加密貨幣，缺乏傳統股票、外匯與衍生品市場的廣度。(策略選擇 — 垂直加密深耕)
+  2. **數理計算缺少獨立專屬庫**：~~部分量化指標計算分散~~ → **已解決** (Phase 1.1: `quantlib/` 已建, Cornish-Fisher VaR/GARCH/EVT/Kelly/TWR/XIRR/L2 衝擊, 24 測試, 2026-08-15)
   3. **API Token 消耗較大**：完整運行 12 Agent 與多輪辯論對外部 LLM 預算和網路響應延遲有一定要求。
-  4. **Grounding 驗證模組未接入流水線（實測）**：`agents/grounded_validation.py`（126 行）已實作 `validate_grounded_output`，但全文搜尋無任何 caller — 屬於 dead code，未像 HKUDS 那樣在 Trader/PM 決策後執行價格幻覺檢查（對應 Roadmap Phase 1 待辦）。
+  4. **Grounding 驗證**：~~dead code 未接入~~ → **已解決** (Phase 1.2: `execution/grounding_gate.py` 接入 Phase 5, TradingPlan 價格 vs OHLC 邊界校驗, 違規降級 HOLD + metadata + TG 顯示, 2026-08-15)。後續: unsourced-symbol 檢查 + 有界恢復循環 (採納評估 A6)。
 
 ### 4.2 競品一：`HKUDS/Vibe-Trading`
 * **優勢（Strengths）**：
@@ -228,20 +228,20 @@ quadrantChart
 └───────────────────────────────────┴────────────────────────────────────┘
 ```
 
-### 建議一：建立確定性金融計算庫（QuantLib Layer）
-* **現狀**：部分量化指標計算分散在 Agent 工具的 prompt 或零散函數中。
-* **建議**：借鏡 HKUDS 的 `src/quantlib` 設計，為主專案建立專屬的金融計算工具包（如：更精確的 GARCH 波動率預測、極值理論 EVT、多因子歸因），並強制 Agent 透過 Tool 取得計算結果，杜絕 Prompt 內部計算錯誤。
+### 建議一：建立確定性金融計算庫（QuantLib Layer）✅ 已完成
+* **現狀**：~~部分量化指標計算分散在 Agent 工具的 prompt 或零散函數中。~~
+* **狀態**：✅ Phase 1.1 完成 (2026-08-15) — `vibe_trading/quantlib/` (Cornish-Fisher VaR/CVaR, GARCH/EWMA, EVT/GPD, Fractional Kelly, TWR/XIRR, L2 衝擊成本), 24 測試, 零 scipy 依賴。backlog: Markov regime / PBO / purged CV。
 
-### 建議二：增加 Grounding 防價格幻覺驗證閘門
-* **現狀**：LLM 在撰寫交易計畫時，偶爾會給出偏離當前市場報價的幻覺數值。
-* **建議**：在 Phase 4 Trader / Portfolio Manager 輸出決策後，增加一層確定性的 **Grounding Verification Gate**，自動比對決策中的進出場價格與當前 Bar 的最高/最低價、買賣盤口深度，若無事實依據直接駁回重試。
+### 建議二：增加 Grounding 防價格幻覺驗證閘門 ✅ 已完成
+* **現狀**：~~LLM 在撰寫交易計畫時，偶爾會給出偏離當前市場報價的幻覺數值。~~
+* **狀態**：✅ Phase 1.2 完成 (2026-08-15) — `execution/grounding_gate.py` 接入 Phase 5, TradingPlan 價格 vs OHLC `[Low×0.98, High×1.02]` 校驗, 違規降級 HOLD + metadata + TG 顯示。backlog: unsourced-symbol 檢查 + 有界恢復循環 (採納評估 A6)。
 
-### 建議三：擴充運算元與公式化因子工具庫
+### 建議三：擴充運算元與公式化因子工具庫（Phase 2 起點）
 * **現狀**：目前 Technical Analyst 的指標相對固定（SMA, RSI, MACD 等）。
-* **建議**：將 AlphaGPT 中的高價值特徵（如 `pressure` 買賣失衡、`fomo` 成交量加速度、`vol_cluster` 波動率聚集、`close_pos` 區間位置）封裝成標準工具提供給 Phase 1 分析師，顯著提高分析維度。
+* **建議**：採納評估 A1+A2 — 6 個微觀因子 (pressure 用真實 taker_buy / fomo / vol_cluster / close_pos / momentum_rev / vol_trend) + StackVM 12 運算元, 封裝成標準工具提供給分析師。
 
-### 建議四：開放 MCP 協議標準接口
-* **建議**：將主專案的 23+ 交易工具、Agent Replay 引擎與 Binance 實時數據流封裝為標準 MCP Server，使外部工具（如 Antigravity, Cursor, Claude Desktop）能直接調用主專案的 Agent 決策能力。
+### 建議四：開放 MCP 協議標準接口（Phase 4）
+* **建議**：將主專案的交易工具、quantlib 計算、Agent Replay 引擎與 Binance 實時數據流封裝為標準 MCP Server, 使外部工具（如 Antigravity, Cursor, Claude Desktop）能直接調用主專案的 Agent 決策能力。
 
 ---
 
