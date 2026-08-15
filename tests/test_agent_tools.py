@@ -204,3 +204,52 @@ class TestTechnicalAnalystTools:
         names = [t.name for t in tools]
         assert "get_technical_indicators" in names
         assert "get_current_price" in names
+
+
+class TestComposeFactorTool:
+    @pytest.mark.asyncio
+    async def test_no_storage(self):
+        tool = agent_tools.create_compose_factor_tool(MagicMock(storage=None))
+        result = await tool.execute("id", {"symbol": "BTCUSDT", "formula": ["ADD", 1, 2]})
+        assert "无 storage" in result.content[0].text
+
+    @pytest.mark.asyncio
+    async def test_no_klines(self):
+        storage = MagicMock()
+        storage.query_klines = AsyncMock(return_value=[])
+        tool = agent_tools.create_compose_factor_tool(MagicMock(storage=storage))
+        result = await tool.execute("id", {"symbol": "BTCUSDT", "formula": ["ADD", 1, 2]})
+        assert "无 K线数据" in result.content[0].text
+
+    @pytest.mark.asyncio
+    async def test_success(self):
+        from datetime import datetime, timezone
+        from vibe_trading.data_sources.base import Kline
+        klines = [
+            Kline(symbol="BTCUSDT", interval="30m",
+                  open_time=int(datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp() * 1000) + i * 1000,
+                  open=100.0 + i, high=105.0 + i, low=95.0 + i,
+                  close=102.0 + i, volume=100.0)
+            for i in range(100)
+        ]
+        storage = MagicMock()
+        storage.query_klines = AsyncMock(return_value=klines)
+        tool = agent_tools.create_compose_factor_tool(MagicMock(storage=storage))
+        result = await tool.execute("id", {"symbol": "BTCUSDT", "formula": ["ADD", "close", 0]})
+        assert "compose_factor" in result.content[0].text
+
+    @pytest.mark.asyncio
+    async def test_invalid_formula(self):
+        from datetime import datetime, timezone
+        from vibe_trading.data_sources.base import Kline
+        klines = [
+            Kline(symbol="BTCUSDT", interval="30m",
+                  open_time=int(datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp() * 1000) + i * 1000,
+                  open=100.0, high=105.0, low=95.0, close=102.0, volume=100.0)
+            for i in range(100)
+        ]
+        storage = MagicMock()
+        storage.query_klines = AsyncMock(return_value=klines)
+        tool = agent_tools.create_compose_factor_tool(MagicMock(storage=storage))
+        result = await tool.execute("id", {"symbol": "BTCUSDT", "formula": ["NOPE_OP", 1]})
+        assert "公式无效" in result.content[0].text or "错误" in result.content[0].text
