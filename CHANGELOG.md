@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Added
+- 動態標的宇宙 + 退出階梯 (Phase 4.2): `universe-scan` (Binance 永續 24h 排名/過濾) + trailing stop/moonbag 退出狀態機 (PaperOrderExecutor 接入)
 - Alpha Mining (Phase 3): 演化式因子搜尋 (變異/交叉/選擇) + IC/IR/Sharpe 張量評分 + 假說庫自動註冊 (`vibe-trade research alpha-mine`, 無 RL — PIT 安全)
 - 永續合約回測保真度 (Phase 2.3): 資金費率三結算點 (0/8/16 UTC) 去重扣費 + OKX 分級維持保證金強平 (agent replay)
 - StackVM 符號運算元 (Phase 2.2): 12 運算元 (ADD/SUB/MUL/DIV/GATE/JUMP/DECAY/DELAY1/MAX3...) + compose_factor tool (分析師可組合自定義因子, arity-checked, NaN-safe)

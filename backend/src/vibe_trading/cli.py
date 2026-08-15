@@ -1059,6 +1059,32 @@ def alpha_mine(
     success(f"挖掘完成: {len(candidates)} 候選, {registry_created} 註冊入假說庫", tag="MINER")
 
 
+@research_app.command("universe-scan")
+def universe_scan(
+    top_n: int = typer.Option(30, "--top", help="回傳數量"),
+    min_volume: float = typer.Option(1_000_000, "--min-volume", help="最低 24h 報價量 (USDT)"),
+):
+    """動態標的宇宙掃描 (Phase 4.2) — Binance 永續 24h tickers 排名"""
+    from vibe_trading.factors.universe import format_universe, rank_universe
+
+    # 免 API key: Binance 公開 REST
+    import urllib.request
+    import json
+
+    try:
+        with urllib.request.urlopen(
+            "https://fapi.binance.com/fapi/v1/ticker/24hr", timeout=30
+        ) as resp:
+            tickers = json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        console.print(f"[red]掃描失敗: {e}[/red]")
+        raise typer.Exit(1)
+
+    ranked = rank_universe(tickers, top_n=top_n, min_quote_volume=min_volume)
+    console.print(format_universe(ranked))
+    success(f"掃描完成: {len(tickers)} 個永續交易對 → {len(ranked)} 個符合條件", tag="UNIVERSE")
+
+
 @research_app.command("goal-create")
 def goal_create(
     title: str = typer.Argument(..., help="研究目標標題"),

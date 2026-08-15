@@ -124,9 +124,9 @@ graph LR
   * **Solana Jupiter DEX 聚合器**：Meme 幣極速 Swap
   * **EVM DEX (Uniswap v3)**: 以太坊 / Arbitrum / BSC
 
-#### 4.2 動態標的宇宙與退出管理（採納評估 A4 + A5）
-* **動態標的篩選管線**：Binance 24h tickers 按 quote volume 排名 → 過濾穩定幣/槓桿代幣/市值區間 → 取代硬編碼 BTCUSDT/ETHUSDT (`get_trending_symbols` 目前是 stub)
-* **退出階梯**：trailing stop (+5% 啟動, 峰值回撤 3% 全出) + TP1 moonbag (+10% 賣 50%) — 直接進 Binance executor config
+#### 4.2 動態標的宇宙與退出管理（採納評估 A4 + A5）✅
+* **已交付** (2026-08-15): `factors/universe.py` — Binance 永續 24h tickers 全量排名 (quote volume), 過濾穩定幣/槓桿代幣/低流動性; `vibe-trade research universe-scan` CLI; `execution/exit_ladder.py` — trailing stop (+5% 啟動, 峰值回撤 3% 全出) + moonbag TP (+10% 賣 50%), 接入 PaperOrderExecutor
+* **留後續**：自動輪換交易對進 onbar thread (需重啟機制); 跨所標的 (4.1 完成後)
 
 #### 4.3 RunManifest 方法論指紋（採納評估 A7）
 * content-addressed hash: system prompt + skills (name, content_hash) + tools 清單 + 套件版本

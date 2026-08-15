@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 import uuid
 
 from vibe_trading.data_sources.binance_client import (
@@ -130,6 +130,8 @@ class PaperOrderExecutor(OrderExecutor):
         self._last_funding_settlement: Dict[str, int] = {}  # symbol → hour key
         self._funding_paid = 0.0
         self._liquidation_events: List[Dict] = []
+        # Phase 4.2: 退出階梯
+        self._exit_states: Dict[str, Any] = {}
         self._state_file = state_file
         if state_file and os.path.exists(state_file) and not reset:
             self._load_state()
@@ -210,6 +212,11 @@ class PaperOrderExecutor(OrderExecutor):
             self.check_liquidation(symbol, price)
         except Exception as e:
             logger.warning(f"Liquidation check failed: {e}")
+        # Phase 4.2: 退出階梯 (trailing/moonbag)
+        try:
+            self._run_exit_ladder(symbol, price)
+        except Exception as e:
+            logger.warning(f"Exit ladder failed: {e}")
 
     # ------------------------------------------------------------------
     # Phase 2.3: 永續合約資金費率結算 + 分級維持保證金強平
@@ -312,6 +319,41 @@ class PaperOrderExecutor(OrderExecutor):
                     f"@ {mark_price:.2f} (realized {realized:+.2f})"
                 )
         return liquidated
+
+    def _run_exit_ladder(self, symbol: str, price: float) -> None:
+        """退出階梯狀態機 (Phase 4.2): trailing/moonbag.
+
+        純同步 (update_price 是 sync) — 直接更新 balance/positions.
+        """
+        from vibe_trading.execution.exit_ladder import make_exit_state, update_exit
+
+        for key, pos in list(self._positions.items()):
+            if pos.symbol != symbol:
+                continue
+            state = self._exit_states.get(key)
+            if state is None:
+                state = make_exit_state(symbol, pos.entry_price)
+                self._exit_states[key] = state
+            action = update_exit(state, price, pos.quantity)
+            if action["action"] == "sell_all":
+                self._sync_close(key, price, pos.quantity, action["reason"])
+            elif action["action"] == "sell_half":
+                self._sync_close(key, price, action["quantity"], action["reason"])
+
+    def _sync_close(self, key: str, price: float, qty: float, reason: str) -> None:
+        """同步平倉 (LONG) — 退回保證金 + realized 入帳."""
+        pos = self._positions.get(key)
+        if pos is None or pos.quantity <= 0:
+            return
+        close_qty = min(qty, pos.quantity)
+        realized = (price - pos.entry_price) * close_qty
+        pos.realized_pnl += realized
+        self._realized_pnl += realized
+        self._balance += pos.entry_price * close_qty / pos.leverage + realized
+        pos.quantity -= close_qty
+        logger.info(f"[退出階梯] {reason}: close {close_qty} {key} @ {price:.2f} (realized {realized:+.2f})")
+        if pos.quantity <= 0:
+            del self._positions[key]
 
     def _check_pending_orders(self, symbol: str, price: float) -> None:
         """Check and execute pending conditional orders when trigger price is hit."""
