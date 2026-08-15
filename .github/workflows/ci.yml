@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main, local/brian]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run tests
+        run: uv run pytest -x -q
+        env:
+          # Tests must not hit live APIs; telegram config absent → notifier disabled
+          TELEGRAM_ENABLED: "false"
+
+      - name: Type check (new/changed modules only, zero-new-error gate)
+        run: |
+          uv run mypy backend/src/vibe_trading/backtest/agent_cache.py \
+                   backend/src/vibe_trading/backtest/agent_models.py \
+                   backend/src/vibe_trading/backtest/agent_report.py \
+                   backend/src/vibe_trading/notifications/commands.py 2>&1 | \
+            grep -E "error:" && exit 1 || echo "OK: no errors in gated modules"
