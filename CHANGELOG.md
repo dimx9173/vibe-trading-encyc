@@ -19,6 +19,10 @@
 - pi_logger `configure(log_level=...)` 被靜默忽略 (屬性名是 `min_level`)
 - CLI `--log-level` 未透傳到 `run_multi_thread_system`
 
+### Chore
+- 專案目錄整理至 GitHub 標準結構: runtime/備份檔移出版本控制, demo 腳本入 `scripts/`
+- 補齊 community standards: `LICENSE` (Apache-2.0), `CONTRIBUTING.md`, `CHANGELOG.md`, `SECURITY.md`, issue/PR templates, CI workflow
+
 ## [0.1.0] - 2026-07
 
 - 初始版本: 13-agent 協作決策管線、Binance 整合、paper trading、Web 監控
