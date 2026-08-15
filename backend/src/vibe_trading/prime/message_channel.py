@@ -181,14 +181,17 @@ class MessageChannel:
         """
         try:
             while True:
-                # 等待消息
-                try:
-                    await asyncio.wait_for(
-                        self._get_event.wait(),
-                        timeout=timeout
-                    )
-                except asyncio.TimeoutError:
-                    return None
+                # 等待消息 — 但 queue 非空時直接取 (event 可能已 clear)
+                async with self._queue_lock:
+                    queue_has_items = len(self._queue) > 0
+                if not queue_has_items:
+                    try:
+                        await asyncio.wait_for(
+                            self._get_event.wait(),
+                            timeout=timeout
+                        )
+                    except asyncio.TimeoutError:
+                        return None
 
                 self._get_event.clear()
 
