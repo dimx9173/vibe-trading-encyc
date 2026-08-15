@@ -774,3 +774,139 @@ class TestExecuteDecision:
         with _p.object(pa, "warning", MagicMock()):
             await a._handle_constraint_violation(msg)
         a.steer.assert_called_once()
+
+
+class TestEmergencyExecution:
+    @pytest.mark.asyncio
+    async def test_execute_close_all(self):
+        from vibe_trading.prime.models import Decision, TradingAction, DecisionPriority
+        from unittest.mock import patch as _p
+        import vibe_trading.prime.prime_agent as pa
+        a = _agent()
+        a.decision_history = []
+        a.stats = {"emergency_decisions": 0}
+        a.system_state = MagicMock()
+        a.system_state.update = AsyncMock()
+        a._send_close_all_signal = AsyncMock()
+        with _p.object(pa, "logger", MagicMock()):
+            d = Decision(action=TradingAction.CLOSE_ALL, reason="crash",
+                         override=True, priority=DecisionPriority.CRITICAL)
+            await a._execute_emergency_decision(d)
+        a._send_close_all_signal.assert_called_once_with(d)
+        assert a.stats["emergency_decisions"] == 1
+        assert len(a.decision_history) == 1
+
+    @pytest.mark.asyncio
+    async def test_execute_reduce(self):
+        from vibe_trading.prime.models import Decision, TradingAction, DecisionPriority
+        from unittest.mock import patch as _p
+        import vibe_trading.prime.prime_agent as pa
+        a = _agent()
+        a.decision_history = []
+        a.stats = {"emergency_decisions": 0}
+        a.system_state = MagicMock()
+        a.system_state.update = AsyncMock()
+        a._send_reduce_position_signal = AsyncMock()
+        with _p.object(pa, "logger", MagicMock()):
+            d = Decision(action=TradingAction.REDUCE_POSITION, reason="risk",
+                         override=True, priority=DecisionPriority.CRITICAL)
+            await a._execute_emergency_decision(d)
+        a._send_reduce_position_signal.assert_called_once_with(d)
+
+    @pytest.mark.asyncio
+    async def test_execute_hold(self):
+        from vibe_trading.prime.models import Decision, TradingAction, DecisionPriority
+        from unittest.mock import patch as _p
+        import vibe_trading.prime.prime_agent as pa
+        a = _agent()
+        a.decision_history = []
+        a.stats = {"emergency_decisions": 0}
+        a.system_state = MagicMock()
+        a.system_state.update = AsyncMock()
+        a._send_hold_signal = AsyncMock()
+        with _p.object(pa, "logger", MagicMock()):
+            d = Decision(action=TradingAction.HOLD, reason="wait",
+                         override=True, priority=DecisionPriority.HIGH)
+            await a._execute_emergency_decision(d)
+        a._send_hold_signal.assert_called_once_with(d)
+
+
+class TestSendSignals:
+    @pytest.mark.asyncio
+    async def test_send_close_all(self):
+        from vibe_trading.prime.models import Decision, TradingAction, DecisionPriority
+        from unittest.mock import patch as _p
+        import vibe_trading.prime.prime_agent as pa
+        a = _agent()
+        ss = MagicMock()
+        ss.set = AsyncMock()
+        with _p("vibe_trading.coordinator.shared_state.get_shared_state_manager",
+                return_value=ss), \
+             _p.object(pa, "logger", MagicMock()):
+            d = Decision(action=TradingAction.CLOSE_ALL, reason="r",
+                         override=True, priority=DecisionPriority.CRITICAL)
+            await a._send_close_all_signal(d)
+        ss.set.assert_called_once()
+        assert ss.set.call_args[0][0] == "emergency_signal"
+        assert ss.set.call_args[0][1]["action"] == "CLOSE_ALL"
+
+    @pytest.mark.asyncio
+    async def test_send_reduce(self):
+        from vibe_trading.prime.models import Decision, TradingAction, DecisionPriority
+        from unittest.mock import patch as _p
+        import vibe_trading.prime.prime_agent as pa
+        a = _agent()
+        ss = MagicMock()
+        ss.set = AsyncMock()
+        with _p("vibe_trading.coordinator.shared_state.get_shared_state_manager",
+                return_value=ss):
+            d = Decision(action=TradingAction.REDUCE_POSITION, reason="r",
+                         override=True, priority=DecisionPriority.CRITICAL)
+            await a._send_reduce_position_signal(d)
+        assert ss.set.call_args[0][1]["action"] == "REDUCE_POSITION"
+
+    @pytest.mark.asyncio
+    async def test_send_hold(self):
+        from vibe_trading.prime.models import Decision, TradingAction, DecisionPriority
+        from unittest.mock import patch as _p
+        import vibe_trading.prime.prime_agent as pa
+        a = _agent()
+        ss = MagicMock()
+        ss.set = MagicMock()  # sync
+        with _p("vibe_trading.coordinator.shared_state.get_shared_state_manager",
+                return_value=ss):
+            d = Decision(action=TradingAction.HOLD, reason="r",
+                         override=True, priority=DecisionPriority.HIGH)
+            await a._send_hold_signal(d)
+        assert ss.set.call_args[0][1]["action"] == "HOLD"
+
+
+class TestHealthCheck:
+    @pytest.mark.asyncio
+    async def test_queue_near_full(self):
+        from unittest.mock import patch as _p
+        import vibe_trading.prime.prime_agent as pa
+        a = _agent()
+        a.prime_config.max_queue_size = 100
+        a.message_channel = MagicMock()
+        a.message_channel.size = AsyncMock(return_value=95)
+        a.harness = MagicMock()
+        a.harness.get_violation_summary = AsyncMock(
+            return_value={"safety": 5})
+        with _p.object(pa, "warning", MagicMock()) as w:
+            await a._health_check()
+        w.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_queue_ok_no_warning(self):
+        from unittest.mock import patch as _p
+        import vibe_trading.prime.prime_agent as pa
+        a = _agent()
+        a.prime_config.max_queue_size = 100
+        a.message_channel = MagicMock()
+        a.message_channel.size = AsyncMock(return_value=5)
+        a.harness = MagicMock()
+        a.harness.get_violation_summary = AsyncMock(return_value={})
+        with _p.object(pa, "warning", MagicMock()) as w:
+            await a._health_check()
+        w.assert_not_called()
