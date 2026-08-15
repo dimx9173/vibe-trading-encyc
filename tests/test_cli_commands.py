@@ -363,3 +363,48 @@ class TestRunWebServer:
         with _p.object(uvicorn, "Server", return_value=server), \
              _p("vibe_trading.web.server.set_initial_config"):
             await cli_mod.run_web_server()  # 不 raise
+
+
+class TestRunMultiThreadSystem:
+    @pytest.mark.asyncio
+    async def test_run_basic(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        system = MagicMock()
+        system.run = AsyncMock()
+        system.setup_signal_handlers = MagicMock()
+        with _p.object(cli_mod, "MultiThreadedTradingSystem",
+                       return_value=system):
+            await cli_mod.run_multi_thread_system(
+                symbol="BTCUSDT", interval="30m", mode=TradingMode.PAPER,
+                execute_trades=False, executor=MagicMock())
+        system.run.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_run_with_web(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        system = MagicMock()
+        system.run = AsyncMock()
+        system.setup_signal_handlers = MagicMock()
+        with _p.object(cli_mod, "MultiThreadedTradingSystem",
+                       return_value=system), \
+             _p.object(cli_mod, "run_web_server", new=AsyncMock()):
+            await cli_mod.run_multi_thread_system(
+                symbol="BTCUSDT", interval="30m", mode=TradingMode.PAPER,
+                execute_trades=False, executor=MagicMock(),
+                enable_web=True, web_port=8001)
+
+    @pytest.mark.asyncio
+    async def test_run_exception(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        system = MagicMock()
+        system.run = AsyncMock(side_effect=RuntimeError("boom"))
+        system.setup_signal_handlers = MagicMock()
+        with _p.object(cli_mod, "MultiThreadedTradingSystem",
+                       return_value=system):
+            await cli_mod.run_multi_thread_system(
+                symbol="BTCUSDT", interval="30m", mode=TradingMode.PAPER,
+                execute_trades=False, executor=MagicMock())
+        # 不 raise
