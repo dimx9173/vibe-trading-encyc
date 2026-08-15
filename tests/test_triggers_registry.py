@@ -461,3 +461,95 @@ class TestRegistry:
         await r.stop_confirmation_tracker()
         stats = r.get_confirmation_statistics()
         assert stats is not None
+
+
+class TestRegistryExtras:
+    @pytest.mark.asyncio
+    async def test_enable_disable_success(self):
+        r = TriggerRegistry()
+        t = _FakeTrigger()
+        r.register(t)
+        assert await r.disable("fake") is True
+        assert t.enabled is False
+        assert await r.enable("fake") is True
+        assert t.enabled is True
+
+    @pytest.mark.asyncio
+    async def test_evaluate_all_confirmation_pending(self):
+        r = TriggerRegistry(enable_confirmation=True)
+        # required=3, 第一次觸發 → pending
+        r.register(_FakeTrigger(cooldown_seconds=0))
+        events = await r.evaluate_all(_context())
+        assert events == []
+        await r.evaluate_all(_context())
+        await r.evaluate_all(_context())
+        events4 = await r.evaluate_all(_context())  # 第 4 次 → 達 3 確認
+        assert len(events4) == 1
+
+    @pytest.mark.asyncio
+    async def test_evaluate_trigger_ok_and_handler(self):
+        r = TriggerRegistry(enable_confirmation=False)
+        t = _FakeTrigger()
+        r.register(t)
+        seen = []
+        r.add_event_handler(lambda e: seen.append(e))
+        event = await r.evaluate_trigger("fake", _context())
+        assert event is not None
+        assert seen == [event]
+
+    @pytest.mark.asyncio
+    async def test_evaluate_trigger_error(self):
+        from unittest.mock import AsyncMock
+        r = TriggerRegistry()
+        t = _FakeTrigger()
+        t.evaluate = AsyncMock(side_effect=RuntimeError("boom"))
+        r.register(t)
+        assert await r.evaluate_trigger("fake", _context()) is None
+
+    @pytest.mark.asyncio
+    async def test_evaluate_all_handler_async(self):
+        r = TriggerRegistry(enable_confirmation=False)
+        r.register(_FakeTrigger())
+        seen = []
+
+        async def handler(event):
+            seen.append(event)
+
+        r.add_event_handler(handler)
+        await r.evaluate_all(_context())
+        assert len(seen) == 1
+
+    def test_remove_event_handler(self):
+        r = TriggerRegistry()
+
+        def handler(e):
+            pass
+
+        r.add_event_handler(handler)
+        r.remove_event_handler(handler)
+        assert handler not in r._event_handlers
+        r.remove_event_handler(handler)  # 不再在 → 不 raise
+
+    def test_register_trigger_decorator_class(self):
+        from vibe_trading.triggers.trigger_registry import register_trigger
+        reg = TriggerRegistry(enable_confirmation=False)
+        from vibe_trading.triggers.base_trigger import BaseTrigger
+
+        @register_trigger(registry=reg)
+        class DecoratedTrigger(BaseTrigger):
+            def __init__(self):
+                super().__init__(name="decorated_trigger")
+
+            async def check(self, context):
+                return None
+
+        assert "decorated_trigger" in reg._triggers
+
+    def test_register_trigger_decorator_class_hit(self):
+        # decorator 也可直接裝飾實例 (非 class)
+        from vibe_trading.triggers.trigger_registry import register_trigger
+        reg = TriggerRegistry(enable_confirmation=False)
+        inst = _FakeTrigger(name="inst2")
+        returned = register_trigger(registry=reg)(inst)
+        assert returned is inst
+        assert reg.get("inst2") is inst
