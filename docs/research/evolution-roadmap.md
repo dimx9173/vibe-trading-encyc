@@ -117,11 +117,13 @@ graph TD
 ### 🌐 Phase 4：全鏈路 Crypto CEX/DEX 擴展與 MCP 生態（Crypto-Native CEX/DEX & MCP）
 > **戰略定位**：**專注加密貨幣 CEX / DEX 縱深**，建立全鏈路加密執行矩陣與標準化開放生態。
 
-#### 4.1 CEX 與 DEX 雙軌執行矩陣
+#### 4.1 CEX 與 DEX 雙軌執行矩陣（Tier-1 CEX + Tier-1 DEX）
 * **中心化交易所（CEX）深度覆蓋**：
-  * Binance（現貨、USD-M 永續合約、Coin-M 幣本位合約）
-  * OKX（現貨、永續合約、借貸利率監控）
-  * Bybit / Bitget（可選擴展通道）
+  * **Binance**：現貨、USD-M 永續合約、Coin-M 幣本位合約（最大流動性樞紐）
+  * **OKX**：現貨、永續合約、交割與期權（統一帳戶保證金、低借貸利率）
+  * **Bybit**：永續合約、反向合約（衍生品流動性強、資金費率彈性大）
+  * **Bitget**：現貨、永續合約（散戶動能指標、新幣捕捉）
+  * **戰略賦能**：支援**跨交易所資金費率套利（Delta-Neutral Funding Arbitrage）**、**智能訂單路由（Smart Order Routing, SOR）** 與 **多盤口微觀失衡交叉驗證**。
 * **去中心化協議（DEX）原生接入**：
   * **Hyperliquid**：鏈上訂單簿永續合約（高流動性、低延遲、無許可 API）
   * **Solana Jupiter DEX 聚合器**：鏈上 Meme 幣與主流幣極速 Swap（支援私密交易防 MEV 夾子）
@@ -144,7 +146,7 @@ graph TD
 | **Phase 1** | `M1-QuantGuard` | • `quantlib` 數學庫（VaR/GARCH/凱利）<br>• Grounding 價格防幻覺硬閘門<br>• 哈希鏈式不可篡改審計帳本 | 100% 單元測試覆蓋，0 價格幻覺事故 |
 | **Phase 2** | `M2-FactorVM` | • 12 種微觀結構特徵庫<br>• StackVM 符號運算元虛擬機<br>• Technical Analyst 工具擴展 | 特徵計算延遲 $< 5\text{ms}$，AST 解析 100% 容錯 |
 | **Phase 3** | `M3-AlphaEvolution` | • Alpha Mining Agent 挖掘師<br>• 張量極速回測打分器<br>• P3 假說庫自動沈澱閉環 | 每週自動產出 3~5 個高 IC 候選因子並進入 EvidenceGate |
-| **Phase 4** | `M4-CryptoNexus` | • Hyperliquid & Jupiter DEX 執行通道<br>• 40+ 工具 Crypto MCP Server<br>• CEX/DEX 雙軌統一路由 | 支援鏈上鏈下毫秒級路由，MCP 外部工具無縫接入 |
+| **Phase 4** | `M4-CryptoNexus` | • Binance/OKX/Bybit/Bitget 四大 CEX 執行器<br>• Hyperliquid & Jupiter DEX 鏈上通道<br>• 40+ 工具 Crypto MCP Server<br>• 跨所資金費率套利與 SOR 智能路由器 | 支援鏈上/鏈下毫秒級路由，資金費率套利閉環運作，MCP 外部工具無縫接入 |
 
 ---
 
