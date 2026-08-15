@@ -280,3 +280,40 @@ class TestBacktestAgent:
             "--log-path", str(tmp_path / "out.jsonl"),
         ])
         assert result.exit_code in (0, 1)
+
+
+class TestShadowAnalyze:
+    def test_shadow_analyze_missing_file(self, tmp_path):
+        result = runner.invoke(app, ["shadow", "analyze", str(tmp_path / "nope.csv")])
+        assert result.exit_code == 1  # FileNotFoundError → exit 1
+
+    def test_shadow_analyze_success(self, tmp_path):
+        import vibe_trading.cli as cli_mod
+        from types import SimpleNamespace
+        from unittest.mock import patch as _p
+        csv_file = tmp_path / "trades.csv"
+        csv_file.write_text("symbol,side,quantity,price,timestamp\nBTCUSDT,BUY,0.1,50000,2026-01-01\n")
+        out = tmp_path / "report.html"
+
+        report = MagicMock()
+        profile = MagicMock()
+        profile.trader_id = "default"
+        profile.analysis_period_start = __import__("datetime").datetime(2026, 1, 1)
+        profile.analysis_period_end = __import__("datetime").datetime(2026, 1, 2)
+        profile.total_trades = 1
+        profile.closed_trades = 1
+        profile.overall_score = 0.5
+        profile.biases = []
+        report.profile = profile
+        report.counterfactual = None
+        report.recommendations = []
+        analyzer = MagicMock()
+        analyzer.analyze_csv = MagicMock(return_value=report)
+        analyzer.save_report = MagicMock()
+        with _p("vibe_trading.backtest.shadow_account.ShadowAccountAnalyzer",
+                return_value=analyzer):
+            result = runner.invoke(app, [
+                "shadow", "analyze", str(csv_file), "--output", str(out),
+            ])
+        assert result.exit_code == 0
+        assert "SHADOW" in result.output
