@@ -486,3 +486,69 @@ class TestWsPing:
             assert '"type": "init"' in first
             ws.send_text("ping")
             assert ws.receive_text() == "pong"
+
+
+class TestLogAndBar:
+    def test_add_log(self, client):
+        state.current_kline = {"open_time_ms": 1000}
+        with patch.object(web_server.journal_storage, "upsert_bar",
+                          new=AsyncMock()) as upsert:
+            r = client.post("/api/log", json={"message": "hello", "level": "warn"})
+        assert r.status_code == 200
+        assert state.logs[-1]["message"] == "hello"
+        upsert.assert_called_once()
+
+    def test_add_log_no_open_time(self, client):
+        state.current_kline = None
+        with patch.object(web_server.journal_storage, "upsert_bar",
+                          new=AsyncMock()) as upsert:
+            r = client.post("/api/log", json={"message": "x"})
+        assert r.status_code == 200
+        upsert.assert_not_called()
+
+    def test_logs_capped(self, client):
+        state.logs = []
+        state.current_kline = None
+        for i in range(550):
+            client.post("/api/log", json={"message": f"m{i}"})
+        assert len(state.logs) <= 500
+
+    def test_get_bar_trace_found(self, client):
+        bar = MagicMock()
+        bar.symbol = "BTCUSDT"
+        bar.kline = {"close": 1.0}
+        with patch.object(web_server.journal_storage, "get_bar",
+                          new=AsyncMock(return_value=bar)):
+            r = client.get("/api/bar/1000")
+        assert r.status_code == 200
+        assert r.json()["found"] is True
+
+    def test_get_bar_trace_missing(self, client):
+        with patch.object(web_server.journal_storage, "get_bar",
+                          new=AsyncMock(return_value=None)):
+            r = client.get("/api/bar/9999")
+        assert r.json()["found"] is False
+
+
+class TestSendTree:
+    @pytest.mark.asyncio
+    async def test_send_decision_tree(self):
+        with patch("httpx.AsyncClient") as mock_client:
+            instance = MagicMock()
+            instance.post = AsyncMock()
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client.return_value = instance
+            await web_server.send_decision_tree({"nodes": []})
+        instance.post.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_send_decision_tree_error(self):
+        with patch("httpx.AsyncClient",
+                   side_effect=RuntimeError("no client")):
+            await web_server.send_decision_tree({"nodes": []})  # 錯誤被吞
+
+    def test_run_server(self):
+        with patch.object(web_server.uvicorn, "run", new=MagicMock()) as run:
+            web_server.run_server(port=9999)
+        run.assert_called_once()
