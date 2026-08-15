@@ -1,4 +1,5 @@
-"""Tests for PrimeAgent pure logic (Wave D — coverage 85% plan).
+"""Tests for PrimeAgent pure logic (Wave D — coverage 85% plan)."""
+from types import SimpleNamespace
 
 PrimeAgent 構造需 LLM config + pi_agent_core — 用 __new__ 跳過 __init__,
 手動注入 config, 測試監控/價格/格式等純邏輯方法.
@@ -557,3 +558,45 @@ class TestMonitoringLoop:
         a = _agent()
         a.subagents = {}
         await a._initialize_subagent_monitors()  # 不 raise
+
+
+class TestStatusAndConstraint:
+    @pytest.mark.asyncio
+    async def test_get_status(self):
+        from vibe_trading.prime.models import SystemState
+        a = _agent()
+        a.system_state = SystemState()
+        a.message_channel = MagicMock()
+        a.message_channel.size = AsyncMock(return_value=1)
+        a.message_channel.get_stats = AsyncMock(return_value=MagicMock())
+        a.harness = MagicMock()
+        a.harness.get_violation_summary = AsyncMock(return_value={})
+        a.harness.get_all_constraint_statuses = AsyncMock(return_value={})
+        a.state = SimpleNamespace(is_streaming=False, error_message=None, messages=[])
+        status = await a.get_status()
+        assert isinstance(status, dict)
+        # 第二版: get_status 若 harness mock 完整也可再跑
+        assert isinstance(status, dict)
+
+    @pytest.mark.asyncio
+    async def test_handle_constraint_violation(self):
+        from vibe_trading.prime.models import SystemState
+        a = _agent()
+        a.system_state = SystemState()
+        msg = MagicMock()
+        msg.sender = "analyst"
+        msg.content = {}
+        msg.message_id = "m1"
+        a.steer = MagicMock()
+        await a._handle_constraint_violation(msg)  # 不 raise
+        a.steer.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_send_reduce_position_signal(self):
+        from vibe_trading.prime.models import Decision, TradingAction
+        a = _agent()
+        d = Decision(action=TradingAction.REDUCE_POSITION, reason="風險",
+                     symbol="BTCUSDT", confidence=0.9, override=True,
+                     priority=__import__("vibe_trading.prime.models", fromlist=["DecisionPriority"]).DecisionPriority.HIGH,
+                     timestamp=__import__("datetime").datetime.now())
+        await a._send_reduce_position_signal(d)  # 不 raise
