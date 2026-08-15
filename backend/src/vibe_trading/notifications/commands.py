@@ -160,6 +160,12 @@ async def format_last_decision(system: Any) -> str:
         f"📝 <b>最後一次決策</b> ({ts})",
         f"決策: <b>{d.decision}</b>",
     ]
+    # Grounding 駁回顯示 (Phase 1.2)
+    meta = getattr(d, "metadata", None) or {}
+    grounding = meta.get("grounding") if isinstance(meta, dict) else None
+    if grounding and not grounding.get("passed", True):
+        violations = grounding.get("violations", [])
+        lines.append(f"\n⚠️ <b>Grounding 駁回</b>: {'; '.join(violations)}")
     if d.confidence is not None:
         lines.append(f"信心: {d.confidence:.2f}")
     if d.rationale:

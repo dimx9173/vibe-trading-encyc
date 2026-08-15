@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Added
+- Grounding Gate (Roadmap Phase 1.2): TradingPlan 價格 vs OHLC 邊界確定性校驗, 違規自動降級 HOLD + metadata 記錄
 - TG 查詢指令: `/balance` `/positions` `/status` `/decision` `/help` + 指令選單 (`set_my_commands`)
 - Agent-in-the-loop backtest CLI (`vibe-trade backtest-agent run/report/fetch`):
   - LLM response cache (重跑近零成本), `--resume` 斷點續跑, 成本估算閘門

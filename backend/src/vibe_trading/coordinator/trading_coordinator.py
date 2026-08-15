@@ -142,6 +142,7 @@ class TradingDecision:
     confidence: Optional[float] = None  # 0-1，PM 決策信心（Fix 2026-08-09）
     execution_instructions: Optional[dict] = None
     agent_outputs: dict = field(default_factory=dict)
+    metadata: dict = field(default_factory=dict)  # e.g. grounding gate 結果 (Phase 1.2)
 
 
 class TradingCoordinator:
@@ -198,6 +199,7 @@ class TradingCoordinator:
 
         # 决策历史
         self._decision_history: List[TradingDecision] = []
+        self._grounding_result: dict = {"passed": True, "violations": []}  # Phase 1.2
 
         # 决策树数据
         self._decision_tree = {
@@ -741,6 +743,42 @@ class TradingCoordinator:
             phase_elapsed = time.time() - phase_start
             logger.info(f"[性能] Phase 5 (投资组合经理) 耗时: {phase_elapsed:.2f}s")
 
+            # ===== Grounding Gate (Roadmap Phase 1.2) =====
+            # 校驗 TradingPlan 價格 vs 當前 bar OHLC; 違規 → 降級 HOLD
+            grounding_result: Dict[str, Any] = {"passed": True, "violations": [], "checked_points": 0, "reason": None}
+            if trading_plan is not None and getattr(trading_plan, "entry_orders", None) is not None:
+                try:
+                    from vibe_trading.execution.grounding_gate import validate_trading_plan_prices
+                    latest = context.klines[-1] if getattr(context, "klines", None) else None
+                    if latest is not None:
+                        grounding_result = validate_trading_plan_prices(
+                            trading_plan,
+                            bar_low=float(latest.low),
+                            bar_high=float(latest.high),
+                            current_price=current_price,
+                        )
+                except Exception as e:
+                    # fail-open: gate 自身錯誤不阻斷決策
+                    logger.warning(f"Grounding gate error (fail-open): {e}")
+
+            if not grounding_result.get("passed", True):
+                violations: List[str] = [
+                    str(v) for v in grounding_result.get("violations", [])
+                ]
+                log.warning(f"[Grounding] 計畫駁回: {violations}", tag="GROUNDING")
+                # 降級: 保留原 rationale 並附違規明細, 決策改 HOLD, 清空執行計畫
+                final_decision = {
+                    "decision": "HOLD",
+                    "rationale": (
+                        f"[Grounding 駁回] {final_decision.get('rationale', '')}\n"
+                        f"違規: {'; '.join(violations)}"
+                    ),
+                    "confidence": min(final_decision.get("confidence") or 0.0, 0.5),
+                    "execution_plan": None,
+                }
+                trading_plan = None  # type: ignore[assignment]  # 降級後計畫失效
+            self._grounding_result = grounding_result
+
             # 更新决策树 - 最终决策
             await self._update_decision_tree(
                 "pm",
@@ -799,6 +837,7 @@ class TradingCoordinator:
                 confidence=final_decision.get("confidence"),
                 execution_instructions=final_decision.get("execution_instructions"),
                 agent_outputs=agent_outputs,
+                metadata={"grounding": getattr(self, "_grounding_result", {"passed": True})},
             )
 
             self._decision_history.append(decision)
