@@ -205,3 +205,33 @@ class TestStats:
 
     def test_statistics_zero_bars(self, onbar):
         assert onbar.get_statistics()["decision_rate"] == 0.0
+
+
+class TestRunLoop:
+    @pytest.mark.asyncio
+    async def test_run_loop_stops(self):
+        onbar = OnBarThread.__new__(OnBarThread)
+        onbar.symbol = "BTCUSDT"
+        onbar.interval = "30m"
+        onbar._running = True
+        onbar._coordinator = None
+        onbar._total_bars = 0
+        onbar._decisions_made = 0
+        onbar._emergency_stops = 0
+        onbar._last_bar_time = None
+
+        async def _stop_after_iterations():
+            for i in range(2):
+                onbar._running = False  # 第一輪就停
+                await asyncio.sleep(0.01)
+
+        with patch("vibe_trading.threads.onbar_thread._load_historical_klines_to_web"
+                   if False else "vibe_trading.threads.onbar_thread.get_websocket_manager") as mock_ws, \
+             patch.object(onbar, "_load_historical_klines_to_web", new=AsyncMock()):
+            ws_manager = MagicMock()
+            ws_manager.subscribe_kline = AsyncMock()
+            ws_manager.start = AsyncMock(side_effect=_stop_after_iterations())
+            ws_manager.stop = AsyncMock()
+            mock_ws.return_value = ws_manager
+            await onbar._run_loop()
+        ws_manager.stop.assert_called()
