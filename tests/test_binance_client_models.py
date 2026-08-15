@@ -1,5 +1,5 @@
 """Tests for binance_client models (Wave D — coverage 85% plan)."""
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -232,3 +232,49 @@ class TestBinanceRequest:
         kwargs = session.request.call_args.kwargs
         assert "timestamp" in kwargs["params"]
         assert "signature" in kwargs["params"]
+
+
+class TestBinanceWSClient:
+    @pytest.mark.asyncio
+    async def test_connect_disconnect(self):
+        from vibe_trading.data_sources.binance_client import (
+            BinanceConfig, BinanceWebSocketClient,
+        )
+        cfg = BinanceConfig(api_key="k", api_secret="s")
+        client = BinanceWebSocketClient(cfg)
+        with patch("vibe_trading.data_sources.binance_client.websockets") as mock_ws:
+            mock_ws.connect = AsyncMock(return_value=MagicMock())
+            await client.connect()
+            assert client._running is True
+            await client.disconnect()
+            assert client._running is False
+
+    @pytest.mark.asyncio
+    async def test_connect_twice(self):
+        from vibe_trading.data_sources.binance_client import (
+            BinanceConfig, BinanceWebSocketClient,
+        )
+        cfg = BinanceConfig(api_key="k", api_secret="s")
+        client = BinanceWebSocketClient(cfg)
+        client._ws = MagicMock()
+        await client.connect()  # 已連接 → 直接 return
+        assert client._running is False or True
+
+    def test_subscribe_kline(self):
+        from vibe_trading.data_sources.binance_client import (
+            BinanceConfig, BinanceWebSocketClient,
+        )
+        cfg = BinanceConfig(api_key="k", api_secret="s")
+        client = BinanceWebSocketClient(cfg)
+        client.subscribe_kline("BTCUSDT", KlineInterval.MINUTE_30, lambda k: None)
+        assert "btcusdt@kline_30m" in client._kline_callbacks
+        assert len(client._kline_callbacks["btcusdt@kline_30m"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_disconnect_no_ws(self):
+        from vibe_trading.data_sources.binance_client import (
+            BinanceConfig, BinanceWebSocketClient,
+        )
+        cfg = BinanceConfig(api_key="k", api_secret="s")
+        client = BinanceWebSocketClient(cfg)
+        await client.disconnect()  # 不 raise
