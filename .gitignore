@@ -83,3 +83,6 @@ data/vbt.db
 
 # Backup snapshots (git is the version control; these are local safety copies)
 backups/
+
+# vbt runtime pidfile
+.vbt/
