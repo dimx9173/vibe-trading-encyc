@@ -722,3 +722,31 @@ class TestPrimeCommand:
             result = runner.invoke(app, ["prime", "BTCUSDT", "--mode", "live",
                                          "--execute"])
         assert result.exit_code != 0
+
+
+class TestExportMql5:
+    def test_missing_file(self, tmp_path):
+        result = runner.invoke(app, [
+            "export", "to-mql5", str(tmp_path / "nope.json"),
+        ])
+        assert result.exit_code == 1
+
+    def test_bad_json(self, tmp_path):
+        f = tmp_path / "bad.json"
+        f.write_text("{not json")
+        result = runner.invoke(app, ["export", "to-mql5", str(f)])
+        assert result.exit_code == 1
+
+    def test_success(self, tmp_path):
+        import json as _json
+        f = tmp_path / "plan.json"
+        f.write_text(_json.dumps({"entries": [{"symbol": "BTCUSDT"}]}))
+        out = tmp_path / "out.mq5"
+        exporter = MagicMock()
+        exporter.export = MagicMock(return_value="// strategy")
+        with patch("vibe_trading.exporters.MQL5Exporter",
+                   return_value=exporter):
+            result = runner.invoke(app, [
+                "export", "to-mql5", str(f), "--output", str(out),
+            ])
+        assert result.exit_code == 0
