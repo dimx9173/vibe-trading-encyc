@@ -532,36 +532,43 @@ class RiskMetricsCalculator:
     ) -> Tuple[str, List[str]]:
         """评估风险等级"""
         warnings = []
+        # 等級序數: low=0 < medium=1 < high=2 < critical=3
+        _LEVEL_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+
+        def _max_level(a: str, b: str) -> str:
+            """比較風險等級 (字串 max 是錯的: "medium" > "critical")."""
+            return a if _LEVEL_ORDER[a] >= _LEVEL_ORDER[b] else b
+
         risk_level = "low"
 
         # 回撤风险评估
         if current_drawdown > 0.20:
-            risk_level = "critical"
+            risk_level = _max_level(risk_level, "critical")
             warnings.append(f"当前回撤{current_drawdown*100:.1f}%超过20%，处于危险水平！")
         elif current_drawdown > 0.15:
-            risk_level = "high"
+            risk_level = _max_level(risk_level, "high")
             warnings.append(f"当前回撤{current_drawdown*100:.1f}%超过15%，需要谨慎！")
         elif current_drawdown > 0.10:
-            risk_level = "medium"
+            risk_level = _max_level(risk_level, "medium")
             warnings.append(f"当前回撤{current_drawdown*100:.1f}%超过10%，注意风险。")
 
         # 保证金风险评估
         if margin_ratio > 0.8:
-            risk_level = max(risk_level, "critical")
+            risk_level = _max_level(risk_level, "critical")
             warnings.append(f"保证金使用率{margin_ratio*100:.1f}%超过80%，接近爆仓！")
         elif margin_ratio > 0.6:
-            risk_level = max(risk_level, "high")
+            risk_level = _max_level(risk_level, "high")
             warnings.append(f"保证金使用率{margin_ratio*100:.1f}%超过60%，风险较高。")
         elif margin_ratio > 0.4:
-            risk_level = max(risk_level, "medium")
+            risk_level = _max_level(risk_level, "medium")
             warnings.append(f"保证金使用率{margin_ratio*100:.1f}%超过40%，注意控制。")
 
         # 连续亏损预警
         if consecutive_losses >= 5:
-            risk_level = max(risk_level, "critical")
+            risk_level = _max_level(risk_level, "critical")
             warnings.append(f"连续{consecutive_losses}次亏损！建议暂停交易，检查策略。")
         elif consecutive_losses >= 3:
-            risk_level = max(risk_level, "high")
+            risk_level = _max_level(risk_level, "high")
             warnings.append(f"连续{consecutive_losses}次亏损，建议降低仓位或暂停交易。")
 
         return risk_level, warnings
