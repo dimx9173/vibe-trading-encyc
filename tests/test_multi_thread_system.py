@@ -278,3 +278,91 @@ class TestMainEntry:
             mock_signal.signal = MagicMock()
             await mtm.main()
         system.stop.assert_called_once()
+
+
+class TestInitialize:
+    @pytest.mark.asyncio
+    async def test_initialize_full(self, system):
+        from unittest.mock import patch as _p
+        macro = MagicMock()
+        macro.initialize = AsyncMock()
+        onbar = MagicMock()
+        onbar.initialize = AsyncMock()
+        eh = MagicMock()
+        eh.initialize = AsyncMock()
+        with _p("vibe_trading.main.multi_thread_main.MacroAnalysisThread",
+                return_value=macro), \
+             _p("vibe_trading.main.multi_thread_main.OnBarThread",
+                return_value=onbar), \
+             _p("vibe_trading.main.multi_thread_main.EmergencyHandler",
+                return_value=eh), \
+             _p("vibe_trading.notifications.config.TelegramConfig.from_env",
+                return_value=None):
+            await system.initialize()
+        assert system.macro_thread is macro
+        assert system.onbar_thread is onbar
+        assert system.emergency_handler is eh
+        assert len(system.trigger_registry.register.call_args_list) >= 4
+
+    @pytest.mark.asyncio
+    async def test_initialize_telegram_enabled(self, system):
+        from unittest.mock import patch as _p
+        macro = MagicMock(); macro.initialize = AsyncMock()
+        onbar = MagicMock(); onbar.initialize = AsyncMock()
+        eh = MagicMock(); eh.initialize = AsyncMock()
+        tg = MagicMock()
+        tg.enabled = True
+        tg.bot_token = "t"
+        tg.chat_id = "c"
+        with _p("vibe_trading.main.multi_thread_main.MacroAnalysisThread",
+                return_value=macro), \
+             _p("vibe_trading.main.multi_thread_main.OnBarThread",
+                return_value=onbar), \
+             _p("vibe_trading.main.multi_thread_main.EmergencyHandler",
+                return_value=eh), \
+             _p("vibe_trading.notifications.config.TelegramConfig.from_env",
+                return_value=tg), \
+             _p("vibe_trading.notifications.telegram_notifier.TelegramNotifier",
+                 return_value=MagicMock()):
+            await system.initialize()
+        assert system.notifier is not None
+
+    @pytest.mark.asyncio
+    async def test_initialize_telegram_fail(self, system):
+        from unittest.mock import patch as _p
+        macro = MagicMock(); macro.initialize = AsyncMock()
+        onbar = MagicMock(); onbar.initialize = AsyncMock()
+        eh = MagicMock(); eh.initialize = AsyncMock()
+        tg = MagicMock()
+        tg.enabled = True
+        tg.bot_token = "t"
+        tg.chat_id = "c"
+        with _p("vibe_trading.main.multi_thread_main.MacroAnalysisThread",
+                return_value=macro), \
+             _p("vibe_trading.main.multi_thread_main.OnBarThread",
+                return_value=onbar), \
+             _p("vibe_trading.main.multi_thread_main.EmergencyHandler",
+                return_value=eh), \
+             _p("vibe_trading.notifications.config.TelegramConfig.from_env",
+                return_value=tg), \
+             _p("vibe_trading.notifications.telegram_notifier.TelegramNotifier",
+                 side_effect=RuntimeError("no token")):
+            await system.initialize()
+        assert system.notifier is None
+
+    @pytest.mark.asyncio
+    async def test_start_twice(self, system):
+        system._running = True
+        await system.start()  # already running → warning, no crash
+
+    @pytest.mark.asyncio
+    async def test_stop_not_running(self, system):
+        await system.stop()  # 不 raise
+
+    @pytest.mark.asyncio
+    async def test_print_status(self, system):
+        system.macro_thread = MagicMock()
+        system.onbar_thread = MagicMock()
+        system.emergency_handler = MagicMock()
+        system.notifier = None
+        await system._print_system_status()  # 不 raise
