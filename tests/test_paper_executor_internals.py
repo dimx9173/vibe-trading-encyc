@@ -232,3 +232,47 @@ class TestPlaceOrder:
             stop_price=49000.0,
         )
         assert result.status in ("PENDING", "FILLED")
+
+
+class TestPlaceOrderBranches:
+    @pytest.mark.asyncio
+    async def test_add_to_existing_long(self):
+        ex = PaperOrderExecutor(initial_balance=10000.0)
+        ex._positions["BTCUSDT_LONG"] = PaperPosition(
+            symbol="BTCUSDT", position_side=PositionSide.LONG,
+            entry_price=50000.0, quantity=0.1, leverage=5)
+        await ex.place_order("BTCUSDT", OrderSide.BUY, OrderType.MARKET, 0.1,
+                             position_side=PositionSide.LONG)
+        assert ex._positions["BTCUSDT_LONG"].quantity == 0.2
+
+    @pytest.mark.asyncio
+    async def test_open_short(self):
+        ex = PaperOrderExecutor(initial_balance=10000.0)
+        await ex.place_order("BTCUSDT", OrderSide.SELL, OrderType.MARKET, 0.1,
+                             position_side=PositionSide.SHORT)
+        assert "BTCUSDT_SHORT" in ex._positions
+        assert ex._positions["BTCUSDT_SHORT"].quantity == 0.1
+
+    @pytest.mark.asyncio
+    async def test_close_long_with_sell(self):
+        ex = PaperOrderExecutor(initial_balance=10000.0)
+        ex._positions["BTCUSDT_LONG"] = PaperPosition(
+            symbol="BTCUSDT", position_side=PositionSide.LONG,
+            entry_price=50000.0, quantity=0.1, leverage=5)
+        await ex.place_order("BTCUSDT", OrderSide.SELL, OrderType.MARKET, 0.1,
+                             position_side=PositionSide.LONG, reduce_only=True)
+        assert "BTCUSDT_LONG" not in ex._positions
+
+    @pytest.mark.asyncio
+    async def test_place_order_no_position_side(self):
+        ex = PaperOrderExecutor(initial_balance=10000.0)
+        result = await ex.place_order("BTCUSDT", OrderSide.BUY, OrderType.MARKET, 0.1)
+        assert result.status in ("FILLED", "SUBMITTED")
+
+    @pytest.mark.asyncio
+    async def test_place_order_tp_pending(self):
+        ex = PaperOrderExecutor()
+        result = await ex.place_order(
+            "BTCUSDT", OrderSide.SELL, OrderType.TAKE_PROFIT_MARKET, 0.1,
+            stop_price=51000.0, position_side=PositionSide.LONG, reduce_only=True)
+        assert result.status in ("PENDING", "FILLED")
