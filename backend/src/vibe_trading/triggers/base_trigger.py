@@ -115,6 +115,7 @@ class TriggerConfirmation:
     first_seen_at: Optional[datetime] = None
     confirmation_count: int = 0
     confirmed: bool = False
+    required_confirmations: int = 3  # ConfirmationTracker.add_event 傳入 (修: 原本缺失被忽略)
 
     def add_event(self, event: TriggerEvent) -> bool:
         """
@@ -133,11 +134,6 @@ class TriggerConfirmation:
         self.confirmation_count += 1
 
         return self.confirmation_count >= self.required_confirmations
-
-    @property
-    def required_confirmations(self) -> int:
-        """Required number of confirmations"""
-        return 3  # 默认需要3次确认
 
     def is_stale(self, max_age_seconds: int = 300) -> bool:
         """
