@@ -132,10 +132,10 @@ graph LR
 * **已交付** (2026-08-15): `governance/manifest.py` — content-addressed hash (prompts hash + tools 清單 + 套件版本 + replay config, **排除 run_id/timestamp**); replay run 結束寫 `manifest.json`; `vibe-trade research manifest-diff` 偵測方法論漂移
 * **定位**: 哈希鏈審計帳本的有用替代 (單 operator 無審計方, 可重現性證明更有價值)
 
-#### 4.4 標準化 Crypto MCP Server
-* 核心能力封裝為 MCP 工具: `crypto_get_kline` / `quantlib_var_calc` / `alpha_stackvm_eval` / `agent_replay_run` / `execution_place_order` / `crypto_universe_scan`
-* 鏡像現有 agent tools + quantlib 計算 (採納評估 backlog: quantlib_call 鏡像模式)
-* 安全: Host/Origin guard (DNS-rebinding 防護, HKUDS 模式)
+#### 4.4 標準化 Crypto MCP Server ✅
+* **已交付** (2026-08-15): `mcp/calc_tools.py` + `mcp/server.py` 擴充 — 3 計算工具 (`quantlib_var_calc`/`alpha_stackvm_eval`/`crypto_universe_scan`, 鏡像 Phase 1.1/2.2/4.2 確定性層) + Host/Origin guard (DNS-rebinding 防護, localhost 白名單)
+* 既有 26 agent tools 保留 (`crypto_get_kline`/`execution_place_order` 等鏡像); 計算工具不需 tool_context
+* 安全: `check_origin` 僅允許 localhost/127.0.0.1/*.local Host + Origin 白名單
 
 ---
 

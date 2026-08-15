@@ -59,7 +59,85 @@ class MCPServer:
             self._tools[tool.name] = tool
             logger.debug(f"Registered MCP tool: {tool.name}")
 
+        # Phase 4.4: 確定性計算工具 (quantlib/StackVM/universe)
+        self._add_computation_tools()
+
         logger.info(f"MCP server initialized with {len(self._tools)} tools")
+
+    def _add_computation_tools(self) -> None:
+        """Phase 4.4: 鏡像確定性計算層為 MCP 工具."""
+        from pydantic import BaseModel as _BM, Field as _F
+        from vibe_trading.mcp.calc_tools import make_calc_tool
+
+        # quantlib_var_calc
+        class _VarParams(_BM):
+            returns: list = _F(description="收益率序列")
+            position_value: float = _F(default=10000.0, description="倉位價值")
+            method: str = _F(default="cornish_fisher", description="歷史/參數/Cornish-Fisher/EVT")
+
+        self._tools["quantlib_var_calc"] = make_calc_tool(
+            name="quantlib_var_calc",
+            description="計算 VaR/CVaR (確定性金融數學, Phase 1.1)",
+            params_cls=_VarParams,
+            fn=self._calc_var,
+        )
+
+        # alpha_stackvm_eval
+        class _EvalParams(_BM):
+            formula: list = _F(description="公式 AST, 如 [\"ADD\", \"close\", 2]")
+            series: dict = _F(default_factory=dict, description="{因子名: 序列}")
+
+        self._tools["alpha_stackvm_eval"] = make_calc_tool(
+            name="alpha_stackvm_eval",
+            description="StackVM 求值公式 (Phase 2.2)",
+            params_cls=_EvalParams,
+            fn=self._calc_stackvm,
+        )
+
+        # crypto_universe_scan
+        class _UniverseParams(_BM):
+            tickers: list = _F(description="[{symbol, quote_volume}]")
+            top_n: int = _F(default=30, description="回傳數量")
+
+        self._tools["crypto_universe_scan"] = make_calc_tool(
+            name="crypto_universe_scan",
+            description="動態標的宇宙排名 (Phase 4.2)",
+            params_cls=_UniverseParams,
+            fn=self._calc_universe,
+        )
+
+    # ---- 計算工具實作 (純函式包裝) ----
+    def _calc_var(self, args) -> dict:
+        import numpy as np
+        from vibe_trading.quantlib.risk import calculate_var
+        r = calculate_var(
+            np.array(args.returns, dtype=float),
+            float(args.position_value),
+            method=args.method,
+        )
+        return {"var_95": r.var_95, "var_99": r.var_99, "cvar_95": r.cvar_95,
+                "cvar_99": r.cvar_99, "volatility": r.volatility, "method": r.method}
+
+    def _calc_stackvm(self, args) -> dict:
+        from vibe_trading.factors.vm import evaluate_formula
+        return {"result": evaluate_formula(args.formula, args.series)}
+
+    def _calc_universe(self, args) -> dict:
+        from vibe_trading.factors.universe import rank_universe
+        return {"ranked": rank_universe(args.tickers, top_n=args.top_n)}
+
+    # ---- Host/Origin guard (DNS-rebinding 防護, Phase 4.4) ----
+    ALLOWED_ORIGINS = {"http://localhost", "http://127.0.0.1",
+                       "http://localhost:8000", "http://127.0.0.1:8000"}
+
+    def check_origin(self, host: str, origin: str | None = None) -> bool:
+        """DNS-rebinding 防護: Host 白名單 + Origin 白名單.
+
+        stdio 模式無 host/origin — 不阻擋; HTTP 模式 (後續) 用此閘門.
+        """
+        host_ok = host in ("localhost", "127.0.0.1") or host.endswith(".local")
+        origin_ok = origin is None or origin in self.ALLOWED_ORIGINS
+        return host_ok and origin_ok
 
     def list_tools(self) -> list[MCPTool]:
         """List all available tools in MCP format.

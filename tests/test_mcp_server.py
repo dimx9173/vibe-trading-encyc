@@ -61,6 +61,59 @@ class TestMCPServer:
         assert len(tools) > 0
 
     @pytest.mark.asyncio
+    async def test_quantlib_var_calc(self, mcp_server):
+        """quantlib_var_calc 計算 VaR."""
+        result = await mcp_server.call_tool("quantlib_var_calc", {
+            "returns": [0.01, -0.02, 0.03, -0.01, 0.005, -0.015, 0.02, -0.008, 0.012, -0.03],
+            "position_value": 10000,
+        })
+        assert "error" not in result
+        assert "var_95" in result["details"]
+        assert result["details"]["var_95"] > 0
+
+    @pytest.mark.asyncio
+    async def test_alpha_stackvm_eval(self, mcp_server):
+        """alpha_stackvm_eval 求值公式."""
+        result = await mcp_server.call_tool("alpha_stackvm_eval", {
+            "formula": ["MUL", "close", 2],
+            "series": {"close": [1, 2, 3]},
+        })
+        assert "error" not in result
+        assert result["details"]["result"] == 6.0
+
+    @pytest.mark.asyncio
+    async def test_crypto_universe_scan(self, mcp_server):
+        """crypto_universe_scan 排名標的."""
+        result = await mcp_server.call_tool("crypto_universe_scan", {
+            "tickers": [
+                {"symbol": "BTCUSDT", "quoteVolume": "6400000000"},
+                {"symbol": "SNDKUSDT", "quoteVolume": "5000000000"},
+            ],
+            "top_n": 2,
+        })
+        assert "error" not in result
+        ranked = result["details"]["ranked"]
+        assert ranked[0]["symbol"] == "BTCUSDT"
+
+    def test_origin_guard_allow_local(self, mcp_server):
+        """Host/Origin guard 允許 localhost."""
+        assert mcp_server.check_origin("localhost", "http://localhost:8000") is True
+        assert mcp_server.check_origin("127.0.0.1", None) is True
+        assert mcp_server.check_origin("foo.local", "http://localhost") is True
+
+    def test_origin_guard_reject_external(self, mcp_server):
+        """Host/Origin guard 拒絕外部 host (DNS-rebinding 防護)."""
+        assert mcp_server.check_origin("evil.example.com") is False
+        assert mcp_server.check_origin("localhost", "https://attacker.com") is False
+
+    @pytest.mark.asyncio
+    async def test_computation_tools_registered(self, mcp_server):
+        """計算工具已註冊且可列出."""
+        tool_names = [tool.name for tool in mcp_server.list_tools()]
+        for name in ("quantlib_var_calc", "alpha_stackvm_eval", "crypto_universe_scan"):
+            assert name in tool_names
+
+    @pytest.mark.asyncio
     async def test_call_tool_nonexistent(self, mcp_server):
         """call_tool should return error for nonexistent tool."""
         result = await mcp_server.call_tool("nonexistent_tool", {})
