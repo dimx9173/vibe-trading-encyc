@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Multi-agent cryptocurrency trading system using pi-py (pi_agent_core + pi_ai)"
 readme = "README.md"
 requires-python = ">=3.13"
+license = "Apache-2.0"
 dependencies = [
     # pi-py (PyPI) — replaces the former vendored backend/src/pi_ai + pi_agent_core
     "pi-py-ai>=0.83.0",

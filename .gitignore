@@ -76,3 +76,10 @@ entities.json
 
 # Runtime state (not source)
 data/vbt.pid
+data/memory_storage.pkl
+data/paper_account.json
+data/memory_storage_fts5.db
+data/vbt.db
+
+# Backup snapshots (git is the version control; these are local safety copies)
+backups/

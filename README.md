@@ -167,7 +167,13 @@ uv run test_historical.py  # 访问 http://localhost:8000
 
 ## 📄 许可证
 
-MIT License
+[Apache License 2.0](./LICENSE)
+
+## 🤝 参与贡献
+
+- [贡献指南](./CONTRIBUTING.md)
+- [变更记录](./CHANGELOG.md)
+- [架构决策记录](./docs/adr/)
 
 ## Star History
 
