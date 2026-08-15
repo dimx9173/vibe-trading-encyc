@@ -180,6 +180,7 @@ def start(
         save_logs=save_logs,
         enable_web=web,
         web_port=web_port,
+        log_level=log_level,
     ))
 
 
@@ -217,6 +218,7 @@ async def run_multi_thread_system(
     save_logs: bool = True,
     enable_web: bool = False,
     web_port: int = 8000,
+    log_level: str = "INFO",
 ) -> None:
     """
     运行三线程交易系统
@@ -229,6 +231,7 @@ async def run_multi_thread_system(
         save_logs: 是否保存日志
         enable_web: 是否启动 Web 监控界面
         web_port: Web 服务器端口
+        log_level: 日志级别 (DEBUG/INFO/WARNING/ERROR)
     """
     info(f"启动三线程交易系统: {symbol} ({interval})", tag="START")
     separator("=", 60)
@@ -247,10 +250,10 @@ async def run_multi_thread_system(
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         log_file_path = logs_dir / f"trading_{symbol}_{timestamp}.log"
         
-        configure(log_level="INFO", json_output=False, log_file=str(log_file_path))
+        configure(log_level=log_level, json_output=False, log_file=str(log_file_path))
         info(f"日志将保存到: {log_file_path}", tag="LOG")
     else:
-        configure(log_level="INFO", json_output=False)
+        configure(log_level=log_level, json_output=False)
         info("文件日志已禁用", tag="LOG")
 
     # Web 服务器任务

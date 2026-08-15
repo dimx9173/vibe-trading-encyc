@@ -422,7 +422,7 @@ def configure(log_file: Optional[str] = None, **kwargs) -> None:
 
     Args:
         log_file: 日志文件路径
-        **kwargs: 其他 Logger 参数
+        **kwargs: 其他 Logger 参数 (log_level 映射到 min_level)
     """
     global _default_logger
 
@@ -433,6 +433,9 @@ def configure(log_file: Optional[str] = None, **kwargs) -> None:
     if _default_logger is None:
         _default_logger = Logger()
     for key, value in kwargs.items():
+        # CLI 傳 log_level=..., 但 Logger 屬性名為 min_level
+        if key == "log_level":
+            key = "min_level"
         if hasattr(_default_logger, key):
             setattr(_default_logger, key, value)
 

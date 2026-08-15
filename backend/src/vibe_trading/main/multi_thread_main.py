@@ -124,7 +124,9 @@ class MultiThreadedTradingSystem:
             try:
                 self.notifier = TelegramNotifier(
                     bot_token=telegram_config.bot_token,
-                    chat_id=telegram_config.chat_id
+                    chat_id=telegram_config.chat_id,
+                    executor=self.executor,
+                    system=self,
                 )
                 log.info("Telegram notifier initialized", tag="NOTIFIER")
             except Exception as e:

@@ -6,13 +6,14 @@ Telegram Notifier 核心
 import asyncio
 import logging
 import uuid
-from typing import Optional
+from typing import Any, List, Optional, Set
 from datetime import datetime
 
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import TelegramError, RetryAfter
 
 from .queue import NotificationQueue, Notification, NotificationPriority
+from .commands import format_balance, format_positions, format_status, format_help
 
 logger = logging.getLogger(__name__)
 
@@ -20,29 +21,55 @@ logger = logging.getLogger(__name__)
 class TelegramNotifier:
     """Telegram 通知推送器"""
 
-    def __init__(self, bot_token: str, chat_id: str):
+    def __init__(
+        self,
+        bot_token: str,
+        chat_id: str,
+        executor: Any = None,
+        system: Any = None,
+        allowed_chat_ids: Optional[List[str]] = None,
+    ):
         self.bot = Bot(token=bot_token)
         self.chat_id = chat_id
+        self.executor = executor
+        self.system = system
+        self.allowed_chat_ids: Set[str] = set(allowed_chat_ids or [chat_id])
         self.queue = NotificationQueue()
         self._running = False
         self._task: Optional[asyncio.Task] = None
+        self._updates_task: Optional[asyncio.Task] = None
+        self._update_offset: Optional[int] = None
 
         # 訂閱通知隊列
         self.queue.subscribe(self._on_notification)
 
     async def start(self):
-        """啟動通知推送循環"""
+        """啟動通知推送循環 + update 接收循環"""
         self._running = True
         self._task = asyncio.create_task(self._notification_loop())
+        self._updates_task = asyncio.create_task(self._updates_loop())
+        # 設定指令選單 (輸入 / 時彈出); 失敗不阻擋啟動
+        try:
+            from .commands import build_command_menu
+            await self.bot.set_my_commands(build_command_menu())
+            logger.info("Telegram command menu set")
+        except Exception as e:
+            logger.warning(f"Failed to set command menu: {e}")
         logger.info("Telegram Notifier started")
 
     async def stop(self):
-        """停止通知推送"""
+        """停止通知推送 + update 接收"""
         self._running = False
         if self._task:
             self._task.cancel()
             try:
                 await self._task
+            except asyncio.CancelledError:
+                pass
+        if self._updates_task:
+            self._updates_task.cancel()
+            try:
+                await self._updates_task
             except asyncio.CancelledError:
                 pass
         # Flush notifications still queued (e.g. shutdown notice enqueued just
@@ -83,6 +110,96 @@ class TelegramNotifier:
         if notification.priority in [NotificationPriority.CRITICAL, NotificationPriority.HIGH]:
             # 立即處理
             pass  # 會在主循環中處理
+
+    # ============================================================================
+    # 入站 update 接收 (grill Q2: Bot.get_updates 長輪詢, 唯一 consumer)
+    # ============================================================================
+
+    async def _updates_loop(self):
+        """Long-poll Telegram updates; route commands/callbacks. One consumer per token."""
+        while self._running:
+            try:
+                updates = await self.bot.get_updates(offset=self._update_offset, timeout=20)
+                for update in updates:
+                    await self._handle_update(update)
+            except asyncio.CancelledError:
+                raise
+            except (TelegramError, RetryAfter) as e:
+                logger.warning(f"get_updates error: {e}")
+                await asyncio.sleep(2)
+            except Exception as e:
+                logger.error(f"update loop error: {e}", exc_info=True)
+                await asyncio.sleep(5)
+
+    async def _handle_update(self, update) -> None:
+        """Route a single update: callback_query or command message."""
+        # Advance offset first: even on handler failure, don't re-process
+        self._update_offset = update.update_id + 1
+        try:
+            if update.callback_query:
+                await self._handle_callback_query(update.callback_query)
+            elif update.message and getattr(update.message, "text", None):
+                text = update.message.text.strip()
+                if text.startswith("/"):
+                    await self._handle_command(update.message, text)
+                # 非指令文字 → 忽略
+        except Exception as e:
+            logger.error(f"update handling failed: {e}", exc_info=True)
+
+    def _is_allowed(self, chat_id) -> bool:
+        """Authorization gate (grill Q3): only owner chat executes commands."""
+        return str(chat_id) in self.allowed_chat_ids
+
+    def _refresh_kb(self, query: str) -> InlineKeyboardMarkup:
+        """Refresh inline button for a command reply (grill Q4/Q8)."""
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 刷新", callback_data=f"refresh:{query}")]
+        ])
+
+    async def _run_query(self, query: str) -> str:
+        """Execute a query handler; on error return an error message (grill Q7)."""
+        try:
+            if query == "balance":
+                return await format_balance(self.executor)
+            if query == "positions":
+                return await format_positions(self.executor)
+            if query == "status":
+                return await format_status(self.system)
+            if query == "help":
+                return format_help()
+            return "未知指令。使用 /help 查看可用指令"
+        except Exception as e:
+            logger.warning(f"Query {query} failed: {e}")
+            return f"⚠️ 查詢失敗: {e}"
+
+    async def _handle_command(self, message, text: str) -> None:
+        """Answer a /command from an authorized chat."""
+        if not self._is_allowed(message.chat.id):
+            logger.warning(f"Ignored command from unauthorized chat {message.chat.id}")
+            return
+        query = text.lstrip("/").split()[0].lower()
+        reply = await self._run_query(query)
+        await message.reply_text(
+            reply,
+            parse_mode="HTML",
+            reply_markup=self._refresh_kb(query),
+        )
+
+    async def _handle_callback_query(self, callback_query) -> None:
+        """Route callback_query: refresh:<query> re-runs; else legacy ack_/detail_."""
+        data = callback_query.data or ""
+        if data.startswith("refresh:"):
+            query = data[len("refresh:"):]
+            reply = await self._run_query(query)
+            try:
+                await callback_query.edit_message_text(
+                    reply, parse_mode="HTML", reply_markup=self._refresh_kb(query)
+                )
+            except Exception as e:
+                logger.warning(f"refresh edit failed: {e}")
+            return
+        # 既有 ack_/detail_ 處理
+        await self.handle_callback(callback_query)
 
     async def _send_notification(self, notification: Notification):
         """發送單條通知"""

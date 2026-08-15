@@ -47,3 +47,15 @@ _Avoid_: mock executor, fake broker
 **Replay driver**:
 The program that fetches historical bars, seeds warmup into isolated storage, installs tool isolation, and drives `analyze_and_decide` bar-by-bar.
 _Avoid_: runner, harness (keep driver)
+
+**TG command**:
+A user-initiated Telegram query (`/balance`, `/positions`, `/status`, `/help`) answered by the bot reading live system state. Distinct from notifications, which the system pushes unprompted.
+_Avoid_: bot message, callback
+
+**Update loop**:
+The long-polling asyncio task (`bot.get_updates`) that receives Telegram messages and callback queries, routing them to the command router or callback handler. The sole inbound path — there was none before this feature.
+_Avoid_: webhook, polling (keep update loop for the specific long-poll task)
+
+**Refresh callback**:
+The inline keyboard button (`refresh:<query>`) attached to a TG command reply; pressing it re-runs the same query and edits the original message in place.
+_Avoid_: re-query button (keep refresh callback)
