@@ -407,3 +407,59 @@ class TestHoldSignal:
                      priority=__import__("vibe_trading.prime.models", fromlist=["DecisionPriority"]).DecisionPriority.NORMAL,
                      timestamp=__import__("datetime").datetime.now())
         await a._send_hold_signal(d)  # 不 raise
+
+
+class TestMonitoring:
+    @pytest.mark.asyncio
+    async def test_health_check(self):
+        from vibe_trading.prime.models import SystemState
+        a = _agent()
+        a.system_state = SystemState()
+        a.message_channel = MagicMock()
+        a.message_channel.size = AsyncMock(return_value=1)
+        a.harness = MagicMock()
+        a.harness.get_violation_summary = AsyncMock(return_value={"violations": 0})
+        await a._health_check()  # 不 raise
+
+    @pytest.mark.asyncio
+    async def test_monitoring_check(self):
+        from vibe_trading.prime.models import SystemState
+        a = _agent()
+        a.system_state = SystemState()
+        a.message_channel = MagicMock()
+        a.message_channel.size = AsyncMock(return_value=1)
+        a.harness = MagicMock()
+        a.harness.get_violation_summary = AsyncMock(return_value={})
+        with patch.object(a, "_get_current_price",
+                          new=AsyncMock(return_value=50000.0)), \
+             patch.object(a, "_check_price_movement", new=AsyncMock()), \
+             patch.object(a, "_check_financial_status", new=AsyncMock()), \
+             patch.object(a, "_check_risk_metrics", new=AsyncMock()):
+            await a._monitoring_check()  # 不 raise
+
+    @pytest.mark.asyncio
+    async def test_monitoring_check_error_raises(self):
+        from vibe_trading.prime.models import SystemState
+        a = _agent()
+        a.system_state = SystemState()
+        a.message_channel = MagicMock()
+        a.message_channel.size = AsyncMock(return_value=1)
+        a.harness = MagicMock()
+        a.harness.get_violation_summary = AsyncMock(return_value={})
+        with patch.object(a, "_get_current_price",
+                          new=AsyncMock(side_effect=RuntimeError("boom"))):
+            with pytest.raises(RuntimeError):
+                await a._monitoring_check()
+
+    @pytest.mark.asyncio
+    async def test_periodic_check(self):
+        from vibe_trading.prime.models import SystemState
+        a = _agent()
+        a.system_state = SystemState()
+        a.message_channel = MagicMock()
+        a.message_channel.size = AsyncMock(return_value=1)
+        a.message_channel.reset_stats = AsyncMock()
+        a.harness = MagicMock()
+        a.harness.get_violation_summary = AsyncMock(return_value={})
+        a.harness.reset_daily_stats = AsyncMock()
+        await a._periodic_check()  # 不 raise
