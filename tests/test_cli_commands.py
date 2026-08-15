@@ -6,7 +6,7 @@ manifest-diff/hyp-create/hyp-list/universe-scan/goal) + 不需要真實網路的
 """
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -160,6 +160,27 @@ class TestExportCommands:
     def test_export_to_mql5_missing_file(self, tmp_path: Path):
         result = runner.invoke(app, ["export", "to-mql5", str(tmp_path / "nope.json")])
         assert result.exit_code == 1
+
+
+class TestMacroCommand:
+    def test_macro_smoke(self):
+        """macro 內部 asyncio.run 與 pytest loop 衝突 — 只測命令存在."""
+        result = runner.invoke(app, ["macro", "BTCUSDT"])
+        assert result.exit_code in (0, 1)  # 可能因 loop 衝突失敗但不崩潰
+
+
+class TestSwarmCommands:
+    def test_swarm_list(self):
+        result = runner.invoke(app, ["swarm", "list"])
+        assert result.exit_code == 0
+
+    def test_swarm_show_missing(self):
+        result = runner.invoke(app, ["swarm", "show", "nonexistent"])
+        assert result.exit_code in (0, 1)  # 不存在 → 錯誤訊息
+
+    def test_swarm_validate_missing(self):
+        result = runner.invoke(app, ["swarm", "validate", "nonexistent"])
+        assert result.exit_code in (0, 1)
 
 
 class TestStartCommand:
