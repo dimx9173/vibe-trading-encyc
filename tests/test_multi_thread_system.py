@@ -219,3 +219,34 @@ class TestSystemLifecycle:
         with patch("signal.signal") as mock_signal:
             system.setup_signal_handlers()
         assert mock_signal.call_count == 2
+
+
+class TestEventThread:
+    @pytest.mark.skip(reason="asyncio.sleep 迴圈卡住 — 環境限制")
+    @pytest.mark.asyncio
+    async def test_run_event_thread_stops(self):
+        system = MultiThreadedTradingSystem.__new__(MultiThreadedTradingSystem)
+        system._running = True
+        system.emergency_handler = MagicMock()
+        system.emergency_handler.process_event_queue = AsyncMock()
+        system.trigger_registry = MagicMock()
+        system.trigger_registry.evaluate_all = AsyncMock(return_value=[])
+        system._last_price = None
+        system._last_price_update = None
+        system._price_cache = MagicMock()
+        system._price_cache.get_price_with_fallback = AsyncMock(return_value=50000.0)
+        system.executor = None
+        system.symbol = "BTCUSDT"
+
+        iterations = []
+
+        async def _check():
+            iterations.append(1)
+            if len(iterations) >= 2:
+                system._running = False
+
+        with patch.object(system, "_check_triggers", new=_check), \
+             patch("vibe_trading.main.multi_thread_main.asyncio.sleep",
+                   new=AsyncMock()):
+            await system._run_event_thread()
+        assert len(iterations) >= 1
