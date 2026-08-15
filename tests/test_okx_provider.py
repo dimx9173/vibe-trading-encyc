@@ -153,3 +153,71 @@ class TestSession:
         p = _provider()
         name = p.exchange_name
         assert callable(name) is False or name == "okx"
+
+
+class TestRequest:
+    @staticmethod
+    def _live_provider():
+        cfg = OkxExchangeConfig(
+            exchange_type=ExchangeType.OKX, api_key="k", api_secret="s",
+            passphrase="p", environment="testnet",
+        )
+        return OkxProvider(cfg)
+
+    @pytest.mark.asyncio
+    async def test_request_success(self):
+        p = TestRequest._live_provider()
+        p.config.rest_base_url = "https://www.okx.com"
+        session = MagicMock()
+        session.closed = False
+        resp = MagicMock()
+        resp.json = AsyncMock(return_value={"code": "0", "data": [{"x": 1}]})
+        class _CM:
+            async def __aenter__(self):
+                return resp
+            async def __aexit__(self, *a):
+                return None
+        session.get = MagicMock(return_value=_CM())
+        p._session = session
+        result = await p._request("/api/v5/market/ticker", {"instId": "BTC-USDT"})
+        assert result == [{"x": 1}]
+        session.get.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_request_error_raises(self):
+        p = TestRequest._live_provider()
+        p.config.rest_base_url = "https://www.okx.com"
+        session = MagicMock()
+        session.closed = False
+        resp = MagicMock()
+        resp.json = AsyncMock(return_value={"code": "500", "msg": "server error"})
+        class _CM:
+            async def __aenter__(self):
+                return resp
+            async def __aexit__(self, *a):
+                return None
+        session.get = MagicMock(return_value=_CM())
+        p._session = session
+        with pytest.raises(Exception) as exc:
+            await p._request("/api/v5/market/ticker")
+        assert "OKX API error" in str(exc.value)
+
+    @pytest.mark.asyncio
+    async def test_request_demo_header(self):
+        p = TestRequest._live_provider()
+        p.config.rest_base_url = "https://www.okx.com"
+        p.config.demo_trading = True
+        session = MagicMock()
+        session.closed = False
+        resp = MagicMock()
+        resp.json = AsyncMock(return_value={"code": "0", "data": []})
+        class _CM:
+            async def __aenter__(self):
+                return resp
+            async def __aexit__(self, *a):
+                return None
+        session.get = MagicMock(return_value=_CM())
+        p._session = session
+        await p._request("/api/v5/market/ticker")
+        kwargs = session.get.call_args.kwargs
+        assert kwargs["headers"].get("x-simulated-trading") == "1"
