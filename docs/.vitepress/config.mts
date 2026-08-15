@@ -55,7 +55,8 @@ export default withMermaid(defineConfig({
       {
         text: '研究与竞品分析',
         items: [
-          { text: '竞品深度分析报告', link: '/research/competitive-analysis' }
+          { text: '竞品深度分析报告', link: '/research/competitive-analysis' },
+          { text: '技术演进路线图 (Roadmap)', link: '/research/evolution-roadmap' }
         ]
       },
       {

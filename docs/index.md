@@ -67,6 +67,7 @@ Vibe Trading 不是简单的交易机器人，而是一个**面向量化交易�
 
 ### 研究与分析
 - [竞品深度分析报告](/research/competitive-analysis)：与 HKUDS/Vibe-Trading 及 AlphaGPT 的多维深度对比与演进建议
+- [技术演进路线图 (Roadmap)](/research/evolution-roadmap)：四阶段吸纳竞品精华的加密量化演进规划
 
 ### 架构与规范
 - [系统全览](/architecture/system-overview)：完整的系统组件、生命周期与数据流
