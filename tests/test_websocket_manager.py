@@ -154,3 +154,66 @@ class TestInitialize:
 def asyncio_sleep(sec):
     import asyncio
     return asyncio.sleep(sec)
+
+
+class TestConnectStreams:
+    @pytest.mark.asyncio
+    async def test_connect_streams_with_socket(self):
+        ws = WebSocketManager()
+        await ws.subscribe_kline("BTCUSDT", "30m", MagicMock())
+        ws._running = True
+        ws._bsm = MagicMock()
+
+        class _FakeSocket:
+            def __init__(self):
+                self.msgs = [
+                    {"stream": "btcusdt@kline_30m", "data": {"k": {
+                        "s": "BTCUSDT", "i": "30m", "t": 1700000000000,
+                        "o": "1", "h": "2", "l": "0.5", "c": "1.5",
+                        "v": "10", "q": "15", "n": 5, "V": "6", "Q": "9", "x": True,
+                    }}},
+                ]
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return None
+
+            async def recv(self):
+                if not self.msgs:
+                    ws._running = False
+                    raise RuntimeError("closed")
+                return self.msgs.pop(0)
+
+        ws._bsm.kline_socket = MagicMock(return_value=_FakeSocket())
+        # _handle_message 會 create_task callback — 直接測 _connect_streams 單次迭代
+        await ws._connect_streams()
+        # 不 raise; socket 已消費
+
+    @pytest.mark.asyncio
+    async def test_connect_streams_bad_key(self):
+        ws = WebSocketManager()
+        ws._streams["badformat"] = MagicMock(enabled=True)
+        ws._running = True
+        await ws._connect_streams()  # 跳過不支援的流
+
+
+class TestStopDetailed:
+    @pytest.mark.asyncio
+    async def test_stop_with_connections(self):
+        ws = WebSocketManager()
+        ws._running = True
+        conn = MagicMock()
+        conn.close = AsyncMock()
+        ws._active_connections["s1"] = conn
+        ws._bsm = MagicMock()
+        ws._bsm._conn = MagicMock()
+        ws._bsm._conn.close = AsyncMock()
+        client = MagicMock()
+        client.close_connection = AsyncMock()
+        ws._client = client
+        await ws.stop()
+        conn.close.assert_called_once()
+        assert ws._client is None
+        assert ws._bsm is None
