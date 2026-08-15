@@ -119,8 +119,20 @@ def _inject_cached_response(agent: Any, response: str) -> None:
 
 
 def install_cache_wrapper(agent: Any, role: str, cache: LLMCache, model: str) -> None:
-    """Wrap agent.prompt with the LLM cache. Original method restored by caller rebuild."""
-    original_prompt = agent.prompt
+    """Wrap the agent's actual LLM prompt method with the cache.
+
+    Coordinator agents (analysts/researchers/trader/PM) call the LLM through an
+    internal pi Agent at ``self._agent.prompt`` (via ``prompt_with_timeout``) —
+    not via ``agent.prompt`` on the wrapper. Resolve the real target so the
+    cache actually intercepts LLM calls for every role.
+    """
+    target = getattr(agent, "_agent", None)
+    if target is None or not hasattr(target, "prompt"):
+        target = agent
+    if not hasattr(target, "prompt"):
+        logger.warning(f"Cache wrapper skipped for {role}: no prompt method on agent")
+        return
+    original_prompt = target.prompt
 
     async def cached_prompt(prompt: str) -> bool:
         h = prompt_hash(prompt)
@@ -135,7 +147,7 @@ def install_cache_wrapper(agent: Any, role: str, cache: LLMCache, model: str) ->
                 await cache.put(model, role, h, serialize_response(response))
         return ok
 
-    agent.prompt = cached_prompt
+    target.prompt = cached_prompt
 
 
 def _iter_coordinator_agents(coordinator: TradingCoordinator):
@@ -234,9 +246,10 @@ async def run_replay(config: AgentReplayConfig) -> AgentReplayResult:
 
     # skip_debate via settings BEFORE coordinator construction
     if config.skip_debate:
-        from vibe_trading.config.settings import get_settings, set_settings
+        from vibe_trading.config.settings import Settings, get_settings, set_settings
         settings = get_settings()
-        set_settings(**{**settings.__dict__, "skip_debate": True})
+        # set_settings 收 Settings 物件 (非 kwargs dict) — 重建並覆寫 skip_debate
+        set_settings(Settings(**{**settings.__dict__, "skip_debate": True}))
 
     coordinator = TradingCoordinator(
         symbol=config.symbol,

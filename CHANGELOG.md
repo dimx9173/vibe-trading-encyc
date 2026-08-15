@@ -5,6 +5,10 @@
 ## [Unreleased]
 
 ### Fixed
+- **回測管線 skip_debate bug**: `set_settings(**{**settings.__dict__, ...})` 傳 kwargs dict 給收 Settings 物件的函式 → TypeError 使回測完全跑不動; 改 `Settings(**{...})` 重建
+- **回測 LLM cache wrapper**: 對 Trader/PM 包錯物件 (`agent.prompt` 不存在) → cache 完全失效; 改解析實際 `_agent.prompt` 讓 cache 對所有角色生效
+- **Sentiment 分析師 funding_rate 崩潰**: `data["funding_rate"]["funding_rate"]` 在資料源回 error dict 時拋 KeyError; 加容錯降級 (N/A 標記, 不崩潰)
+### Fixed
 - **測試隔離**: `DecisionCheckpointStore` 測試中重定向 `:memory:` — coordinator 測試不再寫入真實 `vibe_trading.db` (先前每跑全量污染 ~15000 checkpoint/決策)
 - **風控參數**: `execution_max_total_exposure` 300 → 1000 USDT (預設 + env fallback) — 解除持倉敞口卡死 (現有 225 + 加倉 94 超過舊 300 限制)
 

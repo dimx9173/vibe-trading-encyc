@@ -303,8 +303,12 @@ Social Mentions: {ss.get('mentions', {}).get('total', 'N/A')}
 """
 
         # 添加资金费率（反映情绪）
-        if "funding_rate" in data:
-            fr = data["funding_rate"]["funding_rate"]
+        fr_val = None
+        fr_data = data.get("funding_rate") if "funding_rate" in data else None
+        if isinstance(fr_data, dict):
+            fr_val = fr_data.get("funding_rate")
+        if fr_val is not None:
+            fr = float(fr_val)
             if fr > 0.01:
                 sentiment = "Highly Bullish"
             elif fr > 0:
@@ -314,6 +318,9 @@ Social Mentions: {ss.get('mentions', {}).get('total', 'N/A')}
             else:
                 sentiment = "Highly Bearish"
             prompt += f"Funding Rate Sentiment: {sentiment} ({fr})\n"
+        else:
+            # 資料源失敗/缺失 → 標記未知, 不讓分析師崩潰 (避免 KeyError on error dict)
+            prompt += "Funding Rate Sentiment: N/A (funding rate unavailable)\n"
 
         prompt += """
 
