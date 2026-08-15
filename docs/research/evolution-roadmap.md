@@ -83,11 +83,10 @@ graph LR
 * **設計**：純函式, 無效公式回 None 不 raise (與競品一致); 序列標量展開對齊長度
 * **明確不取**：AlphaGPT 的 LoopedTransformer + RL 循環 (見 Phase 3 修正註記)
 
-#### 2.3 永續合約回測保真度（採納評估 A3）
-* **資金費率結算**：00:00/08:00/16:00 UTC 三結算點, per-symbol 去重, `fee = size × mark × rate`
-* **分級維持保證金**：OKX 簡化 tier 表, `margin + unrealized ≤ notional × tier_rate` → 強平
-* **maker/taker 費率** (0.0002/0.0005) + 不利側滑點
-* **接入**：agent replay 成交模擬 (目前無資金費率/強平, 永續策略回測失真)
+#### 2.3 永續合約回測保真度（採納評估 A3）✅
+* **已交付** (2026-08-15): `PaperOrderExecutor.settle_funding` — 00:00/08:00/16:00 UTC 三結算點, per-symbol 小時去重, `fee = size × mark × rate × direction` (short 收費); `check_liquidation` — OKX 分級維持保證金表 `[(100k,0.4%),(500k,0.6%),(1M,1%),(5M,2%),(10M,5%),(∞,10%)]`, `margin + unrealized ≤ notional × tier_rate` 強平; agent replay 每 bar 接入 settle_funding
+* **接入**：replay 迴圈 `executor.settle_funding(...)`; 強平事件記錄 `_liquidation_events` (可審計)
+* **留後續**：嚴格模式 (per-exchange bracket artifacts, cross/isolated 帳戶清算) — 需 loader 供 funding_rate/brackets 欄位
 
 ---
 

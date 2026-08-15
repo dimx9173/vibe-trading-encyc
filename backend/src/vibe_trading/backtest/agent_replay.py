@@ -284,6 +284,11 @@ async def run_replay(config: AgentReplayConfig) -> AgentReplayResult:
         open_ms, o, h, l, c, v = bar
         await storage.store_kline(_to_kline(config.symbol, config.interval, bar))  # BEFORE decide
         executor.update_price(config.symbol, float(c))
+        # Phase 2.3: 永續資金費率結算 (三結算點去重)
+        try:
+            executor.settle_funding(config.symbol, int(open_ms), float(c))
+        except Exception as e:
+            logger.warning(f"Funding settlement failed: {e}")
         balance, positions = await _account_state(executor)
 
         bar_t0 = time.time()

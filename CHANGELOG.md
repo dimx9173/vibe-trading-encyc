@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Added
+- 永續合約回測保真度 (Phase 2.3): 資金費率三結算點 (0/8/16 UTC) 去重扣費 + OKX 分級維持保證金強平 (agent replay)
 - StackVM 符號運算元 (Phase 2.2): 12 運算元 (ADD/SUB/MUL/DIV/GATE/JUMP/DECAY/DELAY1/MAX3...) + compose_factor tool (分析師可組合自定義因子, arity-checked, NaN-safe)
 - Microstructure factors (Phase 2.1): pressure (真實 taker_buy)/fomo/vol_cluster/close_pos/momentum_rev/vol_trend 接入 Technical Analyst (純函式, NaN-aware)
 - QuantLib (Phase 1.1): 確定性金融數學庫 (Cornish-Fisher VaR, EVT/GPD, GARCH/EWMA, Fractional Kelly, TWR/XIRR, L2 衝擊成本); 修復 `advanced_risk_tools` parametric VaR scipy ImportError (改純 NumPy Acklam ppf)

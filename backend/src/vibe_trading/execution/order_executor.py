@@ -8,7 +8,7 @@ import json
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Dict, List, Optional
 import uuid
@@ -126,6 +126,10 @@ class PaperOrderExecutor(OrderExecutor):
         self._orders: Dict[str, OrderResult] = {}
         self._pending_orders: List[Dict] = []  # STOP/TP conditional orders
         self._current_prices: Dict[str, float] = {}
+        # Phase 2.3: 永續合約保真度
+        self._last_funding_settlement: Dict[str, int] = {}  # symbol → hour key
+        self._funding_paid = 0.0
+        self._liquidation_events: List[Dict] = []
         self._state_file = state_file
         if state_file and os.path.exists(state_file) and not reset:
             self._load_state()
@@ -201,6 +205,113 @@ class PaperOrderExecutor(OrderExecutor):
         
         # Check pending conditional orders
         self._check_pending_orders(symbol, price)
+        # Phase 2.3: 分級維持保證金強平檢查
+        try:
+            self.check_liquidation(symbol, price)
+        except Exception as e:
+            logger.warning(f"Liquidation check failed: {e}")
+
+    # ------------------------------------------------------------------
+    # Phase 2.3: 永續合約資金費率結算 + 分級維持保證金強平
+    # ------------------------------------------------------------------
+
+    # 資金費率結算點 (UTC 0/8/16 時)
+    FUNDING_HOURS = (0, 8, 16)
+    # OKX 簡化分級維持保證金表 (HKUDS crypto.py 驗證)
+    MAINTENANCE_TIERS = [
+        (100_000, 0.004), (500_000, 0.006), (1_000_000, 0.01),
+        (5_000_000, 0.02), (10_000_000, 0.05), (float("inf"), 0.10),
+    ]
+
+    def _is_funding_hour(self, open_time_ms: int) -> bool:
+        """判斷 bar 開盤時間是否落在資金費率結算點 (UTC 0/8/16 時)."""
+        hour = datetime.fromtimestamp(open_time_ms / 1000, tz=timezone.utc).hour
+        return hour in self.FUNDING_HOURS
+
+    def settle_funding(
+        self,
+        symbol: str,
+        open_time_ms: int,
+        mark_price: float,
+        funding_rate: float = 0.0001,
+    ) -> Dict:
+        """資金費率結算 (永續合約, Phase 2.3).
+
+        fee = size × mark × rate × direction (long 付正費率)
+        per-symbol 去重: 同一 (symbol, hour) 只結算一次.
+        Returns: {"fee": float, "settled": bool}
+        """
+        hour_key = open_time_ms // 3_600_000
+        if self._last_funding_settlement.get(symbol) == hour_key:
+            return {"fee": 0.0, "settled": False}
+        if not self._is_funding_hour(open_time_ms):
+            return {"fee": 0.0, "settled": False}
+
+        total_fee = 0.0
+        for pos in self._positions.values():
+            if pos.symbol != symbol or pos.leverage <= 1.0:
+                continue  # 現貨 (槓桿 1) 無 funding
+            direction = 1.0 if pos.position_side == PositionSide.LONG else -1.0
+            fee = pos.quantity * mark_price * funding_rate * direction
+            total_fee += fee
+
+        if abs(total_fee) > 1e-12:
+            self._balance -= total_fee
+            self._funding_paid += total_fee
+            self._last_funding_settlement[symbol] = hour_key
+            logger.info(
+                f"Funding settled {symbol}: {total_fee:+.4f} USDT "
+                f"(hour {datetime.fromtimestamp(open_time_ms / 1000, tz=timezone.utc):%H})"
+            )
+        return {"fee": total_fee, "settled": abs(total_fee) > 1e-12}
+
+    def _maintenance_rate(self, notional: float) -> float:
+        """OKX 分級維持保證金率."""
+        for tier, rate in self.MAINTENANCE_TIERS:
+            if notional <= tier:
+                return rate
+        return 0.10
+
+    def check_liquidation(self, symbol: str, mark_price: float) -> List[Dict]:
+        """分級維持保證金強平判定 (Phase 2.3).
+
+        margin = size × entry / leverage
+        unrealized = dir × size × (mark − entry)
+        強平: margin + unrealized ≤ notional × tier_rate
+        Returns: 被強平倉位列表 (已平倉, 記錄 realized).
+        """
+        liquidated: List[Dict] = []
+        for key, pos in list(self._positions.items()):
+            if pos.symbol != symbol or pos.leverage <= 1.0:
+                continue  # 現貨無強平
+            margin = pos.quantity * pos.entry_price / pos.leverage
+            if pos.position_side == PositionSide.LONG:
+                unrealized = pos.quantity * (mark_price - pos.entry_price)
+            else:
+                unrealized = pos.quantity * (pos.entry_price - mark_price)
+            notional = pos.quantity * mark_price
+            if margin + unrealized <= notional * self._maintenance_rate(notional):
+                # 強平: 全額平倉, 剩餘保證金退回
+                realized = unrealized - margin
+                pos.realized_pnl += realized
+                self._realized_pnl += realized
+                self._balance += margin + unrealized
+                del self._positions[key]
+                event = {
+                    "symbol": symbol,
+                    "side": pos.position_side.value,
+                    "quantity": pos.quantity,
+                    "entry": pos.entry_price,
+                    "mark": mark_price,
+                    "realized": realized,
+                }
+                self._liquidation_events.append(event)
+                liquidated.append(event)
+                logger.warning(
+                    f"[強平] {symbol} {pos.position_side.value} {pos.quantity} "
+                    f"@ {mark_price:.2f} (realized {realized:+.2f})"
+                )
+        return liquidated
 
     def _check_pending_orders(self, symbol: str, price: float) -> None:
         """Check and execute pending conditional orders when trigger price is hit."""
