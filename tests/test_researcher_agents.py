@@ -158,15 +158,21 @@ class TestRespondErrors:
         from vibe_trading.agents.researchers.researcher_agents import (
             prompt_with_timeout,
         )
+        from types import SimpleNamespace
+        from pi_agent_core.types import TextContent
         r = _researcher()
-        r._agent = MagicMock()
+        r._agent = SimpleNamespace(
+            state=SimpleNamespace(
+                error_message=None,
+                messages=[SimpleNamespace(
+                    role="assistant", content=[TextContent(text="Bull 分析結果")])],
+            ),
+        )
         r.config.name = "bull"
         r._lock = __import__("asyncio").Lock()
         r._my_arguments = []
-        r._agent.state.messages = [MagicMock(
-            role="assistant", content=[MagicMock(text="Bull 分析結果")])]
         with patch.object(r, "_build_debate_prompt", return_value="prompt"), \
              patch("vibe_trading.agents.researchers.researcher_agents.prompt_with_timeout",
                    new=AsyncMock(return_value=True)):
             result = await r.respond("context")
-        assert "Bull" in result or result == ""
+        assert "Bull" in result
