@@ -790,3 +790,48 @@ class TestResumeFromCheckpointFlow:
         with _p.object(tc, "logger", MagicMock()):
             result = await coordinator.resume_from_checkpoint("D1", 100.0)
         assert result is None
+
+
+class TestRunResearchDebate:
+    @pytest.mark.asyncio
+    async def test_skip_debate(self, coordinator):
+        from types import SimpleNamespace
+        from unittest.mock import patch as _p
+        import vibe_trading.coordinator.trading_coordinator as tc
+        settings = MagicMock()
+        settings.skip_debate = True
+        with _p.object(tc, "get_settings", return_value=settings), \
+             _p.object(tc, "logger", MagicMock()):
+            plan = await coordinator._run_research_debate(
+                SimpleNamespace(symbol="BTCUSDT", current_price=100.0),
+                {"technical": "bullish"}, "D1", {})
+        assert "SKIPPED" in plan
+
+    @pytest.mark.asyncio
+    async def test_full_debate(self, coordinator):
+        from unittest.mock import patch as _p
+        import vibe_trading.coordinator.trading_coordinator as tc
+        settings = MagicMock()
+        settings.skip_debate = False
+        settings.debate_rounds = 2
+        coordinator._token_optimizer = MagicMock()
+        coordinator._token_optimizer.compress_prompt = MagicMock(
+            return_value="compressed")
+        coordinator._message_broker = MagicMock()
+        bull = MagicMock()
+        bear = MagicMock()
+        manager = MagicMock()
+        manager.make_decision = AsyncMock(return_value={
+            "decision_text": "Buy BTC", "decision": "BUY"})
+        coordinator._researchers = {"bull": bull, "bear": bear,
+                                    "manager": manager}
+        with _p.object(tc, "get_settings", return_value=settings), \
+             _p.object(tc, "logger", MagicMock()), \
+             _p.object(tc, "run_debate_round",
+                       new=AsyncMock(return_value=("bull say", "bear say"))):
+            result = await coordinator._run_research_debate(
+                SimpleNamespace(symbol="BTCUSDT", current_price=100.0,
+                                market_data={}),
+                {"technical": "bullish"}, "D1", {})
+        assert result == "Buy BTC"
+        assert coordinator._message_broker.send.call_count == 5  # 2*2 + 1
