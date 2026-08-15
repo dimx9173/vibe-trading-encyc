@@ -143,6 +143,11 @@ class TestMarketDataTools:
 
     async def test_get_current_price_provider_fallback(self):
         """storage 無資料 → provider 路徑 (mock)."""
+        # 清除 cached decorator 污染的價格 cache
+        try:
+            await market_data_tools._cache.delete("price:BTCUSDT")
+        except Exception:
+            pass
         s = MagicMock()
         s.get_latest_kline = AsyncMock(return_value=None)
         provider = MagicMock()
