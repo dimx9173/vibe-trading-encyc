@@ -276,3 +276,49 @@ class TestPlaceOrderBranches:
             "BTCUSDT", OrderSide.SELL, OrderType.TAKE_PROFIT_MARKET, 0.1,
             stop_price=51000.0, position_side=PositionSide.LONG, reduce_only=True)
         assert result.status in ("PENDING", "FILLED")
+
+
+class TestLiquidation:
+    def test_liquidation_triggers_long(self):
+        ex = PaperOrderExecutor(initial_balance=10000.0)
+        ex._positions["BTCUSDT_LONG"] = PaperPosition(
+            symbol="BTCUSDT", position_side=PositionSide.LONG,
+            entry_price=50000.0, quantity=1.0, leverage=5)
+        # margin = 1*50000/5 = 10000; price 暴跌到 40000 → unrealized = -10000
+        # margin + unrealized = 0 ≤ notional*rate = 40000*0.004 = 160 → 強平
+        events = ex.check_liquidation("BTCUSDT", 40000.0)
+        assert len(events) == 1
+        assert "BTCUSDT_LONG" not in ex._positions
+        assert len(ex._liquidation_events) == 1
+
+    def test_liquidation_not_triggered(self):
+        ex = PaperOrderExecutor()
+        ex._positions["BTCUSDT_LONG"] = PaperPosition(
+            symbol="BTCUSDT", position_side=PositionSide.LONG,
+            entry_price=50000.0, quantity=1.0, leverage=5)
+        events = ex.check_liquidation("BTCUSDT", 49000.0)  # 小跌不強平
+        assert events == []
+
+    def test_liquidation_skips_spot(self):
+        ex = PaperOrderExecutor()
+        ex._positions["BTCUSDT_LONG"] = PaperPosition(
+            symbol="BTCUSDT", position_side=PositionSide.LONG,
+            entry_price=50000.0, quantity=1.0, leverage=1)  # 現貨
+        events = ex.check_liquidation("BTCUSDT", 40000.0)
+        assert events == []
+
+    def test_liquidation_short(self):
+        ex = PaperOrderExecutor()
+        ex._positions["BTCUSDT_SHORT"] = PaperPosition(
+            symbol="BTCUSDT", position_side=PositionSide.SHORT,
+            entry_price=50000.0, quantity=1.0, leverage=5)
+        # 價格暴漲 → short 虧損 → 強平
+        events = ex.check_liquidation("BTCUSDT", 60000.0)
+        assert len(events) == 1
+
+    def test_liquidation_other_symbol_skipped(self):
+        ex = PaperOrderExecutor()
+        ex._positions["ETHUSDT_LONG"] = PaperPosition(
+            symbol="ETHUSDT", position_side=PositionSide.LONG,
+            entry_price=3000.0, quantity=1.0, leverage=5)
+        assert ex.check_liquidation("BTCUSDT", 40000.0) == []
