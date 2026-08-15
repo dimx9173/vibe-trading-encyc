@@ -317,3 +317,50 @@ class TestShadowAnalyze:
             ])
         assert result.exit_code == 0
         assert "SHADOW" in result.output
+
+
+class TestExecutorFactory:
+    def _factory(self, mode, execute):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        with _p.object(cli_mod, "create_executor") as mock_create:
+            cli_mod.create_execution_executor(mode, execute)
+        mock_create.assert_called_once()
+
+    def test_paper(self):
+        self._factory(TradingMode.PAPER, False)
+
+    def test_testnet(self):
+        self._factory(TradingMode.TESTNET, False)
+
+    def test_live_dry_run(self):
+        self._factory(TradingMode.LIVE, execute=False)
+
+    def test_live_execute(self):
+        self._factory(TradingMode.LIVE, execute=True)
+
+
+class TestRunWebServer:
+    @pytest.mark.asyncio
+    async def test_run_web_server(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        server = MagicMock()
+        server.serve = AsyncMock()
+        with _p("uvicorn") as mock_uvicorn, \
+             _p("vibe_trading.web.server.set_initial_config") as mock_set:
+            mock_uvicorn.Server.return_value = server
+            await cli_mod.run_web_server(port=8001, symbol="BTCUSDT")
+        mock_set.assert_called_once()
+        server.serve.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_run_web_server_error(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        server = MagicMock()
+        server.serve = AsyncMock(side_effect=RuntimeError("down"))
+        with _p("uvicorn") as mock_uvicorn, \
+             _p("vibe_trading.web.server.set_initial_config"):
+            mock_uvicorn.Server.return_value = server
+            await cli_mod.run_web_server()  # 不 raise
