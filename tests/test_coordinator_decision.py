@@ -723,3 +723,70 @@ class TestResumeCheckpoint:
             return_value={"completed_phase": "none", "context": {}})
         result = await coordinator.resume_from_checkpoint("D1", 100.0)
         assert result is None or result is not None
+
+
+class TestResumeFromCheckpointFlow:
+    @pytest.mark.asyncio
+    async def test_resume_analyzing_phase(self, coordinator):
+        """從 analyzing 恢復 → 走完整 phase 鏈."""
+        from unittest.mock import patch as _p
+        import vibe_trading.coordinator.trading_coordinator as tc
+
+        coordinator._checkpoint_store = MagicMock()
+        coordinator._checkpoint_store.get_latest_checkpoint = MagicMock(
+            return_value={
+                "completed_phase": "analyzing",
+                "context": {"analyst_reports": {}, "current_price": 100.0},
+            })
+        machine = MagicMock()
+        machine.transition_to = MagicMock()
+        sm = MagicMock()
+        sm.create_machine = MagicMock(return_value=machine)
+        coordinator._state_manager = sm
+        coordinator._tool_context = MagicMock()
+        coordinator._tool_context.executor = MagicMock()
+        coordinator._prepare_context = AsyncMock(return_value={})
+        coordinator._run_research_debate = AsyncMock(return_value="plan")
+        coordinator._run_risk_assessment = AsyncMock(return_value={"level": "low"})
+        coordinator._run_trader = AsyncMock(return_value=MagicMock(
+            entry_orders=[], to_dict=MagicMock(return_value={})))
+        coordinator._run_portfolio_manager = AsyncMock(return_value={
+            "decision": "BUY", "rationale": "resumed", "confidence": 0.7})
+        with _p.object(tc, "logger", MagicMock()), \
+             _p.object(tc, "info", MagicMock()):
+            decision = await coordinator.resume_from_checkpoint("D1", 100.0)
+        assert decision is not None
+        assert decision.decision == "BUY"
+        assert decision.confidence == 0.7
+        assert coordinator._checkpoint_store.save_checkpoint.call_count >= 4
+
+    @pytest.mark.asyncio
+    async def test_resume_completed_phase(self, coordinator):
+        coordinator._checkpoint_store = MagicMock()
+        coordinator._checkpoint_store.get_latest_checkpoint = MagicMock(
+            return_value={
+                "completed_phase": "completed",
+                "context": {"final_decision": {"decision": "HOLD",
+                                               "rationale": "done"}},
+            })
+        decision = await coordinator.resume_from_checkpoint("D1", 100.0)
+        assert decision is not None
+
+    @pytest.mark.asyncio
+    async def test_resume_exception_returns_none(self, coordinator):
+        from unittest.mock import patch as _p
+        import vibe_trading.coordinator.trading_coordinator as tc
+        coordinator._checkpoint_store = MagicMock()
+        coordinator._checkpoint_store.get_latest_checkpoint = MagicMock(
+            return_value={
+                "completed_phase": "analyzing",
+                "context": {"analyst_reports": {}},
+            })
+        coordinator._state_manager = MagicMock()
+        coordinator._state_manager.create_machine = MagicMock(
+            return_value=MagicMock())
+        coordinator._continue_from_checkpoint = AsyncMock(
+            side_effect=RuntimeError("boom"))
+        with _p.object(tc, "logger", MagicMock()):
+            result = await coordinator.resume_from_checkpoint("D1", 100.0)
+        assert result is None
