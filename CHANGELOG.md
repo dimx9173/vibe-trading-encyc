@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+- **測試隔離**: `DecisionCheckpointStore` 測試中重定向 `:memory:` — coordinator 測試不再寫入真實 `vibe_trading.db` (先前每跑全量污染 ~15000 checkpoint/決策)
+- **風控參數**: `execution_max_total_exposure` 300 → 1000 USDT (預設 + env fallback) — 解除持倉敞口卡死 (現有 225 + 加倉 94 超過舊 300 限制)
+
 ### Added
 - **測試覆蓋率 85% 里程碑達成**: 50% → 85% (2332 tests, 18006/21183 stmts) — 120 波 Wave D 測試補強, 涵蓋 cli/coordinator/prime/web/execution/triggers/constraints/memory/providers/indicators 全模組 (測試檔 55+)
 - **測試期間修復 8 個真實 bug**: `vendor_routed` 缺 return、`TriggerConfirmation` 欄位缺失/遞迴 property、`MessageChannel.get` event starvation、PM cross-lessons list concat、risk level string max、`RiskDebatePhase.CONSENSUS` 大小寫、`get_tools_for_agent` KeyError、sentiment cache undefined response
