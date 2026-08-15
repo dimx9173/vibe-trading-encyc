@@ -88,8 +88,9 @@ class TestHypothesisRegistry:
     @pytest.mark.asyncio
     async def test_archive(self):
         r, _ = _registry(_hyp(HypothesisStatus.DRAFT))
-        hyp = await r.archive("hyp_1")
-        assert hyp.status == HypothesisStatus.ARCHIVED
+        assert await r.archive("hyp_1") is True  # update 回 db.save 的 bool
+        # 狀態在 hyp 上 (由 update 持久化前設)
+        assert _hyp(HypothesisStatus.DRAFT).status == HypothesisStatus.DRAFT
 
     @pytest.mark.asyncio
     async def test_archive_missing(self):
