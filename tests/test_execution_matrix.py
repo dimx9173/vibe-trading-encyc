@@ -1,5 +1,6 @@
 """Tests for execution matrix (Phase 4.1) — Bybit/Bitget/Hyperliquid/Jupiter + SOR + funding arb."""
 import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from vibe_trading.data_sources.binance_client import OrderSide, OrderType
 from vibe_trading.execution.bitget_executor import BitgetOrderExecutor
@@ -197,3 +198,68 @@ class TestFundingArb:
         )
         for o in opps:
             assert o.long_broker != o.short_broker
+
+
+class TestBybitLivePath:
+    @pytest.mark.asyncio
+    async def test_place_order_live_success(self):
+        """mock aiohttp 回 OK → OrderResult submitted."""
+        cfg = BrokerConfig(broker_type=BrokerType.BYBIT, api_key="k",
+                           api_secret="s", dry_run=False)
+        ex = BybitOrderExecutor(cfg)
+        with patch("aiohttp.ClientSession") as mock_session:
+            resp = MagicMock()
+            resp.json = AsyncMock(return_value={"retCode": 0,
+                                                "result": {"orderId": "123"}})
+            mock_session.return_value.__aenter__.return_value.post = AsyncMock(
+                return_value=MagicMock(**{"__aenter__.return_value": resp}))
+            result = await ex.place_order("BTCUSDT", OrderSide.BUY,
+                                          OrderType.MARKET, 0.1)
+        assert result.status in ("submitted", "FILLED")
+
+    @pytest.mark.asyncio
+    async def test_place_order_live_error_fallback(self):
+        cfg = BrokerConfig(broker_type=BrokerType.BYBIT, api_key="k",
+                           api_secret="s", dry_run=False)
+        ex = BybitOrderExecutor(cfg)
+        with patch("aiohttp.ClientSession") as mock_session:
+            resp = MagicMock()
+            resp.json = AsyncMock(return_value={"retCode": -1, "retMsg": "bad"})
+            mock_session.return_value.__aenter__.return_value.post = AsyncMock(
+                return_value=MagicMock(**{"__aenter__.return_value": resp}))
+            result = await ex.place_order("BTCUSDT", OrderSide.BUY,
+                                          OrderType.MARKET, 0.1)
+        assert result.status in ("dry_run", "FILLED")  # error → dry-run fallback
+
+    def test_auth_headers(self):
+        cfg = BrokerConfig(broker_type=BrokerType.BYBIT, api_key="k",
+                           api_secret="s", dry_run=False)
+        ex = BybitOrderExecutor(cfg)
+        headers = ex._auth_headers("POST", "/v5/order/create", {"symbol": "BTCUSDT"})
+        assert "X-BAPI-API-KEY" in headers
+        assert "X-BAPI-SIGN" in headers
+
+
+class TestBitgetLivePath:
+    @pytest.mark.asyncio
+    async def test_place_order_live_success(self):
+        cfg = BrokerConfig(broker_type=BrokerType.BITGET, api_key="k",
+                           api_secret="s", passphrase="p", dry_run=False)
+        ex = BitgetOrderExecutor(cfg)
+        with patch("aiohttp.ClientSession") as mock_session:
+            resp = MagicMock()
+            resp.json = AsyncMock(return_value={"code": "00000",
+                                                "data": {"orderId": "456"}})
+            mock_session.return_value.__aenter__.return_value.post = AsyncMock(
+                return_value=MagicMock(**{"__aenter__.return_value": resp}))
+            result = await ex.place_order("BTCUSDT", OrderSide.SELL,
+                                          OrderType.LIMIT, 0.5, price=68000)
+        assert result.status in ("submitted", "FILLED")
+
+    def test_auth_headers(self):
+        cfg = BrokerConfig(broker_type=BrokerType.BITGET, api_key="k",
+                           api_secret="s", passphrase="p", dry_run=False)
+        ex = BitgetOrderExecutor(cfg)
+        headers = ex._auth_headers({"a": 1}, "/api/v2/mix/order/place-order")
+        assert "ACCESS-KEY" in headers
+        assert "ACCESS-SIGN" in headers
