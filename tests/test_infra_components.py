@@ -364,3 +364,102 @@ class TestFileCache:
         stats = fc.get_stats()
         assert "hits" in stats
         assert "misses" in stats
+
+
+class TestCombineSignals:
+    def _sig(self, signal, confidence=0.5, strength=None, reasoning=None,
+             factors=None):
+        from vibe_trading.coordinator.signal_processor import (
+            ProcessedSignal, TradingSignal, SignalStrength,
+        )
+        return ProcessedSignal(
+            signal=signal, strength=strength or SignalStrength.MODERATE,
+            confidence=confidence, reasoning=reasoning or "r",
+            key_factors=factors or ["f"],
+        )
+
+    def test_empty_returns_unknown(self):
+        from vibe_trading.coordinator.signal_processor import (
+            SignalProcessor, TradingSignal,
+        )
+        sp = SignalProcessor()
+        result = sp.combine_signals([])
+        assert result.signal == TradingSignal.UNKNOWN
+
+    def test_weighted_buy_wins(self):
+        from vibe_trading.coordinator.signal_processor import (
+            SignalProcessor, TradingSignal,
+        )
+        sp = SignalProcessor()
+        sigs = [
+            self._sig(TradingSignal.BUY, 0.9, reasoning="bullish", factors=["a", "b"]),
+            self._sig(TradingSignal.SELL, 0.4, reasoning="bearish", factors=["c"]),
+            self._sig(TradingSignal.HOLD, 0.2),
+        ]
+        result = sp.combine_signals(sigs, method="weighted")
+        assert result.signal == TradingSignal.BUY
+        assert "bullish" in result.reasoning
+        assert "a" in result.key_factors
+
+    def test_weighted_sell_wins(self):
+        from vibe_trading.coordinator.signal_processor import (
+            SignalProcessor, TradingSignal,
+        )
+        sp = SignalProcessor()
+        sigs = [
+            self._sig(TradingSignal.BUY, 0.3),
+            self._sig(TradingSignal.SELL, 0.8),
+        ]
+        result = sp.combine_signals(sigs, method="weighted")
+        assert result.signal == TradingSignal.SELL
+
+    def test_majority(self):
+        from vibe_trading.coordinator.signal_processor import (
+            SignalProcessor, TradingSignal,
+        )
+        sp = SignalProcessor()
+        sigs = [
+            self._sig(TradingSignal.BUY, 0.9),
+            self._sig(TradingSignal.BUY, 0.8),
+            self._sig(TradingSignal.SELL, 0.7),
+        ]
+        result = sp.combine_signals(sigs, method="majority")
+        assert result.signal == TradingSignal.BUY
+
+    def test_unanimous_pass(self):
+        from vibe_trading.coordinator.signal_processor import (
+            SignalProcessor, TradingSignal,
+        )
+        sp = SignalProcessor()
+        sigs = [self._sig(TradingSignal.BUY), self._sig(TradingSignal.BUY)]
+        result = sp.combine_signals(sigs, method="unanimous")
+        assert result.signal == TradingSignal.BUY
+
+    def test_unanimous_fail_returns_hold(self):
+        from vibe_trading.coordinator.signal_processor import (
+            SignalProcessor, TradingSignal,
+        )
+        sp = SignalProcessor()
+        sigs = [self._sig(TradingSignal.BUY), self._sig(TradingSignal.SELL)]
+        result = sp.combine_signals(sigs, method="unanimous")
+        assert result.signal == TradingSignal.HOLD
+
+    def test_combined_strength(self):
+        from vibe_trading.coordinator.signal_processor import (
+            SignalProcessor, TradingSignal, SignalStrength,
+        )
+        sp = SignalProcessor()
+        # 同信號中有 STRONG → STRONG
+        sigs = [
+            self._sig(TradingSignal.BUY, 0.9, strength=SignalStrength.STRONG),
+            self._sig(TradingSignal.BUY, 0.5, strength=SignalStrength.WEAK),
+        ]
+        result = sp.combine_signals(sigs, method="unanimous")
+        assert result.strength == SignalStrength.STRONG
+        # 全 WEAK → WEAK
+        sigs2 = [
+            self._sig(TradingSignal.SELL, 0.4, strength=SignalStrength.WEAK),
+            self._sig(TradingSignal.SELL, 0.4, strength=SignalStrength.WEAK),
+        ]
+        result2 = sp.combine_signals(sigs2, method="unanimous")
+        assert result2.strength == SignalStrength.WEAK
