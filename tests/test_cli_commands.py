@@ -530,3 +530,86 @@ class TestSwarmShowValidate:
             result = runner.invoke(app, ["swarm", "validate", "daily"])
         assert result.exit_code == 0
         assert "issue1" in result.output
+
+
+class TestAlphaBench:
+    def test_alpha_bench_no_data(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        storage = MagicMock()
+        storage.query_klines = AsyncMock(return_value=[])
+        with _p("vibe_trading.data_sources.kline_storage.KlineStorage",
+                return_value=storage):
+            result = runner.invoke(app, [
+                "alpha", "bench", "--periods", "50",
+            ])
+        assert result.exit_code == 0  # 無資料 → warning + return
+
+    def test_alpha_bench_success(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        from datetime import datetime, timezone
+        from vibe_trading.data_sources.base import Kline
+        klines = [
+            Kline(symbol="BTCUSDT", interval="30m",
+                  open_time=int(datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp() * 1000) + i * 1000,
+                  open=100.0 + i, high=105.0 + i, low=95.0 + i,
+                  close=102.0 + i, volume=100.0)
+            for i in range(100)
+        ]
+        storage = MagicMock()
+        storage.query_klines = AsyncMock(return_value=klines)
+
+        class FakeAlpha:
+            __alpha_meta__ = MagicMock()
+            __alpha_meta__.name = "momentum"
+            __alpha_meta__.tags = ["trend"]
+
+            def compute(self, data):
+                import pandas as pd
+                return pd.Series(1.0, index=data.index)
+
+        with _p("vibe_trading.data_sources.kline_storage.KlineStorage",
+                return_value=storage), \
+             _p("vibe_trading.backtest.alphas.get_all_alphas",
+                return_value=[FakeAlpha]), \
+             _p("vibe_trading.backtest.alphas.metrics.calculate_ic_summary",
+                return_value={"ic_mean": 0.1, "ic_std": 0.05,
+                              "ir": 2.0, "ic_pos_ratio": 0.6}):
+            result = runner.invoke(app, [
+                "alpha", "bench", "--periods", "50",
+            ])
+        assert result.exit_code == 0
+        assert "momentum" in result.output
+
+    def test_alpha_bench_alpha_fails(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        from datetime import datetime, timezone
+        from vibe_trading.data_sources.base import Kline
+        klines = [
+            Kline(symbol="BTCUSDT", interval="30m",
+                  open_time=int(datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp() * 1000) + i * 1000,
+                  open=100.0, high=105.0, low=95.0, close=102.0, volume=100.0)
+            for i in range(100)
+        ]
+        storage = MagicMock()
+        storage.query_klines = AsyncMock(return_value=klines)
+
+        class BadAlpha:
+            __alpha_meta__ = MagicMock()
+            __alpha_meta__.name = "bad"
+            __alpha_meta__.tags = []
+
+            def compute(self, data):
+                raise RuntimeError("compute fail")
+
+        with _p("vibe_trading.data_sources.kline_storage.KlineStorage",
+                return_value=storage), \
+             _p("vibe_trading.backtest.alphas.get_all_alphas",
+                return_value=[BadAlpha]):
+            result = runner.invoke(app, [
+                "alpha", "bench", "--periods", "50",
+            ])
+        assert result.exit_code == 0
+        assert "共測試 0 個因子" in result.output
