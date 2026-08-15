@@ -296,18 +296,27 @@ class TestSendHelpers:
 
     @pytest.mark.asyncio
     async def test_send_phase(self):
-        state.phase_status = {}
-        with patch.object(web_server.journal_storage, "upsert_bar", new=AsyncMock()):
+        with patch("httpx.AsyncClient") as mock_client:
             await web_server.send_phase("ANALYZING", "running", open_time_ms=1)
-        assert state.phase_status["current"] == "ANALYZING"
+        mock_client.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_send_phase_error_swallowed(self):
+        with patch("httpx.AsyncClient", side_effect=RuntimeError("down")):
+            await web_server.send_phase("ANALYZING", "running")
+        # 不 raise
 
     @pytest.mark.asyncio
     async def test_send_report(self):
-        state.agent_reports = {}
-        with patch.object(web_server.journal_storage, "upsert_bar", new=AsyncMock()):
+        with patch("httpx.AsyncClient") as mock_client:
             await web_server.send_report("tech", "報告", "analysts", open_time_ms=1)
-        assert "analysts" in state.agent_reports
-        assert "tech" in state.agent_reports["analysts"]
+        mock_client.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_send_report_error_swallowed(self):
+        with patch("httpx.AsyncClient", side_effect=RuntimeError("down")):
+            await web_server.send_report("tech", "報告", "analysts")
+        # 不 raise
 
     @pytest.mark.asyncio
     async def test_send_execution(self):
