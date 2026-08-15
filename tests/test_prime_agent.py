@@ -463,3 +463,57 @@ class TestMonitoring:
         a.harness.get_violation_summary = AsyncMock(return_value={})
         a.harness.reset_daily_stats = AsyncMock()
         await a._periodic_check()  # 不 raise
+
+
+class TestAgentEvents:
+    @pytest.mark.asyncio
+    async def test_handle_message_end(self):
+        from vibe_trading.prime.models import SystemState
+        a = _agent()
+        a.system_state = AsyncMock()
+        a.stats = {"decisions_made": 0}
+        msg = MagicMock()
+        msg.role = "assistant"
+        msg.content = [MagicMock(text="建議买入 BTC")]
+        with patch.object(a, "_execute_decision", new=AsyncMock()):
+            await a._handle_agent_event(MagicMock(type="message_end", message=msg))
+        assert a.stats["decisions_made"] == 1
+
+    @pytest.mark.asyncio
+    async def test_handle_agent_end(self):
+        from vibe_trading.prime.models import SystemState
+        a = _agent()
+        a.system_state = AsyncMock()
+        a.stats = {"decisions_made": 0}
+        msg = MagicMock()
+        msg.role = "assistant"
+        msg.content = [MagicMock(text="建議卖出")]
+        with patch.object(a, "_execute_decision", new=AsyncMock()):
+            await a._handle_agent_event(
+                MagicMock(type="agent_end", messages=[msg]))
+        assert a.stats["decisions_made"] == 1
+
+    @pytest.mark.asyncio
+    async def test_handle_unknown_event(self):
+        a = _agent()
+        await a._handle_agent_event(MagicMock(type="other"))  # 不 raise
+
+    @pytest.mark.asyncio
+    async def test_process_response_user_role_skipped(self):
+        from vibe_trading.prime.models import SystemState
+        a = _agent()
+        a.system_state = AsyncMock()
+        msg = MagicMock()
+        msg.role = "user"
+        await a._process_agent_response(msg)  # 不 raise, 不處理
+
+    @pytest.mark.asyncio
+    async def test_process_response_no_decision(self):
+        from vibe_trading.prime.models import SystemState
+        a = _agent()
+        a.system_state = AsyncMock()
+        msg = MagicMock()
+        msg.role = "assistant"
+        msg.content = [MagicMock(text="無明確方向")]
+        await a._process_agent_response(msg)  # parse None → 不執行
+        assert a.stats["decisions_made"] == 0
