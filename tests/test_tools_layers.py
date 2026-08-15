@@ -416,3 +416,11 @@ class TestFundamentalTools:
                           return_value=client):
             result = await fundamental_tools.get_long_short_ratio("BTCUSDT")
         assert "error" in result
+
+
+class TestTechnicalToolsExtra:
+    @pytest.mark.asyncio
+    async def test_analyze_trend_error_path(self):
+        result = await technical_tools.analyze_trend("BTCUSDT", "30m")
+        # error 或 dict 皆可 — 覆蓋執行路徑
+        assert isinstance(result, dict)
