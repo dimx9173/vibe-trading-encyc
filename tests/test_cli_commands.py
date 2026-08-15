@@ -683,3 +683,42 @@ class TestRunPrimeSystem:
                 symbols=["BTCUSDT"], interval="30m",
                 mode=TradingMode.PAPER, execute_trades=False)
         # 錯誤被吞
+
+
+class TestPrimeCommand:
+    def test_prime_paper(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        with _p.object(cli_mod, "configure", return_value=None), \
+             _p.object(cli_mod, "run_prime_system", new=AsyncMock()):
+            result = runner.invoke(app, ["prime", "BTCUSDT"])
+        assert result.exit_code == 0
+
+    def test_prime_live_abort(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        with _p.object(cli_mod, "configure", return_value=None), \
+             _p.object(cli_mod, "typer", new=MagicMock()):
+            cli_mod.typer.confirm = MagicMock(return_value=False)
+            result = runner.invoke(app, ["prime", "BTCUSDT", "--mode", "live"])
+        assert result.exit_code != 0  # Abort
+
+    def test_prime_live_confirm(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        with _p.object(cli_mod, "configure", return_value=None), \
+             _p.object(cli_mod, "run_prime_system", new=AsyncMock()), \
+             _p.object(cli_mod, "typer", new=MagicMock()):
+            cli_mod.typer.confirm = MagicMock(return_value=True)
+            result = runner.invoke(app, ["prime", "BTCUSDT", "--mode", "live"])
+        assert result.exit_code == 0
+
+    def test_prime_live_execute_abort(self):
+        import vibe_trading.cli as cli_mod
+        from unittest.mock import patch as _p
+        with _p.object(cli_mod, "configure", return_value=None), \
+             _p.object(cli_mod, "typer", new=MagicMock()):
+            cli_mod.typer.confirm = MagicMock(return_value=False)
+            result = runner.invoke(app, ["prime", "BTCUSDT", "--mode", "live",
+                                         "--execute"])
+        assert result.exit_code != 0
