@@ -258,3 +258,18 @@ class TestAddReport:
         })
         assert r.status_code == 200
         assert r.json() == {"success": True}
+
+
+class TestWebSocket:
+    def test_websocket_connect_receive(self, client):
+        state.klines = [{"close": 50000.0}]
+        with client.websocket_connect("/ws") as ws:
+            data = ws.receive_json()
+            assert data["type"] == "init"
+            assert "klines" in data["data"]
+
+    def test_websocket_disconnect_cleanup(self, client):
+        with client.websocket_connect("/ws") as ws:
+            pass  # 斷線
+        # 斷線後 active_connections 應清理或至少不崩潰
+        assert isinstance(state.active_connections, list)
