@@ -8,7 +8,7 @@ tags: [development, contributing, changelog]
 
 本文档描述了 Vibe Trading 项目的开发计划和未来方向。
 
-> 注：本文件为早期版本路线图（v0.1/v0.2）。最新进度请参考仓库根目录 `ROADMAP.md`（P0–P4 全部完成，18/18 项）。
+> 注：本文件为早期版本路线图（v0.1/v0.2）。最新研发与技术演进请参考 [技术演进路线图](/research/evolution-roadmap)。
 
 ## 当前版本：v0.1.x
 
