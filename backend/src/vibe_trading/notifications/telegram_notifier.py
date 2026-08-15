@@ -13,7 +13,13 @@ from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import TelegramError, RetryAfter
 
 from .queue import NotificationQueue, Notification, NotificationPriority
-from .commands import format_balance, format_positions, format_status, format_help
+from .commands import (
+    format_balance,
+    format_positions,
+    format_status,
+    format_help,
+    format_last_decision,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +171,8 @@ class TelegramNotifier:
                 return await format_positions(self.executor)
             if query == "status":
                 return await format_status(self.system)
+            if query == "decision":
+                return await format_last_decision(self.system)
             if query == "help":
                 return format_help()
             return "未知指令。使用 /help 查看可用指令"

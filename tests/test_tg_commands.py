@@ -9,6 +9,7 @@ from vibe_trading.notifications.commands import (
     build_command_menu,
     format_balance,
     format_help,
+    format_last_decision,
     format_positions,
     format_status,
 )
@@ -119,6 +120,49 @@ class TestHelp:
         assert "/balance" in commands
         assert "/help" in commands
         assert all(m.description for m in menu)
+
+
+class TestLastDecision:
+    @pytest.mark.asyncio
+    async def test_no_coordinator(self):
+        system = SimpleNamespace(onbar_thread=None)
+        text = await format_last_decision(system)
+        assert "尚無決策" in text
+
+    @pytest.mark.asyncio
+    async def test_no_history(self):
+        coordinator = SimpleNamespace(get_decision_history=lambda: [])
+        onbar = SimpleNamespace(_coordinator=coordinator)
+        system = SimpleNamespace(onbar_thread=onbar)
+        text = await format_last_decision(system)
+        assert "尚無決策" in text
+
+    @pytest.mark.asyncio
+    async def test_formats_last_decision(self):
+        from datetime import datetime, timezone
+        decision = SimpleNamespace(
+            symbol="BTCUSDT",
+            timestamp=int(datetime(2026, 8, 15, tzinfo=timezone.utc).timestamp() * 1000),
+            decision="BUY",
+            confidence=0.8,
+            rationale="Strong momentum with volume confirmation",
+            execution_instructions=None,
+            agent_outputs={
+                "analysts": {"technical": "Bullish trend detected"},
+                "investment_plan": "Add 0.0015 BTC",
+                "risk_assessment": "Medium risk",
+                "trading_plan": "Limit order at 62000",
+            },
+        )
+        coordinator = SimpleNamespace(get_decision_history=lambda: [decision])
+        onbar = SimpleNamespace(_coordinator=coordinator)
+        system = SimpleNamespace(onbar_thread=onbar)
+        text = await format_last_decision(system)
+        assert "BUY" in text
+        assert "0.80" in text
+        assert "Strong momentum" in text
+        assert "technical" in text
+        assert "Medium risk" in text
 
 
 # === update routing ===

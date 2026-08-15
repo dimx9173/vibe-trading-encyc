@@ -7,6 +7,7 @@ try/except and reply with the error message instead (grill Q7).
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
@@ -16,6 +17,7 @@ COMMANDS: Dict[str, str] = {
     "/balance": "查詢資金餘額與權益",
     "/positions": "查詢當前持倉",
     "/status": "查詢系統運行狀態",
+    "/decision": "查詢最後一次 agent 決策報告",
 }
 
 
@@ -126,6 +128,62 @@ async def format_status(system: Any) -> str:
             lines.append(f"\n🎯 Triggers: {len(triggers)} registered")
         except Exception as e:
             logger.warning(f"Trigger stats failed: {e}")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# last decision
+# ---------------------------------------------------------------------------
+
+def _decision_coordinator(system: Any):
+    """Resolve the TradingCoordinator from the system object (or None)."""
+    onbar = getattr(system, "onbar_thread", None)
+    if onbar is None:
+        return None
+    return getattr(onbar, "_coordinator", None)
+
+
+async def format_last_decision(system: Any) -> str:
+    """📝 最後一次 agent 決策報告 (HTML). No decision → 提示."""
+    coordinator = _decision_coordinator(system)
+    if coordinator is None or not hasattr(coordinator, "get_decision_history"):
+        return "📝 尚無決策 (coordinator 未初始化)"
+
+    history = coordinator.get_decision_history()
+    if not history:
+        return "📝 尚無決策記錄"
+
+    d = history[-1]
+    ts = datetime.fromtimestamp(d.timestamp / 1000).strftime("%m-%d %H:%M") if d.timestamp else "?"
+    lines = [
+        f"📝 <b>最後一次決策</b> ({ts})",
+        f"決策: <b>{d.decision}</b>",
+    ]
+    if d.confidence is not None:
+        lines.append(f"信心: {d.confidence:.2f}")
+    if d.rationale:
+        # 截斷到 ~800 chars, 保留核心理由
+        rationale = d.rationale if len(d.rationale) <= 800 else d.rationale[:800] + "…"
+        lines.append(f"\n理由:\n{rationale}")
+
+    # 各階段 agent 輸出摘要 (analysts 4 份 + investment_plan + risk + trading_plan)
+    outputs = d.agent_outputs or {}
+    analysts = outputs.get("analysts") or {}
+    if isinstance(analysts, dict) and analysts:
+        lines.append("\n📊 分析師:")
+        for role, report in analysts.items():
+            snippet = str(report)[:120].replace("\n", " ")
+            lines.append(f"  • {role}: {snippet}")
+    for key, label in (
+        ("investment_plan", "📈 投資計劃"),
+        ("risk_assessment", "⚠️ 風控評估"),
+        ("trading_plan", "🎯 交易方案"),
+    ):
+        val = outputs.get(key)
+        if val:
+            snippet = str(val)[:150].replace("\n", " ")
+            lines.append(f"\n{label}:\n  {snippet}")
 
     return "\n".join(lines)
 
