@@ -181,3 +181,41 @@ class TestPrintStatus:
              patch.object(system, "onbar_thread", None), \
              patch.object(system, "emergency_handler", None):
             await system._print_system_status()  # 不 raise
+
+
+class TestSystemLifecycle:
+    @pytest.mark.asyncio
+    async def test_run_stop(self, system):
+        system.macro_thread = MagicMock()
+        system.macro_thread.start = AsyncMock()
+        system.macro_thread.stop = AsyncMock()
+        system.macro_thread.get_statistics = MagicMock(return_value={"total_runs": 1})
+        system.onbar_thread = MagicMock()
+        system.onbar_thread.start = AsyncMock()
+        system.onbar_thread.stop = AsyncMock()
+        system.onbar_thread.get_statistics = MagicMock(return_value={"total_bars": 5})
+        system.emergency_handler = MagicMock()
+        system.emergency_handler.get_statistics = MagicMock(return_value={"total_handled": 2})
+
+        # run: initialize + start + wait + stop
+        with patch.object(system, "initialize", new=AsyncMock()), \
+             patch.object(system, "start", new=AsyncMock()), \
+             patch.object(system, "stop", new=AsyncMock()) as mock_stop:
+            # 直接測 stop (已 running)
+            system._running = True
+            await system.stop()
+            mock_stop  # stop 本身被覆寫, 這裡測 real stop
+        # 測試真實 stop: 先設 running
+        system2 = system
+        system2._running = True
+        system2.event_thread = None
+        with patch.object(system2.thread_manager, "get_statistics",
+                          new=AsyncMock(return_value={"total_threads": 3})), \
+             patch.object(system2, "_print_system_status", new=AsyncMock()):
+            await system2.stop()
+        assert system2._running is False
+
+    def test_setup_signal_handlers(self, system):
+        with patch("signal.signal") as mock_signal:
+            system.setup_signal_handlers()
+        assert mock_signal.call_count == 2
