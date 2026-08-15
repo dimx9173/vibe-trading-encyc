@@ -166,6 +166,13 @@ class GetKlineDataParams(BaseModel):
     limit: int = Field(default=100, description="获取数量")
 
 
+class ComposeFactorParams(BaseModel):
+    """组合因子参数 (Phase 2.2 StackVM)"""
+    symbol: str = Field(description="交易对符号")
+    interval: str = Field(default="30m", description="K线间隔")
+    formula: list = Field(description="因子公式 AST, 如 [\"GATE\", \"vol_cluster\", \"momentum\", 0.0]")
+
+
 class GetComprehensiveTechnicalAnalysisParams(BaseModel):
     """获取综合技术分析参数"""
     symbol: str = Field(description="交易对符号")
@@ -466,6 +473,60 @@ async def execute_get_kline_data(
     klines = result.get("klines", [])
     text = f"K线数据: 共 {len(klines)} 条，最新: {klines[-1] if klines else 'N/A'}"
     return AgentToolResult(content=[TextContent(text=text)])
+
+
+def create_compose_factor_tool(tool_context: Any) -> AgentTool:
+    """Create a StackVM compose_factor tool bound to a ToolContext (Phase 2.2)."""
+
+    async def execute_compose_factor(
+        name: str,
+        args: ComposeFactorParams,
+        extra: Any = None,
+        callback: Any = None,
+    ) -> AgentToolResult:
+        """执行组合因子 (Phase 2.2 StackVM).
+
+        從 storage 讀 klines → 計算微觀因子 → StackVM 求值公式 AST.
+        """
+        import numpy as np
+
+        from vibe_trading.factors.microstructure import compute_all
+        from vibe_trading.factors.vm import evaluate_formula
+
+        try:
+            from vibe_trading.data_sources.kline_storage import KlineQuery
+
+            storage = getattr(tool_context, "storage", None)
+            if storage is None:
+                return AgentToolResult(content=[TextContent(text="N/A (无 storage, compose_factor 需要本地数据)")])
+
+            klines = await storage.query_klines(
+                KlineQuery(symbol=args.symbol, interval=args.interval, limit=100)
+            )
+            if not klines:
+                return AgentToolResult(content=[TextContent(text="N/A (无 K线数据)")])
+
+            micro = compute_all(klines)
+            # 標量微觀因子展開為序列 (供運算元操作)
+            series = {k: np.full(100, v) for k, v in micro.items()}
+            result = evaluate_formula(args.formula, series)
+            if result is None:
+                return AgentToolResult(content=[TextContent(
+                    text=f"公式無效或序列缺失: {args.formula}\n可用因子: {list(micro.keys())}"
+                )])
+            return AgentToolResult(content=[TextContent(
+                text=f"compose_factor: {args.formula}\nresult: {result:.6f}"
+            )])
+        except Exception as e:
+            return AgentToolResult(content=[TextContent(text=f"compose_factor 錯誤: {e}")])
+
+    return AgentTool(
+        name="compose_factor",
+        label="组合因子",
+        description="通过 StackVM 组合自定义因子表达式 (Phase 2.2), 如 [\"GATE\", \"vol_cluster\", \"momentum\", 0.0]",
+        parameters=ComposeFactorParams,
+        execute=execute_compose_factor,
+    )
 
 
 async def execute_get_comprehensive_technical_analysis(
@@ -926,6 +987,11 @@ def get_execution_tools(tool_context: Any) -> list[AgentTool]:
     return [create_submit_trade_order_tool(tool_context)]
 
 
+def get_technical_tools(tool_context: Any) -> list[AgentTool]:
+    """Get context-bound technical analysis tools (compose_factor, Phase 2.2)."""
+    return [create_compose_factor_tool(tool_context)]
+
+
 # =============================================================================
 # Tool 定义
 # =============================================================================
@@ -1134,6 +1200,7 @@ def get_tools_for_agent(agent_role: str) -> list[AgentTool]:
             all_tools["analyze_trend"],
             all_tools["detect_support_resistance"],
             all_tools["detect_candlestick_patterns"],
+            all_tools["compose_factor"],
         ]
 
     elif agent_role == "fundamental_analyst":

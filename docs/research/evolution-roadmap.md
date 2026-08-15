@@ -78,13 +78,9 @@ graph LR
 * **設計**：純 OHLCV 函數, NaN-aware 滾動窗口 (**不可複製 AlphaGPT 的 zero-padding 污染** — 違反 PIT 紀律), 註冊為 Technical Analyst tool
 * **後續**：liq_score (CEX 需深度/24h 成交量代理, 非 DEX pool), 其餘 5 特徵視需要
 
-#### 2.2 StackVM 符號運算元虛擬機（採納評估 A2）
-* **內建運算元**（純函式, arity-checked, NaN-safe）：
-  * 基礎：`ADD`, `SUB`, `MUL`, `DIV`(eps-guard), `NEG`, `ABS`, `SIGN`
-  * 條件門控：`GATE(cond, x, y)` — 制度切換 (高價值)
-  * 極值：`JUMP(x)` (Z-score>3 異常偵測)
-  * 時間序列：`DECAY(x)` (指數衰減), `DELAY1(x)`, `MAX3(x)`
-* **分析師能力賦能**：Technical Analyst 可輸出公式 AST 字串, StackVM 毫秒級求值 — 取代固定指標硬編碼
+#### 2.2 StackVM 符號運算元虛擬機（採納評估 A2）✅
+* **已交付** (2026-08-15): `factors/vm.py` — 12 運算元 (ADD/SUB/MUL/DIV/NEG/ABS/SIGN/GATE/JUMP/DECAY/DELAY1/MAX3) + 巢狀 AST 求值器 (arity-checked, NaN-safe) + `compose_factor` agent tool (technical analyst 可組合自定義因子)
+* **設計**：純函式, 無效公式回 None 不 raise (與競品一致); 序列標量展開對齊長度
 * **明確不取**：AlphaGPT 的 LoopedTransformer + RL 循環 (見 Phase 3 修正註記)
 
 #### 2.3 永續合約回測保真度（採納評估 A3）

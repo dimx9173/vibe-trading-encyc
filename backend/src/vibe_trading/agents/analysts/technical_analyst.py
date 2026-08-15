@@ -39,6 +39,14 @@ class TechnicalAnalystAgent:
         from vibe_trading.agents.agent_factory import create_trading_agent
         from vibe_trading.config.agent_config import AgentConfig
 
+        # Phase 2.2: compose_factor (StackVM) 綁定 tool_context
+        additional = []
+        try:
+            from vibe_trading.agents.agent_tools import get_technical_tools
+            additional = get_technical_tools(tool_context)
+        except Exception as e:
+            logger.warning(f"Could not load technical tools: {e}")
+
         config = AgentConfig(
             name="Technical Analyst",
             role="technical_analyst",
@@ -48,6 +56,7 @@ class TechnicalAnalystAgent:
         self._agent = await create_trading_agent(
             config=config,
             tool_context=tool_context,
+            additional_tools=additional,
             enable_streaming=enable_streaming,
             agent_name="Technical Analyst",
         )
