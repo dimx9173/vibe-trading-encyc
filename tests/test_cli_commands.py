@@ -7,11 +7,12 @@ manifest-diff/hyp-create/hyp-list/universe-scan/goal) + 不需要真實網路的
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+import uvicorn  # noqa: F401 — 供 patch("uvicorn") 目標
 
 import pytest
 from typer.testing import CliRunner
 
-from vibe_trading.cli import app
+from vibe_trading.cli import TradingMode, app
 
 runner = CliRunner()
 
@@ -347,9 +348,8 @@ class TestRunWebServer:
         from unittest.mock import patch as _p
         server = MagicMock()
         server.serve = AsyncMock()
-        with _p("uvicorn") as mock_uvicorn, \
+        with _p.object(uvicorn, "Server", return_value=server), \
              _p("vibe_trading.web.server.set_initial_config") as mock_set:
-            mock_uvicorn.Server.return_value = server
             await cli_mod.run_web_server(port=8001, symbol="BTCUSDT")
         mock_set.assert_called_once()
         server.serve.assert_called_once()
@@ -360,7 +360,6 @@ class TestRunWebServer:
         from unittest.mock import patch as _p
         server = MagicMock()
         server.serve = AsyncMock(side_effect=RuntimeError("down"))
-        with _p("uvicorn") as mock_uvicorn, \
+        with _p.object(uvicorn, "Server", return_value=server), \
              _p("vibe_trading.web.server.set_initial_config"):
-            mock_uvicorn.Server.return_value = server
             await cli_mod.run_web_server()  # 不 raise
