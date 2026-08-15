@@ -910,3 +910,35 @@ class TestHealthCheck:
         with _p.object(pa, "warning", MagicMock()) as w:
             await a._health_check()
         w.assert_not_called()
+
+
+class TestRealInit:
+    def test_init_constructs(self):
+        """真實 __init__ (mock Agent 底層) — 覆蓋建構 body."""
+        from vibe_trading.prime.models import PrimeAgentConfig, PrimeConfig, HarnessConfig
+        from unittest.mock import patch as _p
+        cfg = PrimeAgentConfig(
+            system_prompt="prompt",
+            prime_config=PrimeConfig(symbol="BTCUSDT"),
+            harness_config=HarnessConfig(),
+        )
+        with _p("vibe_trading.config.llm_config.get_model_from_config",
+                return_value="model"), \
+             _p("vibe_trading.config.llm_config.make_get_api_key",
+                return_value=lambda: "key"), \
+             _p("vibe_trading.prime.prime_agent.AgentOptions",
+                 return_value=MagicMock()), \
+             _p("vibe_trading.prime.prime_agent.Agent",
+                 return_value=MagicMock()), \
+             _p("vibe_trading.prime.prime_agent.HarnessManager",
+                 return_value=MagicMock()), \
+             _p("vibe_trading.prime.prime_agent.MessageChannel",
+                 return_value=MagicMock()):
+            a = PrimeAgent(cfg)
+        assert a.config is cfg
+        assert a.prime_config is cfg.prime_config
+        assert a.status is not None
+        assert a.subagents == {}
+        assert a.decision_history == []
+        assert a._monitoring_running is False
+        assert "messages_processed" in a.stats
