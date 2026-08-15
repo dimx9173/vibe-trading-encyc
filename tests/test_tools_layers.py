@@ -153,7 +153,8 @@ class TestMarketDataTools:
         provider = MagicMock()
         provider.get_current_price = AsyncMock(return_value=50000.0)
         with patch.object(market_data_tools, "get_binance_provider", new=AsyncMock(return_value=provider)):
-            result = await market_data_tools.get_current_price("BTCUSDT", storage=s)
+            # 用不同 symbol 規避 storage 測試的 cache 污染
+            result = await market_data_tools.get_current_price("ETHUSDT", storage=s)
             assert result["price"] == 50000.0
 
     async def test_get_24hr_ticker_parses(self):
