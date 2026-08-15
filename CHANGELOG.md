@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Added
+- QuantLib (Phase 1.1): 確定性金融數學庫 (Cornish-Fisher VaR, EVT/GPD, GARCH/EWMA, Fractional Kelly, TWR/XIRR, L2 衝擊成本); 修復 `advanced_risk_tools` parametric VaR scipy ImportError (改純 NumPy Acklam ppf)
 - Grounding Gate (Roadmap Phase 1.2): TradingPlan 價格 vs OHLC 邊界確定性校驗, 違規自動降級 HOLD + metadata 記錄
 - TG 查詢指令: `/balance` `/positions` `/status` `/decision` `/help` + 指令選單 (`set_my_commands`)
 - Agent-in-the-loop backtest CLI (`vibe-trade backtest-agent run/report/fetch`):

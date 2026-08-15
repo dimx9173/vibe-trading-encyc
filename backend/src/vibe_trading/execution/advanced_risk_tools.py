@@ -151,12 +151,15 @@ class VaRCalculator:
         mean = np.mean(returns)
         std = np.std(returns)
 
-        from scipy import stats
-        var_95_pct = stats.norm.ppf(0.05, mean, std)  # 5%分位数
-        var_99_pct = stats.norm.ppf(0.01, mean, std)  # 1%分位数
+        # Phase 1.1: 移除 scipy 依賴 (scipy 未安裝 → ImportError bug).
+        # 改用 quantlib.risk 的 Acklam 近似標準常態分位數 (誤差 ~1e-9).
+        from vibe_trading.quantlib.risk import _norm_ppf, _norm_pdf
+
+        var_95_pct = mean + _norm_ppf(0.05) * std  # 5%分位数
+        var_99_pct = mean + _norm_ppf(0.01) * std  # 1%分位数
 
         # 预期亏损
-        expected_shortfall_pct = mean - std * stats.norm.pdf(stats.norm.ppf(0.05)) / 0.05
+        expected_shortfall_pct = mean - std * _norm_pdf(_norm_ppf(0.05)) / 0.05
 
         return VaRResult(
             var_95=abs(var_95_pct * position_value),

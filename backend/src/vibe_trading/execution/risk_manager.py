@@ -482,8 +482,49 @@ class RiskManager:
             "max_score": max_score,
             "warnings": metrics.warnings,
             "metrics": metrics,
-            "recommendations": recommendations
+            "recommendations": recommendations,
+            "quantlib": self._quantlib_metrics(metrics, account_balance),
         }
+
+    def _quantlib_metrics(self, metrics: RiskMetrics, account_balance: float) -> Dict:
+        """Phase 1.1: 新增確定性金融數學指標 (Cornish-Fisher VaR, GARCH/EWMA vol).
+
+        Fail-safe: 新庫失敗不影響既有風險評估.
+        """
+        out: Dict = {}
+        try:
+            import numpy as np
+            from vibe_trading.quantlib.risk import calculate_var, garch11_volatility, ewma_volatility
+            from vibe_trading.quantlib.capital import fractional_kelly, max_drawdown_limit
+
+            returns = np.array(list(self.var_calculator._returns_history))
+            if len(returns) >= 10:
+                q = calculate_var(returns, position_value=account_balance, method="cornish_fisher")
+                out["var_95_cf"] = q.var_95
+                out["var_99_cf"] = q.var_99
+                out["cvar_95"] = q.cvar_95
+                out["vol_ewma"] = ewma_volatility(returns)
+                out["vol_garch"] = garch11_volatility(returns)[0]
+            # Kelly: 使用最近交易勝率 (如有)
+            if metrics.total_trades >= 5:
+                kelly = fractional_kelly(metrics.win_rate, self._kelly_payoff_ratio())
+                out["kelly_fraction"] = kelly
+                out["kelly_adjusted_position"] = max_drawdown_limit(
+                    kelly, max_dd_pct=0.2, current_dd_pct=metrics.current_drawdown
+                )
+        except Exception as e:
+            logger.warning(f"quantlib metrics failed (fail-safe): {e}")
+        return out
+
+    def _kelly_payoff_ratio(self) -> float:
+        """平均盈虧比 (避免除零)."""
+        from vibe_trading.execution.advanced_risk_tools import RiskMetricsCalculator
+        calc = getattr(self, "metrics_calculator", None)
+        avg_win = getattr(calc, "avg_win", 0.0) if calc else 0.0
+        avg_loss = getattr(calc, "avg_loss", 0.0) if calc else 0.0
+        if avg_loss and avg_loss > 0:
+            return float(avg_win / avg_loss)
+        return 1.0
 
     def validate_leverage(self, requested_leverage: int) -> bool:
         """验证杠杆倍数"""

@@ -143,7 +143,8 @@ class TestUsageLedger:
 
     async def test_get_daily_summary(self, ledger):
         """Daily summary should aggregate by date."""
-        now = datetime.now(timezone.utc)
+        # 固定時間戳避免 UTC 凌晨跨日 (now-6h 落在昨天)
+        now = datetime(2026, 8, 15, 12, 0, tzinfo=timezone.utc)
         ts1 = now - timedelta(hours=2)  # Today
         ts2 = now - timedelta(hours=6)  # Today
         ts3 = now - timedelta(days=1, hours=2)  # Yesterday
