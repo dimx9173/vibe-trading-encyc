@@ -2,6 +2,7 @@
 
 策略: mock _request (不發真實請求) 測解析; 純轉換函式直接測.
 """
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -272,3 +273,104 @@ class TestOKXWS:
         k = p._convert_kline(raw, "BTCUSDT", "30m")
         assert k.symbol == "BTCUSDT"
         assert k.close == 102.0
+
+
+class TestWebSocket:
+    @pytest.mark.asyncio
+    async def test_ensure_ws(self):
+        p = _provider()
+        with patch("vibe_trading.data_sources.providers.okx_provider.websockets") as mock_ws:
+            ws = MagicMock()
+            mock_ws.connect = AsyncMock(return_value=ws)
+            await p._ensure_ws()
+            assert p._ws is ws
+            await p._ensure_ws()  # 已連 → 直接 return
+
+    @pytest.mark.asyncio
+    async def test_ws_listen_async_callback(self):
+        p = _provider()
+        p._ws = MagicMock()
+        p._ws.__aiter__ = MagicMock(return_value=_MsgIter([json.dumps({
+            "arg": {"channel": "candle30m", "instId": "BTC-USDT-SWAP"},
+            "data": [["1000", "100", "105", "95", "102", "10", "1000",
+                      "10000", "0"]],
+        })]))
+        seen = []
+
+        async def cb(kline):
+            seen.append(kline)
+
+        p._ws_callbacks["candle30m:BTC-USDT-SWAP"] = cb
+        await p._ws_listen()
+        assert len(seen) == 1
+        assert seen[0].symbol == "BTCUSDT"
+        assert seen[0].interval == "30m"
+
+    @pytest.mark.asyncio
+    async def test_ws_listen_sync_callback(self):
+        p = _provider()
+        p._ws = MagicMock()
+        p._ws.__aiter__ = MagicMock(return_value=_MsgIter([json.dumps({
+            "arg": {"channel": "candle1H", "instId": "ETH-USDT-SWAP"},
+            "data": [["1000", "100", "105", "95", "102", "10", "1000",
+                      "10000", "1"]],
+        })]))
+        seen = []
+
+        def cb(kline):
+            seen.append(kline)
+
+        p._ws_callbacks["candle1H:ETH-USDT-SWAP"] = cb
+        await p._ws_listen()
+        assert len(seen) == 1
+        assert seen[0].is_final is True
+
+    @pytest.mark.asyncio
+    async def test_subscribe_unsupported_interval(self):
+        p = _provider()
+        await p.subscribe_klines("BTCUSDT", "1X", lambda k: None)  # 不 raise
+
+    @pytest.mark.asyncio
+    async def test_subscribe_sends(self):
+        p = _provider()
+        p._ws = MagicMock()
+        p._ws.send = AsyncMock()
+        await p.subscribe_klines("BTCUSDT", "30m", lambda k: None)
+        assert "BTCUSDT@30m" in p._subscribed_streams
+        p._ws.send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_unsubscribe(self):
+        p = _provider()
+        p._ws = MagicMock()
+        p._ws.send = AsyncMock()
+        p._ws_callbacks["candle30m:BTC-USDT-SWAP"] = lambda k: None
+        await p.unsubscribe_klines("BTCUSDT", "30m")
+        assert "candle30m:BTC-USDT-SWAP" not in p._ws_callbacks
+
+    @pytest.mark.asyncio
+    async def test_unsubscribe_unsupported(self):
+        p = _provider()
+        await p.unsubscribe_klines("BTCUSDT", "1X")  # 不 raise
+
+    def test_convert_ws_kline(self):
+        p = _provider()
+        k = p._convert_ws_kline(
+            ["1000", "100", "105", "95", "102", "10", "1000", "10000", "0"],
+            "BTC-USDT-SWAP", "1H")
+        assert k.symbol == "BTCUSDT"
+        assert k.interval == "1h"
+        assert k.close == 102.0
+
+
+class _MsgIter:
+    def __init__(self, msgs):
+        self._msgs = list(msgs)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if self._msgs:
+            return self._msgs.pop(0)
+        raise StopAsyncIteration
