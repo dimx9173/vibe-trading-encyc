@@ -198,3 +198,69 @@ class TestCandlestickEmpty:
         assert "single" in result["patterns"]
         assert "reversal" in result["patterns"]
         assert "continuation" in result["patterns"]
+
+
+class TestAnalyzeVolume:
+    def _ti(self, closes, volumes):
+        ti = TechnicalIndicators()
+        opens = [c - 1 for c in closes]
+        highs = [c + 1 for c in closes]
+        lows = [c - 2 for c in closes]
+        ti.load_data(opens, highs, lows, closes, volumes)
+        return ti
+
+    def test_heavy_volume_up(self):
+        closes = [100.0 + i for i in range(50)]
+        volumes = [1000.0] * 49 + [100000.0]
+        r = self._ti(closes, volumes).analyze_volume()
+        assert r["volume_status"] == "heavy_volume"
+        assert any("放量上涨" in s for s in r["patterns"])
+
+    def test_heavy_volume_down(self):
+        closes = [150.0 - i for i in range(50)]
+        volumes = [1000.0] * 49 + [100000.0]
+        r = self._ti(closes, volumes).analyze_volume()
+        assert any("放量下跌" in s for s in r["patterns"])
+
+    def test_above_average(self):
+        closes = [100.0 + i for i in range(50)]
+        volumes = [1000.0] * 49 + [2000.0]
+        r = self._ti(closes, volumes).analyze_volume()
+        assert r["volume_status"] == "above_average"
+
+    def test_low_volume_up(self):
+        closes = [100.0 + i for i in range(50)]
+        volumes = [1000.0] * 49 + [100.0]
+        r = self._ti(closes, volumes).analyze_volume()
+        assert r["volume_status"] == "low_volume"
+        assert any("缩量上涨" in s for s in r["patterns"])
+
+    def test_low_volume_down(self):
+        closes = [150.0 - i for i in range(50)]
+        volumes = [1000.0] * 49 + [100.0]
+        r = self._ti(closes, volumes).analyze_volume()
+        assert any("缩量下跌" in s for s in r["patterns"])
+
+    def test_below_average(self):
+        closes = [100.0 + i for i in range(50)]
+        volumes = [1000.0] * 49 + [700.0]
+        r = self._ti(closes, volumes).analyze_volume()
+        assert r["volume_status"] == "below_average"
+
+    def test_normal(self):
+        closes = [100.0 + i for i in range(50)]
+        volumes = [1000.0] * 50
+        r = self._ti(closes, volumes).analyze_volume()
+        assert r["volume_status"] == "normal"
+
+    def test_volume_price_divergence(self):
+        closes = [100.0 + i for i in range(45)] + [150.0, 151.0, 152.0, 153.0, 154.0]
+        volumes = [1000.0] * 45 + [1000.0, 800.0, 600.0, 400.0, 200.0]
+        r = self._ti(closes, volumes).analyze_volume()
+        assert any("量价背离" in s or "量價背離" in s for s in r["patterns"])
+
+    def test_insufficient(self):
+        closes = [100.0 + i for i in range(10)]
+        volumes = [1000.0] * 10
+        r = self._ti(closes, volumes).analyze_volume()
+        assert "error" in r
