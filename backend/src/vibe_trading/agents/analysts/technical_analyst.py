@@ -216,6 +216,18 @@ Technical Indicators:
 - ATR: {ind.get('atr', 'N/A')}
 """
 
+        # 微觀結構因子 (Phase 2.1)
+        micro_keys = (
+            "micro_pressure", "micro_fomo", "micro_vol_cluster",
+            "micro_close_pos", "micro_momentum_rev", "micro_vol_trend",
+        )
+        micro_lines = [
+            f"- {key.replace('micro_', '').upper()}: {ind.get(key, 'N/A')}"
+            for key in micro_keys if key in ind
+        ]
+        if micro_lines:
+            indicator_text += "\nMicrostructure Factors:\n" + "\n".join(micro_lines) + "\n"
+
         prompt = f"""Analyze the technical indicators for {self._tool_context.symbol}:
 
 {indicator_text}
@@ -226,6 +238,7 @@ Provide your technical analysis including:
 3. Overbought/oversold conditions
 4. Support and resistance levels
 5. Short-term trading recommendation
+6. Microstructure signals (order-flow imbalance, volume acceleration, bar position, momentum reversal)
 """
 
         # 执行分析（空回应/LLM错误重试）

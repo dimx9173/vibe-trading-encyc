@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Added
+- Microstructure factors (Phase 2.1): pressure (真實 taker_buy)/fomo/vol_cluster/close_pos/momentum_rev/vol_trend 接入 Technical Analyst (純函式, NaN-aware)
 - QuantLib (Phase 1.1): 確定性金融數學庫 (Cornish-Fisher VaR, EVT/GPD, GARCH/EWMA, Fractional Kelly, TWR/XIRR, L2 衝擊成本); 修復 `advanced_risk_tools` parametric VaR scipy ImportError (改純 NumPy Acklam ppf)
 - Grounding Gate (Roadmap Phase 1.2): TradingPlan 價格 vs OHLC 邊界確定性校驗, 違規自動降級 HOLD + metadata 記錄
 - TG 查詢指令: `/balance` `/positions` `/status` `/decision` `/help` + 指令選單 (`set_my_commands`)

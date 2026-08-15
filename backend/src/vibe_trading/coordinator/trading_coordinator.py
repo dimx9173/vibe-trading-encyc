@@ -1097,6 +1097,14 @@ class TradingCoordinator:
                 "current_volume": volumes[-1] if volumes else None,
             }
 
+            # 微觀結構因子 (Phase 2.1) — 純函式, NaN-aware
+            try:
+                from vibe_trading.factors.microstructure import compute_all
+                micro = compute_all(klines)
+                indicators.update({f"micro_{k}": v for k, v in micro.items()})
+            except Exception as e:
+                logger.warning(f"Microstructure factors failed: {e}")
+
         return TradingContext(
             symbol=self.symbol,
             interval=self.interval,
