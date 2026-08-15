@@ -171,6 +171,8 @@ class TestRespondErrors:
         r.config.name = "bull"
         r._lock = __import__("asyncio").Lock()
         r._my_arguments = []
+        from vibe_trading.agents.researchers.debate_analyzer import ArgumentExtractor
+        r._argument_extractor = ArgumentExtractor()
         with patch.object(r, "_build_debate_prompt", return_value="prompt"), \
              patch("vibe_trading.agents.researchers.researcher_agents.prompt_with_timeout",
                    new=AsyncMock(return_value=True)):
