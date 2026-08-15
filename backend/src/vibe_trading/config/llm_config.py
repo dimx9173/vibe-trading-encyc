@@ -54,8 +54,14 @@ _PROVIDER_TO_API: Dict[str, str] = {
 
 
 def _default_config_path() -> str:
-    """默认配置文件路径：本模块同目录下的 llm.yaml。"""
-    return str(Path(__file__).parent / "llm.yaml")
+    """默认配置文件路径：本模块同目录下的 llm.yaml，若不存在则回退到 llm.yaml.example。"""
+    primary = Path(__file__).parent / "llm.yaml"
+    if primary.exists():
+        return str(primary)
+    fallback = Path(__file__).parent / "llm.yaml.example"
+    if fallback.exists():
+        return str(fallback)
+    return str(primary)
 
 
 def _resolve_api_key(raw: str, provider: str) -> Optional[str]:
