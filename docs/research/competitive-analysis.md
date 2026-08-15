@@ -6,6 +6,8 @@
 > 1. 主專案：`vibe-trading-encyc` (`dimx9173/vibe-trading-encyc`)
 > 2. 競品一：`HKUDS/Vibe-Trading` (`HKUDS/Vibe-Trading`)
 > 3. 競品二：`AlphaGPT` (`imbue-bit/AlphaGPT`)
+>
+> **事實核驗註記 (2026-08-15)**：本文所有宣稱已對照競品本地原始碼 (`~/project/vibe-trading-hkuds`, `~/project/AlphaGPT`) 逐項驗證。兩處修正：HKUDS `quantlib` 實測 204 個函數定義 (README 自稱 265, 本文原寫 249+ — 改為 204+); HKUDS MCP 工具實測 70 個 (原寫 64)。AlphaGPT 的 RL reward 實為 return+drawdown (無 Sharpe/IC), 且無 anti-MEV 私密交易 (見 §2.1/§4.3 註記)。
 
 ---
 
@@ -25,7 +27,7 @@ graph TD
 
     subgraph "競品一: HKUDS/Vibe-Trading"
         E[25+ 全市場數據載入器<br>美股/A股/港股/加密/外匯] --> F[Swarm Agent + 64個 MCP 工具]
-        F --> G[src/quantlib 249+ 函數庫<br>& 估值三表聯動模型]
+        F --> G[src/quantlib 204+ 函數庫<br>& 估值三表聯動模型]
         G --> H[13+ 券商原生連接器<br>& 多市場高保真回測]
     end
 
@@ -41,7 +43,7 @@ graph TD
 | 專案 | 核心本質 | 決策核心 | 適用領域 |
 | :--- | :--- | :--- | :--- |
 | **主專案 (`vibe-trading-encyc`)** | **垂直深耕的 12-Agent 協作加密貨幣決策流水線** | LLM 角色認知分工 + 多輪看漲看跌辯論 + 嚴格歷史無未來函數 Replay | 加密貨幣合約/現貨中低頻智慧決策 |
-| **競品一 (`HKUDS/Vibe-Trading`)** | **全資產機構級 AI 交易作業系統 & 研究工作台** | 混合式（LLM Agent + 249+ 確定性金融數學庫 QuantLib + 估值模型） | 美股/A股/港股/加密/外匯/期權全品類研究與實盤 |
+| **競品一 (`HKUDS/Vibe-Trading`)** | **全資產機構級 AI 交易作業系統 & 研究工作台** | 混合式（LLM Agent + 204+ 確定性金融數學庫 QuantLib + 估值模型） | 美股/A股/港股/加密/外匯/期權全品類研究與實盤 |
 | **競品二 (`AlphaGPT`)** | **神經符號因子挖掘機 + 鏈上高頻執行引擎** | Transformer 生成公式 Token + StackVM 位元組碼執行 + RL 獎勵回測 | Solana Meme / DEX 鏈上極速因子挖掘與交易 |
 
 ---
@@ -61,7 +63,7 @@ graph TD
 * **設計哲學**：**「金融工程與 AI 協同作業系統」**。主打全市場覆蓋、嚴格數學確定性與生產級治理。
 * **底層框架**：FastAPI 後端 + React 19 / Node 22 前端 + Electron 跨平台桌面端，原生支援 MCP (Model Context Protocol)。
 * **核心組成**：
-  * **確定性金融數學層 (`src/quantlib`)**：內建 249+ 經測試函數（涵蓋期權定價、計量經濟學、VaR/CVaR/EVT、業績歸因、Purged CV），禁止大模型直接心算數值。
+  * **確定性金融數學層 (`src/quantlib`)**：內建 **204+ 經測試函數**（實測 `def` 計數, 涵蓋期權定價、計量經濟學、VaR/CVaR/EVT、業績歸因、Purged CV；README 自稱 265），禁止大模型直接心算數值。
   * **全資產與多券商矩陣**：支援美股、港股、A股（Tushare/Akshare/BaoStock）、韓股（KRX）、加股、加密貨幣、外匯貴金屬（MT5/tickerall），接入 13+ 家券商 API。
   * **防價格幻覺 Grounding 閘門**：嚴格比對 OHLC 證據，拒絕任何未觀測的捏造價格；日誌採哈希鏈式 fsync 審計帳本。
 
@@ -82,9 +84,15 @@ graph TD
 | 維度 | 主專案 (`vibe-trading-encyc`) | 競品一 (`HKUDS/Vibe-Trading`) | 競品二 (`AlphaGPT`) |
 | :--- | :--- | :--- | :--- |
 | **決策生成機制** | **多角色 LLM 語意對話與結構化裁決** | **LLM 協同 + 確定性代碼/工具調用** | **Transformer 輸出符號 Token 序列** |
-| **核心驅動引擎** | 12 個特化 Agent 協同流水線 | 模組化 Agent/Swarm + 64 個 MCP 工具 | Transformer + StackVM 運算元棧虛擬機 |
+| **核心驅動引擎** | 12 個特化 Agent 協同流水線 | 模組化 Agent/Swarm + 70 個 MCP 工具 | Transformer + StackVM 運算元棧虛擬機 |
 | **防幻覺機制** | Pydantic Schema 驗證 + 辯論交叉檢驗 | **Grounding 價格硬閘門** + 審計證據鏈 | **語法與維度檢查**（無效公式給予負獎勵） |
 | **模型依賴度** | 高（依賴商用/開源大模型 API） | 中~高（可配置各類 LLM 端點） | **零外部 LLM**（純本地 PyTorch 神經網路） |
+
+> **核驗註記 (2026-08-15)**：
+> - AlphaGPT RL reward 實為 `cum_ret − 2×drawdown − activity penalty`（`model_core/backtest.py:9-29`）；**Sharpe 僅見於實驗性 `times.py`，IC 全文不存在** — 原「以 Sharpe/IC 為獎勵」宣稱不精確。
+> - AlphaGPT 執行層為真實 Jupiter v6 quote/swap + Solana RPC（QuickNode），但**無 Jito 私密交易/anti-MEV**（`rpc_handler.py:20-21` 直接 `send_transaction(opts=None)`，僅設 auto priority fee）。
+> - AlphaGPT DexScreener 部分 stub（`get_trending_tokens`/`get_token_history` 回傳空列表）且 `USE_DEXSCREENER=False` 預設停用；Birdeye 為實際主力數據源。
+> - HKUDS 另有 30 個 Swarm preset（`agent/src/swarm/presets/`），實測確認。
 
 ### 2.2 多線程與併發架構
 
@@ -146,7 +154,7 @@ pie title 市場與資產類別覆蓋度對比
 | **代碼成熟度與架構完整性** | ⭐⭐⭐⭐ (核心流水線清晰，專注加密) | ⭐⭐⭐⭐⭐ (機構級工程，測試與文檔極其完備) | ⭐⭐⭐ (研究型原型，工程完備度較低) |
 | **資產與市場擴展性** | ⭐⭐⭐ (專注幣安與加密市場) | ⭐⭐⭐⭐⭐ (美/港/A/韓/加/外匯/期權/加密) | ⭐⭐ (限 Solana DEX) |
 | **LLM 協作決策深度** | ⭐⭐⭐⭐⭐ (12 Agent, 4 階段辯論流水線) | ⭐⭐⭐⭐ (Prompt + 工具鏈 + 估值模型) | ⭐ (不使用 LLM 對話，純符號生成) |
-| **數理金融與計量支撐** | ⭐⭐⭐ (基礎指標 + VaR + 凱利) | ⭐⭐⭐⭐⭐ (自研 249+ 函數 quantlib 庫) | ⭐⭐⭐ (12 個特化量化算子 + StackVM) |
+| **數理金融與計量支撐** | ⭐⭐⭐ (基礎指標 + VaR + 凱利) | ⭐⭐⭐⭐⭐ (自研 204+ 函數 quantlib 庫) | ⭐⭐⭐ (12 個特化量化算子 + StackVM) |
 | **執行效率與響應速度** | 中低頻（30m ~ 1h K線驅動） | 中低頻（日線、小時線、事件研究） | 中高頻（鏈上實時輪詢，秒級響應） |
 | **回測保真度 (Fidelity)** | ⭐⭐⭐⭐⭐ (Agent Replay + 零未來函數) | ⭐⭐⭐⭐⭐ (全市場規則 + 撮合細節 + 資金費) | ⭐⭐⭐ (張量向量化快速回測) |
 | **使用者介面與生態** | ⭐⭐⭐⭐ (Web UI + Telegram 機器人) | ⭐⭐⭐⭐⭐ (React 19 Web + Electron + MCP) | ⭐⭐ (簡易 Streamlit 看板) |
@@ -179,13 +187,14 @@ quadrantChart
   1. **資產與市場單一**：目前高度綁定 Binance 加密貨幣，缺乏傳統股票、外匯與衍生品市場的廣度。
   2. **數理計算缺少獨立專屬庫**：部分量化指標計算分散在 Agent 工具的 prompt 或零散腳本中，缺乏如 HKUDS `quantlib` 的標準化金融數學底座。
   3. **API Token 消耗較大**：完整運行 12 Agent 與多輪辯論對外部 LLM 預算和網路響應延遲有一定要求。
+  4. **Grounding 驗證模組未接入流水線（實測）**：`agents/grounded_validation.py`（126 行）已實作 `validate_grounded_output`，但全文搜尋無任何 caller — 屬於 dead code，未像 HKUDS 那樣在 Trader/PM 決策後執行價格幻覺檢查（對應 Roadmap Phase 1 待辦）。
 
 ### 4.2 競品一：`HKUDS/Vibe-Trading`
 * **優勢（Strengths）**：
   1. **全資產與多券商生態龐大**：涵蓋全球主要股市、外匯與加密貨幣，13+ 券商直接下單，生態廣度極大。
-  2. **將金融數學與 LLM 嚴格解耦 (`src/quantlib`)**：透過工具直接呼叫 249+ 經嚴密測試的量化函數，杜絕大模型心算錯誤。
+  2. **將金融數學與 LLM 嚴格解耦 (`src/quantlib`)**：透過工具直接呼叫 204+ 經嚴密測試的量化函數，杜絕大模型心算錯誤。
   3. **生產級工程品質與安全審計**：擁有防價格幻覺的 Grounding 門禁、哈希鏈式審計帳本、Electron 安全憑據儲存。
-  4. **完整的 MCP (Model Context Protocol) 支援**：提供 64+ MCP 工具，易於接入外部 AI 編輯器與生態。
+  4. **完整的 MCP (Model Context Protocol) 支援**：提供 70 個 MCP 工具（實測 60 `@mcp.tool` + 10 mirrored），易於接入外部 AI 編輯器與生態。
 * **劣勢（Weaknesses）**：
   1. **架構龐大、認知負擔高**：代碼量龐大、模組繁多，對專注單一策略交易者的維護成本較高。
   2. **缺乏專門針對單根 K 線的深度多輪 Agent 辯論體系**：決策更多依賴單一 Agent 透過工具呼叫或預設 Swarm，缺乏主專案精細的 4 階段認知對抗流程。
