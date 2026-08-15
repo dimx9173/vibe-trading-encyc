@@ -517,3 +517,43 @@ class TestAgentEvents:
         msg.content = [MagicMock(text="無明確方向")]
         await a._process_agent_response(msg)  # parse None → 不執行
         assert a.stats["decisions_made"] == 0
+
+
+class TestMonitoringLoop:
+    @pytest.mark.asyncio
+    async def test_start_monitoring_loop(self):
+        from vibe_trading.prime.models import SystemState
+        a = _agent()
+        a.system_state = SystemState()
+        a.message_channel = MagicMock()
+        a.message_channel.size = AsyncMock(return_value=1)
+        a.harness = MagicMock()
+        a.harness.get_violation_summary = AsyncMock(return_value={})
+        a._monitoring_paused = False
+        a._monitoring_running = True
+        a.prime_config.monitoring_interval = 0.01
+
+        iterations = []
+
+        async def _check():
+            iterations.append(1)
+            if len(iterations) >= 2:
+                a._monitoring_running = False
+
+        with patch.object(a, "_monitoring_check", new=_check), \
+             patch.object(a, "_periodic_check", new=AsyncMock()):
+            await a._start_monitoring_loop()
+        assert len(iterations) >= 1
+
+    @pytest.mark.asyncio
+    async def test_initialize_subagents(self):
+        a = _agent()
+        a.message_channel = MagicMock()
+        await a._initialize_subagents()  # 不 raise
+        assert isinstance(a.subagents, dict)
+
+    @pytest.mark.asyncio
+    async def test_initialize_subagent_monitors(self):
+        a = _agent()
+        a.subagents = {}
+        await a._initialize_subagent_monitors()  # 不 raise
