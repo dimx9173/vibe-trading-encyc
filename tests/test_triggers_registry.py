@@ -529,3 +529,108 @@ class TestRegistryExtras:
         assert handler not in r._event_handlers
         r.remove_event_handler(handler)  # 不再在 → 不 raise
 
+
+
+class TestPriceTriggers:
+    @pytest.mark.asyncio
+    async def test_price_drop_fires(self):
+        from vibe_trading.triggers.price_triggers import PriceDropTrigger
+        t = PriceDropTrigger(threshold_pct=0.03, cooldown_seconds=0)
+        ev = await t.check(_context(price=95.0, prev=100.0))
+        assert ev is not None
+        assert ev.severity.value == "critical"  # -5% ≥ 0.05
+        assert abs(ev.data["drop_pct"] - 0.05) < 1e-6
+
+    @pytest.mark.asyncio
+    async def test_price_drop_critical(self):
+        from vibe_trading.triggers.price_triggers import PriceDropTrigger
+        t = PriceDropTrigger(threshold_pct=0.03, cooldown_seconds=0)
+        ev = await t.check(_context(price=90.0, prev=100.0))  # -10%
+        assert ev.severity.value == "critical"
+
+    @pytest.mark.asyncio
+    async def test_price_drop_no_fire(self):
+        from vibe_trading.triggers.price_triggers import PriceDropTrigger
+        t = PriceDropTrigger(threshold_pct=0.03)
+        assert await t.check(_context(price=99.0, prev=100.0)) is None
+
+    @pytest.mark.asyncio
+    async def test_price_drop_bad_prev(self):
+        from vibe_trading.triggers.price_triggers import PriceDropTrigger
+        t = PriceDropTrigger(threshold_pct=0.03)
+        assert await t.check(_context(price=95.0, prev=0.0)) is None
+
+    @pytest.mark.asyncio
+    async def test_price_spike_fires(self):
+        from vibe_trading.triggers.price_triggers import PriceSpikeTrigger
+        t = PriceSpikeTrigger(threshold_pct=0.03, cooldown_seconds=0)
+        ev = await t.check(_context(price=105.0, prev=100.0))
+        assert ev is not None
+        assert ev.data["spike_pct"] > 0.03
+
+    @pytest.mark.asyncio
+    async def test_price_spike_no_fire(self):
+        from vibe_trading.triggers.price_triggers import PriceSpikeTrigger
+        t = PriceSpikeTrigger(threshold_pct=0.03)
+        assert await t.check(_context(price=101.0, prev=100.0)) is None
+
+    @pytest.mark.asyncio
+    async def test_support_breakout(self):
+        from vibe_trading.triggers.price_triggers import SupportBreakoutTrigger
+        t = SupportBreakoutTrigger(support_level=100.0, cooldown_seconds=0)
+        ev = await t.check(_context(price=95.0, prev=100.0))
+        assert ev is not None
+        assert ev.data["support_level"] == 100.0
+
+    @pytest.mark.asyncio
+    async def test_support_no_breakout(self):
+        from vibe_trading.triggers.price_triggers import SupportBreakoutTrigger
+        t = SupportBreakoutTrigger(support_level=100.0)
+        assert await t.check(_context(price=99.9, prev=100.0)) is None
+
+    @pytest.mark.asyncio
+    async def test_support_invalid_level(self):
+        from vibe_trading.triggers.price_triggers import SupportBreakoutTrigger
+        t = SupportBreakoutTrigger(support_level=0.0)
+        assert await t.check(_context(price=95.0, prev=100.0)) is None
+
+    @pytest.mark.asyncio
+    async def test_resistance_breakout(self):
+        from vibe_trading.triggers.price_triggers import ResistanceBreakoutTrigger
+        t = ResistanceBreakoutTrigger(resistance_level=100.0, cooldown_seconds=0)
+        ev = await t.check(_context(price=105.0, prev=100.0))
+        assert ev is not None
+        assert ev.data["resistance_level"] == 100.0
+
+    @pytest.mark.asyncio
+    async def test_resistance_no_breakout(self):
+        from vibe_trading.triggers.price_triggers import ResistanceBreakoutTrigger
+        t = ResistanceBreakoutTrigger(resistance_level=100.0)
+        assert await t.check(_context(price=100.1, prev=100.0)) is None
+
+    @pytest.mark.asyncio
+    async def test_wick_reversal(self):
+        from vibe_trading.triggers.price_triggers import WickReversalTrigger
+        t = WickReversalTrigger(wick_ratio=0.3, cooldown_seconds=0)
+        ctx = _context(price=101.0, prev=100.0)
+        ctx.set("open", 100.0)
+        ctx.set("high", 110.0)  # 長上影
+        ctx.set("low", 99.0)
+        ev = await t.check(ctx)
+        assert ev is not None
+
+    @pytest.mark.asyncio
+    async def test_wick_no_data(self):
+        from vibe_trading.triggers.price_triggers import WickReversalTrigger
+        t = WickReversalTrigger(wick_ratio=0.3)
+        assert await t.check(_context(price=101.0, prev=100.0)) is None
+
+    @pytest.mark.asyncio
+    async def test_wick_flat_range(self):
+        from vibe_trading.triggers.price_triggers import WickReversalTrigger
+        t = WickReversalTrigger(wick_ratio=0.3)
+        ctx = _context(price=100.0, prev=100.0)
+        ctx.set("open", 100.0)
+        ctx.set("high", 100.0)
+        ctx.set("low", 100.0)  # total_range = 0
+        assert await t.check(ctx) is None
