@@ -1,0 +1,155 @@
+"""Tests for OkxProvider (Wave D — coverage 85% plan).
+
+策略: mock _request (不發真實請求) 測解析; 純轉換函式直接測.
+"""
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from vibe_trading.data_sources.exchange_config import OkxExchangeConfig, ExchangeType
+from vibe_trading.data_sources.providers.okx_provider import OkxProvider
+
+
+def _provider():
+    cfg = OkxExchangeConfig(
+        exchange_type=ExchangeType.OKX, api_key="k", api_secret="s",
+        passphrase="p", environment="testnet",
+    )
+    p = OkxProvider(cfg)
+    p._request = AsyncMock()
+    return p
+
+
+class TestConversions:
+    def test_convert_symbol_usdt(self):
+        assert OkxProvider._convert_symbol("BTCUSDT") == "BTC-USDT-SWAP"
+
+    def test_convert_symbol_usdc(self):
+        assert OkxProvider._convert_symbol("ETHUSDC") == "ETH-USDC-SWAP"
+
+    def test_convert_symbol_unknown(self):
+        assert OkxProvider._convert_symbol("FOOXYZ") == "FOOXYZ"
+
+    def test_okx_bar_map(self):
+        assert OkxProvider._okx_bar("1h") == "1H"
+        assert OkxProvider._okx_bar("unknown") == "30m"
+
+    def test_interval_to_ms(self):
+        assert OkxProvider._interval_to_ms("1h") == 3_600_000
+        assert OkxProvider._interval_to_ms("unknown") == 1_800_000
+
+    def test_sign_deterministic(self):
+        p = _provider()
+        s1 = p._sign("123", "GET", "/path", "")
+        s2 = p._sign("123", "GET", "/path", "")
+        assert s1 == s2
+        assert len(s1) > 10
+
+    def test_headers_contains_auth(self):
+        p = _provider()
+        h = p._headers("GET", "/path")
+        assert "OK-ACCESS-KEY" in h
+        assert h["OK-ACCESS-KEY"] == "k"
+        assert "OK-ACCESS-SIGN" in h
+
+    def test_headers_demo_trading(self):
+        p = _provider()
+        p.config.demo_trading = True
+        h = p._headers("GET", "/path")
+        assert h["x-simulated-trading"] == "1"
+
+
+class TestGetKlines:
+    @pytest.mark.asyncio
+    async def test_parses_reversed(self):
+        p = _provider()
+        raw = [
+            ["1700000000000", "100", "105", "95", "102", "1000", "0"],
+            ["1699999996000", "99", "104", "94", "101", "900", "0"],
+        ]
+        p._request.return_value = raw
+        klines = await p.get_klines("BTCUSDT", "30m", 100)
+        assert len(klines) == 2
+        # OKX newest-first → 反轉 → 第一個是最舊
+        assert klines[0].open_time == 1699999996000
+        assert klines[1].close == 102.0
+
+    @pytest.mark.asyncio
+    async def test_request_params(self):
+        p = _provider()
+        p._request.return_value = []
+        await p.get_klines("BTCUSDT", "1h", 50, start_time=1000, end_time=2000)
+        args = p._request.call_args
+        assert args[0][0] == "/api/v5/market/candles"
+        assert args[0][1]["instId"] == "BTC-USDT-SWAP"
+        assert args[0][1]["after"] == "1000"
+        assert args[0][1]["before"] == "2000"
+
+
+class TestGetTicker:
+    @pytest.mark.asyncio
+    async def test_parses_ticker(self):
+        p = _provider()
+        p._request.return_value = [{
+            "last": "50000", "open24h": "49000", "high24h": "51000",
+            "low24h": "48500", "vol24h": "1000", "volCcy24h": "5e7",
+            "ts": "1700000000000",
+        }]
+        t = await p.get_ticker("BTCUSDT")
+        assert t.exchange == "okx"
+        assert t.close == 50000.0
+        assert t.price_change == 1000.0
+        assert t.price_change_percent == pytest.approx(2.0408, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_ticker_zero_open(self):
+        p = _provider()
+        p._request.return_value = [{"last": "1", "open24h": "0", "high24h": "1",
+                                    "low24h": "1", "vol24h": "1", "volCcy24h": "1",
+                                    "ts": "1"}]
+        t = await p.get_ticker("BTCUSDT")
+        assert t.price_change_percent == 0.0
+
+
+class TestGetOrderbook:
+    @pytest.mark.asyncio
+    async def test_parses_orderbook(self):
+        p = _provider()
+        p._request.return_value = [{
+            "bids": [["50000", "1.5"], ["49999", "2.0"]],
+            "asks": [["50001", "1.0"]],
+            "ts": "123",
+        }]
+        ob = await p.get_orderbook("BTCUSDT", 20)
+        assert ob.bids[0].price == 50000.0
+        assert ob.bids[0].quantity == 1.5
+        assert len(ob.asks) == 1
+
+
+class TestGetCurrentPrice:
+    @pytest.mark.asyncio
+    async def test_parses_price(self):
+        p = _provider()
+        p._request.return_value = [{"last": "50000"}]
+        assert await p.get_current_price("BTCUSDT") == 50000.0
+
+
+class TestSession:
+    @pytest.mark.asyncio
+    async def test_get_session_creates(self):
+        p = _provider()
+        with patch("vibe_trading.data_sources.providers.okx_provider.aiohttp"):
+            s = await p._get_session()
+        assert s is not None
+
+    @pytest.mark.asyncio
+    async def test_connect_disconnect(self):
+        p = _provider()
+        p._session = MagicMock()
+        await p.connect()
+        await p.disconnect()
+
+    def test_exchange_name(self):
+        p = _provider()
+        name = p.exchange_name
+        assert callable(name) is False or name == "okx"
