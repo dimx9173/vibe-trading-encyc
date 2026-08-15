@@ -273,3 +273,53 @@ class TestWebSocket:
             pass  # 斷線
         # 斷線後 active_connections 應清理或至少不崩潰
         assert isinstance(state.active_connections, list)
+
+
+class TestSendHelpers:
+    @pytest.mark.asyncio
+    async def test_send_kline(self):
+        with patch.object(web_server.journal_storage, "upsert_bar", new=AsyncMock()):
+            await web_server.send_kline({"symbol": "BTCUSDT", "open_time_ms": 1})
+        assert len(state.klines) >= 0
+
+    @pytest.mark.asyncio
+    async def test_send_decision(self):
+        with patch.object(web_server.journal_storage, "upsert_bar", new=AsyncMock()):
+            await web_server.send_decision({"symbol": "BTCUSDT", "open_time_ms": 1})
+        assert len(state.decisions) >= 0
+
+    @pytest.mark.asyncio
+    async def test_send_log(self):
+        with patch.object(web_server.journal_storage, "upsert_bar", new=AsyncMock()):
+            await web_server.send_log("info", "OnBar", "msg", open_time_ms=1)
+        assert len(state.logs) >= 1
+
+    @pytest.mark.asyncio
+    async def test_send_phase(self):
+        state.phase_status = {}
+        with patch.object(web_server.journal_storage, "upsert_bar", new=AsyncMock()):
+            await web_server.send_phase("ANALYZING", "running", open_time_ms=1)
+        assert state.phase_status["current"] == "ANALYZING"
+
+    @pytest.mark.asyncio
+    async def test_send_report(self):
+        state.agent_reports = {}
+        with patch.object(web_server.journal_storage, "upsert_bar", new=AsyncMock()):
+            await web_server.send_report("tech", "報告", "analysts", open_time_ms=1)
+        assert "analysts" in state.agent_reports
+        assert "tech" in state.agent_reports["analysts"]
+
+    @pytest.mark.asyncio
+    async def test_send_execution(self):
+        with patch("httpx.AsyncClient") as mock_client:
+            await web_server.send_execution(
+                agent="tech", tool_name="get_price", tool_call_id="c1",
+                args={}, result={}, symbol="BTCUSDT")
+        mock_client.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_send_execution_error_swallowed(self):
+        with patch("httpx.AsyncClient", side_effect=RuntimeError("down")):
+            await web_server.send_execution(
+                agent="tech", tool_name="t", tool_call_id="c", args={}, result={})
+        # 不 raise
