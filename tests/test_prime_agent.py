@@ -1020,3 +1020,37 @@ class TestMonitoring:
         a.message_channel.get_stats = AsyncMock(return_value={"x": 1})
         stats = await a.get_message_stats()
         assert stats == {"x": 1}
+
+
+class TestCheckPriceMovement:
+    @pytest.mark.asyncio
+    async def test_dict_price(self):
+        a = _agent()
+        a._last_price = None
+        a._handle_price_crash = AsyncMock()
+        a._handle_price_spike = AsyncMock()
+        a._last_price = 50000.0
+        a._last_price_time = __import__("datetime").datetime.now()
+        await a._check_price_movement({"price": 50050.0})
+        # 正常 (無 crash/spike)
+
+    @pytest.mark.asyncio
+    async def test_invalid_type_returns(self):
+        a = _agent()
+        a._last_price = 50000.0
+        await a._check_price_movement("not-a-number")  # 不 raise
+
+    @pytest.mark.asyncio
+    async def test_first_price_sets_baseline(self):
+        a = _agent()
+        a._last_price = None
+        await a._check_price_movement(50000.0)
+        assert a._last_price == 50000.0
+
+    @pytest.mark.asyncio
+    async def test_dict_last_price(self):
+        a = _agent()
+        a._last_price = {"price": 49000.0}
+        a._last_price_time = __import__("datetime").datetime.now()
+        await a._check_price_movement(49500.0)  # 不 raise
+        assert isinstance(a._last_price, float)
