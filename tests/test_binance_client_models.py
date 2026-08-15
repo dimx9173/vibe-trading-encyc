@@ -1,4 +1,5 @@
 """Tests for binance_client models (Wave D — coverage 85% plan)."""
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -281,3 +282,156 @@ class TestBinanceWSClient:
         cfg = BinanceConfig(api_key="k", api_secret="s")
         client = BinanceWebSocketClient(cfg)
         await client.disconnect()  # 不 raise
+
+
+class TestWsListen:
+    def _msg(self, stream="btcusdt@kline_30m"):
+        return json.dumps({
+            "stream": stream,
+            "s": "BTCUSDT",
+            "k": {"i": "30m", "t": 1000, "T": 2000, "o": "100", "h": "105",
+                  "l": "95", "c": "102", "v": "10", "q": "1000", "n": 5,
+                  "V": "5", "Q": "500", "x": False},
+        })
+
+    @pytest.mark.asyncio
+    async def test_listen_async_callback(self):
+        from vibe_trading.data_sources.binance_client import (
+            BinanceConfig, BinanceWebSocketClient,
+        )
+        cfg = BinanceConfig(api_key="k", api_secret="s")
+        client = BinanceWebSocketClient(cfg)
+        client._running = True
+        seen = []
+
+        async def cb(kline):
+            seen.append(kline)
+
+        client._kline_callbacks["btcusdt@kline_30m"] = [cb]
+        ws = MagicMock()
+        ws.__aiter__ = MagicMock(return_value=_MsgIter([self._msg()]))
+        client._ws = ws
+        await client._listen()
+        assert len(seen) == 1
+        assert seen[0].symbol == "BTCUSDT"
+
+    @pytest.mark.asyncio
+    async def test_listen_sync_callback(self):
+        from vibe_trading.data_sources.binance_client import (
+            BinanceConfig, BinanceWebSocketClient,
+        )
+        cfg = BinanceConfig(api_key="k", api_secret="s")
+        client = BinanceWebSocketClient(cfg)
+        client._running = True
+        seen = []
+
+        def cb(kline):
+            seen.append(kline)
+
+        client._kline_callbacks["btcusdt@kline_30m"] = [cb]
+        ws = MagicMock()
+        ws.__aiter__ = MagicMock(return_value=_MsgIter([self._msg()]))
+        client._ws = ws
+        await client._listen()
+        assert len(seen) == 1
+
+    @pytest.mark.asyncio
+    async def test_listen_bad_json(self):
+        from vibe_trading.data_sources.binance_client import (
+            BinanceConfig, BinanceWebSocketClient,
+        )
+        cfg = BinanceConfig(api_key="k", api_secret="s")
+        client = BinanceWebSocketClient(cfg)
+        client._running = True
+        ws = MagicMock()
+        ws.__aiter__ = MagicMock(return_value=_MsgIter(["{not json"]))
+        client._ws = ws
+        await client._listen()  # 錯誤被吞
+
+    @pytest.mark.asyncio
+    async def test_listen_stops_when_not_running(self):
+        from vibe_trading.data_sources.binance_client import (
+            BinanceConfig, BinanceWebSocketClient,
+        )
+        cfg = BinanceConfig(api_key="k", api_secret="s")
+        client = BinanceWebSocketClient(cfg)
+        client._running = False
+        ws = MagicMock()
+        ws.__aiter__ = MagicMock(return_value=_MsgIter([self._msg()]))
+        client._ws = ws
+        await client._listen()  # 第一條就 break
+
+
+class _MsgIter:
+    def __init__(self, msgs):
+        self._msgs = list(msgs)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if self._msgs:
+            return self._msgs.pop(0)
+        raise StopAsyncIteration
+
+
+class TestRestData:
+    def _client(self):
+        from vibe_trading.data_sources.binance_client import (
+            BinanceConfig, BinanceRestClient,
+        )
+        return BinanceRestClient(BinanceConfig(api_key="k", api_secret="s"))
+
+    @pytest.mark.asyncio
+    async def test_get_klines_with_time(self):
+        client = self._client()
+        with patch.object(client, "_request",
+                          new=AsyncMock(return_value=[])) as req:
+            await client.get_klines("BTCUSDT", KlineInterval.MINUTE_30,
+                                    start_time=1000, end_time=2000)
+        kwargs = req.call_args.kwargs
+        assert kwargs["params"]["startTime"] == 1000
+        assert kwargs["params"]["endTime"] == 2000
+
+    @pytest.mark.asyncio
+    async def test_get_position_filters_zero(self):
+        client = self._client()
+        data = [
+            {"symbol": "BTCUSDT", "positionAmt": "1.5", "entryPrice": "100",
+             "markPrice": "110", "unRealizedProfit": "15", "liquidationPrice": "50",
+             "leverage": "10", "positionSide": "LONG", "notional": "165",
+             "isolated": False, "adlQuantile": 1},
+            {"symbol": "ETHUSDT", "positionAmt": "0", "entryPrice": "0",
+             "markPrice": "0", "unRealizedProfit": "0", "liquidationPrice": "0",
+             "leverage": "1", "positionSide": "LONG", "notional": "0",
+             "isolated": False, "adlQuantile": 0},
+        ]
+        with patch.object(client, "_request",
+                          new=AsyncMock(return_value=data)):
+            positions = await client.get_position()
+        assert len(positions) == 1
+        assert positions[0].symbol == "BTCUSDT"
+        assert positions[0].position_side.value == "LONG"
+
+    @pytest.mark.asyncio
+    async def test_get_balance_filters_zero(self):
+        client = self._client()
+        data = [
+            {"asset": "USDT", "balance": "5000", "availableBalance": "4000",
+             "crossWalletBalance": "5000"},
+            {"asset": "BTC", "balance": "0", "availableBalance": "0",
+             "crossWalletBalance": "0"},
+        ]
+        with patch.object(client, "_request",
+                          new=AsyncMock(return_value=data)):
+            bal = await client.get_balance()
+        assert bal["USDT"]["balance"] == 5000.0
+        assert "BTC" not in bal
+
+    @pytest.mark.asyncio
+    async def test_get_position_symbol_param(self):
+        client = self._client()
+        with patch.object(client, "_request",
+                          new=AsyncMock(return_value=[])) as req:
+            await client.get_position(symbol="BTCUSDT")
+        assert req.call_args.kwargs["params"] == {"symbol": "BTCUSDT"}
