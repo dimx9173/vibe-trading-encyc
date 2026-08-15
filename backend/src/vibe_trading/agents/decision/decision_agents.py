@@ -560,7 +560,7 @@ class PortfolioManagerAgent:
 
         body = "\n---\n".join(lessons)
         if cross:
-            body += "\n\nCROSS-TICKER LESSONS (aggregate across symbols):\n" + cross
+            body += "\n\nCROSS-TICKER LESSONS (aggregate across symbols):\n" + "\n---\n".join(cross)
         return (
             "\n\nRELEVANT PAST LESSONS (learn from prior similar situations; "
             "Alpha = market-adjusted result):\n" + body + "\n"
