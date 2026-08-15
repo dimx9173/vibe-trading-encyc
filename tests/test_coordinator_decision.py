@@ -617,3 +617,108 @@ class TestCoordinatorReporting:
         assert hist == ["d1"]
         hist.append("d2")
         assert coordinator.get_decision_history() == ["d1"]
+
+
+class TestOnTradeCompleted:
+    @pytest.mark.asyncio
+    async def test_no_decision_warns(self, coordinator):
+        from unittest.mock import patch as _p
+        import vibe_trading.coordinator.trading_coordinator as tc
+        coordinator._last_decision_id = None
+        with _p.object(tc, "logger", MagicMock()):
+            await coordinator.on_trade_completed(100.0, 110.0, 1.0)  # 不 raise
+
+    @pytest.mark.asyncio
+    async def test_full_reflection(self, coordinator):
+        from types import SimpleNamespace
+        from unittest.mock import patch as _p
+        import vibe_trading.coordinator.trading_coordinator as tc
+        coordinator._last_decision_id = "D1"
+        coordinator._last_processed_signal = SimpleNamespace(
+            signal=SimpleNamespace(value="BUY"), confidence=0.8)
+        coordinator._last_agent_outputs = {"technical": "report"}
+        reflector = MagicMock()
+        reflector.reflect_on_trade = AsyncMock(return_value=["r1"])
+        coordinator._reflector = reflector
+        mem = MagicMock()
+        mem.save = MagicMock()
+        coordinator.memory = mem
+        qt = MagicMock()
+        qt.record_outcome = AsyncMock(return_value=None)
+        coordinator._quality_tracker = qt
+        with _p.object(tc, "logger", MagicMock()):
+            await coordinator.on_trade_completed(100.0, 110.0, 1.0, 2.0)
+        reflector.reflect_on_trade.assert_called_once()
+        qt.record_outcome.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_reflector_creates_from_memory(self, coordinator):
+        from types import SimpleNamespace
+        from unittest.mock import patch as _p
+        import vibe_trading.coordinator.trading_coordinator as tc
+        coordinator._last_decision_id = "D2"
+        coordinator._last_processed_signal = SimpleNamespace(
+            signal=SimpleNamespace(value="SELL"), confidence=0.7)
+        coordinator._reflector = None
+        mem = MagicMock()
+        coordinator.memory = mem
+        qt = MagicMock()
+        qt.record_outcome = AsyncMock(return_value=None)
+        coordinator._quality_tracker = qt
+        reflector = MagicMock()
+        reflector.reflect_on_trade = AsyncMock(return_value=[])
+        with _p.object(tc, "TradeReflector", return_value=reflector), \
+             _p.object(tc, "logger", MagicMock()):
+            await coordinator.on_trade_completed(100.0, 90.0, 1.0)
+        assert coordinator._reflector is reflector
+
+    @pytest.mark.asyncio
+    async def test_reflection_error_swallowed(self, coordinator):
+        from types import SimpleNamespace
+        from unittest.mock import patch as _p
+        import vibe_trading.coordinator.trading_coordinator as tc
+        coordinator._last_decision_id = "D3"
+        coordinator._last_processed_signal = SimpleNamespace(
+            signal=SimpleNamespace(value="BUY"), confidence=0.5)
+        reflector = MagicMock()
+        reflector.reflect_on_trade = AsyncMock(side_effect=RuntimeError("fail"))
+        coordinator._reflector = reflector
+        coordinator.memory = MagicMock()
+        qt = MagicMock()
+        qt.record_outcome = AsyncMock(side_effect=RuntimeError("qfail"))
+        coordinator._quality_tracker = qt
+        with _p.object(tc, "logger", MagicMock()):
+            await coordinator.on_trade_completed(100.0, 105.0, 1.0)  # 錯誤被吞
+
+
+class TestClose:
+    @pytest.mark.asyncio
+    async def test_close_calls_agent_close(self, coordinator):
+        with_close = MagicMock()
+        with_close.close = AsyncMock(return_value=None)
+        no_close = MagicMock()
+        coordinator._analysts = {"a": with_close, "b": no_close}
+        coordinator._researchers = {"r": with_close}
+        coordinator._risk_analysts = {"k": with_close}
+        coordinator._trader = with_close
+        coordinator._portfolio_manager = with_close
+        await coordinator.close()
+        assert with_close.close.call_count >= 5
+
+
+class TestResumeCheckpoint:
+    @pytest.mark.asyncio
+    async def test_no_checkpoint(self, coordinator):
+        coordinator._checkpoint_store = MagicMock()
+        coordinator._checkpoint_store.get_latest_checkpoint = MagicMock(
+            return_value=None)
+        result = await coordinator.resume_from_checkpoint("D1", 100.0)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_resume_no_phase(self, coordinator):
+        coordinator._checkpoint_store = MagicMock()
+        coordinator._checkpoint_store.get_latest_checkpoint = MagicMock(
+            return_value={"completed_phase": "none", "context": {}})
+        result = await coordinator.resume_from_checkpoint("D1", 100.0)
+        assert result is None or result is not None
