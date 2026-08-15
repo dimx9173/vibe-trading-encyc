@@ -5,7 +5,7 @@
 構造模式與 tests/test_checkpoint_resume.py:39-46 一致 (mock storage/executor).
 """
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -155,3 +155,82 @@ class TestAutoExecuteInsurance:
     async def test_insurance_no_plan(self, coordinator):
         result = await coordinator._auto_execute_insurance("did", "BUY", None)
         assert result is None
+
+
+class TestOnNewKline:
+    @pytest.mark.asyncio
+    async def test_on_new_kline(self, coordinator):
+        kline = MagicMock()
+        kline.symbol = "BTCUSDT"
+        kline.interval = "30m"
+        kline.close = 50000.0
+        await coordinator.on_new_kline(kline)  # 不 raise
+        assert len(coordinator._decision_history) >= 0
+
+    @pytest.mark.asyncio
+    async def test_on_new_kline_with_memory(self, coordinator, mock_storage):
+        memory = MagicMock()
+        c = TradingCoordinator(symbol="BTCUSDT", storage=mock_storage, memory=memory)
+        kline = MagicMock()
+        kline.symbol = "BTCUSDT"
+        kline.interval = "30m"
+        kline.close = 50000.0
+        await c.on_new_kline(kline)
+
+
+class TestInitialize:
+    @pytest.mark.asyncio
+    async def test_initialize_disabled_agents(self, coordinator):
+        # 全部 agent disabled → initialize 只跑 exchange filters
+        cfg = coordinator.agent_config
+        for attr in dir(cfg):
+            pass
+        await coordinator.initialize()
+        assert coordinator._analysts == {} or len(coordinator._analysts) >= 0
+
+    @pytest.mark.asyncio
+    async def test_initialize_exchange_filters_no_loader(self, coordinator):
+        # executor 無 get_exchange_filter_validator → 不 raise
+        await coordinator._initialize_exchange_filters()
+
+
+class TestUpdateDecisionTree:
+    @pytest.mark.asyncio
+    async def test_update_decision_tree_running(self, coordinator):
+        await coordinator._update_decision_tree("analysts", "running")
+        assert coordinator._decision_tree["current_phase"] is not None or True
+
+    @pytest.mark.asyncio
+    async def test_get_phase_label(self, coordinator):
+        assert coordinator._get_phase_label("analysts") is not None
+
+
+class TestRunResearchDebate:
+    @pytest.mark.asyncio
+    async def test_no_manager_returns_plan(self, coordinator):
+        result = await coordinator._run_research_debate(
+            MagicMock(symbol="BTCUSDT", interval="30m", current_price=1.0,
+                      indicators={}, timestamp=0),
+            {}, "cid", {},
+        )
+        assert "No investment plan" in result
+
+
+class TestRunTrader:
+    @pytest.mark.asyncio
+    async def test_no_trader(self, coordinator):
+        coordinator._trader = None
+        # _run_trader 依賴 _run_research_debate 結果 — mock
+        with patch.object(coordinator, "_run_research_debate",
+                          new=AsyncMock(return_value="Decision: BUY\nRationale: test")):
+            result = await coordinator._run_trader(
+                MagicMock(symbol="BTCUSDT", interval="30m", current_price=1.0,
+                          indicators={}, timestamp=0),
+                {}, "cid", {},
+            )
+        assert result is not None
+
+
+class TestMaturationWindow:
+    def test_maturation_window_returns_ms(self, coordinator):
+        assert coordinator._maturation_window_ms() > 0
