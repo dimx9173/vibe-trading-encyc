@@ -475,3 +475,28 @@ class TestLogImprovements:
         coordinator._trader = None
         coordinator._portfolio_manager = None
         coordinator._reset_agent_states()  # fail-safe 不 raise
+
+
+class TestInsuranceBranches:
+    @pytest.mark.asyncio
+    async def test_insurance_no_entry_orders(self, coordinator):
+        plan = MagicMock()
+        plan.entry_orders = []
+        result = await coordinator._auto_execute_insurance("did", "BUY", plan)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_insurance_no_reference_price(self, coordinator):
+        plan = MagicMock()
+        plan.entry_orders = [{"order_type": "market", "price": None}]
+        result = await coordinator._auto_execute_insurance("did", "BUY", plan)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_insurance_builder_error(self, coordinator):
+        plan = MagicMock()
+        plan.entry_orders = [{"order_type": "market", "price": 50000.0}]
+        coordinator._tool_context.executor.get_reference_price = MagicMock(
+            return_value=None)
+        result = await coordinator._auto_execute_insurance("did", "BUY", plan)
+        assert result is None or isinstance(result, dict)
