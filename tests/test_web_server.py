@@ -372,3 +372,32 @@ class TestLogHelpers:
             web_server._schedule_async(_coro())  # 有 loop → create_task
 
         asyncio.run(_test())
+
+
+class TestStartupEvent:
+    @pytest.mark.asyncio
+    async def test_startup_event(self):
+        with patch.object(web_server.journal_storage, "init", new=AsyncMock()), \
+             patch.object(web_server, "install_terminal_log_mirror"):
+            await web_server.startup_event()  # 不 raise
+
+
+class TestWebSocketDetailed:
+    def test_websocket_receive_and_send(self, client):
+        # 收到 kline 訊息 → send_update
+        with client.websocket_connect("/ws") as ws:
+            ws.send_json({
+                "type": "kline",
+                "data": {"symbol": "BTCUSDT", "close": 50000.0,
+                         "open_time_ms": 1700000000000},
+            })
+            # 回應 (init 或 update)
+            msg = ws.receive_json()
+            assert "type" in msg
+
+    def test_websocket_broadcast(self, client):
+        with client.websocket_connect("/ws") as ws:
+            import asyncio as _aio
+            _aio.run(state.send_update("test", {"k": 1}))
+            msg = ws.receive_json()
+            assert msg["type"] == "test"
