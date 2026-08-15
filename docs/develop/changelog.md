@@ -35,7 +35,7 @@ tags: [development, contributing, changelog]
 - **P4.1 OKX 实盘**：`OkxOrderExecutor` + `BrokerConnector` 抽象层（fa372f5）
 - **外部数据层 2.0**：UnifiedDataSource / LRUCache / CircuitBreaker / HealthMonitor / SmartRouter + 插件架构（fa372f5）
 - **ResearchDatabase 压力测试**：500 笔 save/query/update/delete 循环 + 效能断言（cd2ede7）
-- **P3 使用指南**：`docs/p3-usage-guide.md`（cd2ede7）
+- **P3 使用指南**：`docs/guide/research-backbone.md`（cd2ede7）
 - **外部数据层 Phase 4**：`EvidenceGate`（Paper→Live 14 天评估 + SQLite 历史）+ `PerformanceTracker`（交易记录 + Sharpe/MaxDD/WinRate）+ `DecisionEnhancer`（插件装饰器降级）+ `ReportGenerator`（backtest/paper 对比报告）+ `BacktestDataLoader.load_klines`（回测数据层 facade）（本次 commit）
 
 ### 变更

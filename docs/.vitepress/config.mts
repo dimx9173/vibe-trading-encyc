@@ -29,7 +29,7 @@ export default withMermaid(defineConfig({
 
     sidebar: [
       {
-        text: '简介',
+        text: '入门与架构',
         items: [
           { text: '快速开始', link: '/guide/quick-start' },
           { text: '项目简介', link: '/guide/intro' },
@@ -39,26 +39,48 @@ export default withMermaid(defineConfig({
         ]
       },
       {
-        text: '使用指南',
+        text: '核心功能指南',
         items: [
           { text: 'Web监控', link: '/guide/monitoring' },
           { text: '数据提供者', link: '/guide/data-provider' },
+          { text: '外部数据层', link: '/guide/external-data-layer' },
+          { text: '交易所连接器', link: '/guide/broker-connector' },
+          { text: '记忆系统基础', link: '/guide/memory' },
+          { text: '记忆系统升级', link: '/guide/memory-upgrade' },
+          { text: 'P3 研究脊梁', link: '/guide/research-backbone' },
+          { text: 'Telegram告警通知', link: '/guide/telegram-notifications' },
           { text: '配置说明', link: '/guide/configuration' }
         ]
       },
       {
-        text: '进阶功能',
+        text: '研究与竞品分析',
         items: [
-          { text: '记忆系统', link: '/guide/memory' },
+          { text: '竞品深度分析报告', link: '/research/competitive-analysis' }
+        ]
+      },
+      {
+        text: '架构与规范',
+        items: [
+          { text: '系统全览', link: '/architecture/system-overview' },
+          { text: 'Agent核心框架', link: '/architecture/agent-framework' },
+          { text: '平台一致性规范', link: '/architecture/platform-conformance' },
           { text: 'Context管理', link: '/guide/context-management' },
           { text: '自定义Agent', link: '/guide/custom-agent' },
-          { text: 'API文档', link: '/guide/api' }
+          { text: 'API文档', link: '/guide/api' },
+          { text: 'ADR-0001 工具隔离', link: '/adr/0001-replay-tool-isolation' },
+          { text: 'ADR-0002 回测与Replay', link: '/adr/0002-agent-replay-vs-rule-backtest' }
+        ]
+      },
+      {
+        text: '运维与部署',
+        items: [
+          { text: 'Web系统状态', link: '/operations/web-system-status' },
+          { text: '生产部署检查清单', link: '/operations/deployment-checklist' }
         ]
       },
       {
         text: '开发指南',
         items: [
-          { text: 'pi_agent_core框架', link: '/pi_agent_core' },
           { text: '参与贡献', link: '/develop/contributing' },
           { text: '开发路线图', link: '/develop/roadmap' },
           { text: '版本变更记录', link: '/develop/changelog' }

@@ -49,25 +49,38 @@ Vibe Trading 不是简单的交易机器人，而是一个**面向量化交易�
 
 ## 文档入口
 
-### 快速上手
+### 入门与架构
 - [快速开始](/guide/quick-start)：完成环境初始化、系统启动与首次交易
 - [项目简介](/guide/intro)：了解整体定位、技术栈与核心能力
 - [系统架构](/guide/architecture)：查看三线程架构与Agent协作流程
 - [协作流程](/guide/workflow)：深入了解4阶段Agent协作流程
-
-### Agent 系统
 - [Agent团队](/guide/agents)：了解12个专业Agent的职责和功能
-- [自定义Agent](/guide/custom-agent)：开发和集成自定义Agent
-- [Context管理](/guide/context-management)：了解Agent间信息传递机制
 
-### 开发指南
-- [pi_agent_core框架](/pi_agent_core)：深入理解核心Agent框架
-- [API文档](/guide/api)：查看完整的API参考文档
-- [记忆系统](/guide/memory)：了解BM25记忆检索系统
+### 核心功能指南
+- [Web监控](/guide/monitoring)：配置实时 Agent Arena 监控界面
+- [外部数据层](/guide/external-data-layer)：核心+插件架构、智能路由与证据门控
+- [交易所连接器](/guide/broker-connector)：Binance 与 OKX 双交易所多 Broker 路由
+- [记忆系统升级](/guide/memory-upgrade)：FTS5 全文检索 + BM25 混合记忆与 5 级上下文压缩
+- [P3 研究脊梁](/guide/research-backbone)：假设注册表、策略导出与 Swarm Presets
+- [Telegram 告警通知](/guide/telegram-notifications)：三级优先级告警与 Inline Keyboard 确认机制
+- [配置说明](/guide/configuration)：了解系统环境变量与 yaml 配置选项
 
-### 运维与监控
-- [Web监控](/guide/monitoring)：配置 nof1.ai 风格的实时 Agent Arena 监控界面
-- [配置说明](/guide/configuration)：了解系统配置选项
+### 研究与分析
+- [竞品深度分析报告](/research/competitive-analysis)：与 HKUDS/Vibe-Trading 及 AlphaGPT 的多维深度对比与演进建议
+
+### 架构与规范
+- [系统全览](/architecture/system-overview)：完整的系统组件、生命周期与数据流
+- [Agent 核心框架](/architecture/agent-framework)：基于 pi_agent_core 的双循环消息机制
+- [平台一致性规范](/architecture/platform-conformance)：开发与架构一致性要求
+- [Context 管理](/guide/context-management)：Agent 间状态传递与隔离
+- [自定义 Agent](/guide/custom-agent)：开发和集成自定义角色
+- [API 参考文档](/guide/api)：查看完整的 API 接口
+- [ADR-0001 工具隔离](/adr/0001-replay-tool-isolation)：Replay 模式下的 Tool Isolation 机制
+- [ADR-0002 回测与 Replay](/adr/0002-agent-replay-vs-rule-backtest)：Agent Replay 与规则回测边界
+
+### 运维与部署
+- [Web 系统状态](/operations/web-system-status)：运行时健康检查与遙測
+- [生产部署检查清单](/operations/deployment-checklist)：切入 Live 實盤前的 5 項檢查規範
 
 ## 技术栈
 

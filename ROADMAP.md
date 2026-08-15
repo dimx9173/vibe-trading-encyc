@@ -133,7 +133,7 @@
 - `research/models.py`：`Hypothesis`/`ResearchGoal` Pydantic 模型
 - 与 P2 回测 link（`research/registry.py` add_backtest_result / add_live_result）
 - 测试：`tests/test_research.py` 22 tests（含 500 笔数据库压力测试）
-- 文档：`docs/p3-usage-guide.md`（CLI 用法）
+- 文档：`docs/guide/research-backbone.md`（CLI 用法）
 
 ### P3.2 跨会话记忆升级 + 自进化技能
 **借鉴**：HKUDS `~/.vibe-trading/memory/` CJK 安全 slug、SQLite **FTS5** 全文检索、5 层上下文压缩、skill 全 CRUD 自进化。
@@ -143,7 +143,7 @@
 - `memory/compression.py`：5 级上下文压缩（90% token 节省）
 - `memory/hybrid_memory.py`：BM25 + FTS5 混合后端，自动降级
 - `data_sources/skills/manager.py`：skill 全 CRUD（add/get/all/match/update/delete）
-- 文档：`docs/memory_upgrade.md`
+- 文档：`docs/guide/memory-upgrade.md`
 - 测试：`tests/test_reflection_memory.py` 等
 
 ### P3.3 策略导出（NL → Pine / MQL5）

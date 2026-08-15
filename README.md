@@ -23,7 +23,7 @@
 3. **Phase 3 - 风控团队**: 激进、中立、保守三视角风险评估
 4. **Phase 4 - 决策层**: 交易员制定计划 → 投资组合经理最终决策
 
-详见：[系统架构文档](./docs/ARCHITECTURE.md) | [协作流程详解](./docs/WORKFLOW.md)
+详见：[系统架构文档](./docs/guide/architecture.md) | [协作流程详解](./docs/guide/workflow.md)
 
 ## 🧵 多线程架构
 
@@ -31,7 +31,7 @@
 - **On Bar线程**: K线触发的3阶段决策流程
 - **事件驱动线程**: 实时监控紧急事件，秒级响应
 
-详见：[多线程架构详解](./docs/MULTI_THREAD.md)
+详见：[系统全览](./docs/architecture/system-overview.md) | [多线程架构](./docs/guide/architecture.md)
 
 ## 📦 安装
 
@@ -144,14 +144,14 @@ uv run test_historical.py  # 访问 http://localhost:8000
 
 | 文档                               | 说明                            |
 | :--------------------------------- | :------------------------------ |
-| [系统架构](./docs/ARCHITECTURE.md)    | 整体架构、组件说明、数据流      |
-| [Agent详解](./docs/AGENTS.md)         | 12个Agent的功能、工具、协作方式 |
-| [多线程架构](./docs/MULTI_THREAD.md)  | 三线程系统详解                  |
-| [协作流程](./docs/WORKFLOW.md)        | 阶段间数据传递和消息机制        |
-| [Agent工具](./docs/TOOLS.md)          | 23个工具的详细说明              |
-| [风险管理](./docs/RISK_MANAGEMENT.md) | 4层约束系统、风控指标           |
-| [性能指标](./docs/PERFORMANCE.md)     | 性能测试、优化历史              |
-| [改进历史](./docs/IMPROVEMENTS.md)    | 版本历史和未来规划              |
+| [系统架构](./docs/guide/architecture.md) | 整体架构、组件说明、数据流      |
+| [Agent详解](./docs/guide/agents.md)     | 12个Agent的功能、工具、协作方式 |
+| [协作流程](./docs/guide/workflow.md)    | 阶段间数据传递和消息机制        |
+| [外部数据层](./docs/guide/external-data-layer.md) | 核心+插件架构、智能路由与证据门控 |
+| [交易所连接器](./docs/guide/broker-connector.md) | Binance与OKX双交易所路由与执行器 |
+| [记忆系统升级](./docs/guide/memory-upgrade.md) | FTS5+BM25混合记忆与上下文压缩   |
+| [P3研究脊梁](./docs/guide/research-backbone.md) | 假设注册表、策略导出与Presets   |
+| [竞品分析报告](./docs/research/competitive-analysis.md) | 深度竞品对比与演进路线分析 |
 
 ## 📚 灵感来源
 
