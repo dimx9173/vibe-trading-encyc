@@ -250,3 +250,31 @@ class TestEventThread:
                    new=AsyncMock()):
             await system._run_event_thread()
         assert len(iterations) >= 1
+
+
+class TestMainEntry:
+    @pytest.mark.asyncio
+    async def test_main_success(self):
+        import vibe_trading.main.multi_thread_main as mtm
+        system = MagicMock()
+        system.run = AsyncMock()
+        system.stop = AsyncMock()
+        system.setup_signal_handlers = MagicMock()
+        with patch.object(mtm, "MultiThreadedTradingSystem", return_value=system), \
+             patch.object(mtm, "signal") as mock_signal:
+            mock_signal.signal = MagicMock()
+            await mtm.main()
+        system.run.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_main_exception(self):
+        import vibe_trading.main.multi_thread_main as mtm
+        system = MagicMock()
+        system.run = AsyncMock(side_effect=RuntimeError("boom"))
+        system.stop = AsyncMock()
+        system.setup_signal_handlers = MagicMock()
+        with patch.object(mtm, "MultiThreadedTradingSystem", return_value=system), \
+             patch.object(mtm, "signal") as mock_signal:
+            mock_signal.signal = MagicMock()
+            await mtm.main()
+        system.stop.assert_called_once()
