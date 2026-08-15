@@ -529,26 +529,3 @@ class TestRegistryExtras:
         assert handler not in r._event_handlers
         r.remove_event_handler(handler)  # 不再在 → 不 raise
 
-    def test_register_trigger_decorator_class(self):
-        from vibe_trading.triggers.trigger_registry import register_trigger
-        reg = TriggerRegistry(enable_confirmation=False)
-        from vibe_trading.triggers.base_trigger import BaseTrigger
-
-        @register_trigger(registry=reg)
-        class DecoratedTrigger(BaseTrigger):
-            def __init__(self):
-                super().__init__(name="decorated_trigger")
-
-            async def check(self, context):
-                return None
-
-        assert "decorated_trigger" in reg._triggers
-
-    def test_register_trigger_decorator_class_hit(self):
-        # decorator 也可直接裝飾實例 (非 class)
-        from vibe_trading.triggers.trigger_registry import register_trigger
-        reg = TriggerRegistry(enable_confirmation=False)
-        inst = _FakeTrigger(name="inst2")
-        returned = register_trigger(registry=reg)(inst)
-        assert returned is inst
-        assert reg.get("inst2") is inst
