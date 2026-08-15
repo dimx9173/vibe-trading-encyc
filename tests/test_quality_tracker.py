@@ -150,3 +150,62 @@ class TestRanking:
             perf[name] = AgentPerformance(agent_name=name, total_decisions=10, accuracy=acc)
         under = tracker.get_underperformers(threshold=0.4)
         assert under == ["b"]
+
+
+class TestPersistence:
+    @pytest.mark.asyncio
+    async def test_persist_decision_with_ts(self):
+        journal = MagicMock()
+        journal.upsert_bar = AsyncMock()
+        t = DecisionQualityTracker(
+            storage_path=":memory:", enable_persistence=False,
+            journal_storage=journal,
+        )
+        await t.record_decision(
+            "BTCUSDT_1700000000000", "BTCUSDT", _Signal(),
+            agent_contributions={"t": 0.5}, interval="30m",
+        )
+        t.enable_persistence = True
+        await t.record_decision(
+            "BTCUSDT_1700000000000", "BTCUSDT", _Signal(),
+            agent_contributions={"t": 0.5}, interval="30m",
+        )
+        journal.upsert_bar.assert_called()
+        kwargs = journal.upsert_bar.call_args.kwargs
+        assert kwargs["open_time_ms"] == 1700000000000
+
+    @pytest.mark.asyncio
+    async def test_persist_decision_no_ts(self):
+        journal = MagicMock()
+        journal.upsert_bar = AsyncMock()
+        t = DecisionQualityTracker(
+            storage_path=":memory:", enable_persistence=True,
+            journal_storage=journal,
+        )
+        await t.record_decision("plain_id", "BTCUSDT", _Signal(), {})
+        journal.upsert_bar.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_persist_decision_error_swallowed(self):
+        journal = MagicMock()
+        journal.upsert_bar = AsyncMock(side_effect=RuntimeError("down"))
+        t = DecisionQualityTracker(
+            storage_path=":memory:", enable_persistence=True,
+            journal_storage=journal,
+        )
+        await t.record_decision("d1", "BTCUSDT", _Signal(), {})  # 不 raise
+
+    @pytest.mark.asyncio
+    async def test_persist_outcome(self):
+        journal = MagicMock()
+        journal.upsert_bar = AsyncMock()
+        t = DecisionQualityTracker(
+            storage_path=":memory:", enable_persistence=True,
+            journal_storage=journal,
+        )
+        await t.record_decision("BTCUSDT_1700000000000", "BTCUSDT", _Signal(), {})
+        await t.record_outcome("BTCUSDT_1700000000000", 100.0, 110.0, 1.0, 1.0)
+        journal.upsert_bar.assert_called()
+        # 最後一次呼叫是 outcome
+        update = journal.upsert_bar.call_args.kwargs["update"]
+        assert "execution" in update

@@ -1,5 +1,5 @@
 """Tests for researcher agents (Wave D — coverage 85% plan)."""
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -143,3 +143,30 @@ class TestResearchPhase:
         rm.make_decision.assert_called_once()
         kwargs = rm.make_decision.call_args.kwargs
         assert "Round 1" in kwargs["bull_history"]
+
+
+class TestRespondErrors:
+    @pytest.mark.asyncio
+    async def test_respond_not_initialized(self):
+        r = _researcher()
+        r._agent = None
+        with pytest.raises(RuntimeError):
+            await r.respond("context")
+
+    @pytest.mark.asyncio
+    async def test_respond_llm_path(self):
+        from vibe_trading.agents.researchers.researcher_agents import (
+            prompt_with_timeout,
+        )
+        r = _researcher()
+        r._agent = MagicMock()
+        r.config.name = "bull"
+        r._lock = __import__("asyncio").Lock()
+        r._my_arguments = []
+        r._agent.state.messages = [MagicMock(
+            role="assistant", content=[MagicMock(text="Bull 分析結果")])]
+        with patch.object(r, "_build_debate_prompt", return_value="prompt"), \
+             patch("vibe_trading.agents.researchers.researcher_agents.prompt_with_timeout",
+                   new=AsyncMock(return_value=True)):
+            result = await r.respond("context")
+        assert "Bull" in result or result == ""
