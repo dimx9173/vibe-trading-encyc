@@ -1,7 +1,7 @@
 # VBT 交易架構與策略改善計劃書 (Architecture & Strategy Improvement Plan)
 
-> **版本**：v1.0  
-> **建立日期**：2026-08-16  
+> **版本**：v1.1  
+> **更新日期**：2026-08-16  
 > **關聯專案**：`vibe-trading` / `vibe-trading-encyc`  
 > **理論基礎庫**：`Brian_Notes/wiki/Theory`（凱利公式、倉位管理、纏論動力學、市場體制、風險地圖）  
 > **回測依據**：398-Bar（2026-07-31 至 2026-08-15）BTCUSDT 30m Server Replay 分析
@@ -43,173 +43,189 @@ pie title 398 根 Bar 決策分佈硬傷
 
 ---
 
-## 3. 核心改善架構與工程落地設計
+## 3. AI Agent 混合協同架構 (Hybrid AI + Quantitative Engine)
+
+系統並非單純讓 AI 盲目全包，亦非退化為純代碼規則，而是採用**「AI 定性認知與結構點位 + Python 嚴謹量化與邊界防禦」**的混合架構：
 
 ```mermaid
 flowchart TD
-    subgraph Data_Layer ["1. 多週期數據輸入層"]
-        K30["30m K線 + 技術指標 (RSI, MACD, BBands, ATR)"]
-        K4H["4H K線 + 大週期趨勢 (EMA20/50, ADX)"]
+    subgraph S1 ["1. 數據與狀態注入 (Context Builder)"]
+        D1["30m + 4H 雙週期指標 (EMA, RSI, MACD, ATR, ADX)"]
+        D2["當前持倉狀態 (如: LONG 0.0105 BTC, 成本 63856, 浮盈 +$120)"]
+        D3["動態合法動作集 (如: TP_PARTIAL, TRAIL_STOP, HOLD)"]
     end
 
-    subgraph Agent_Layer ["2. 多智能體協作層 (4 Phases)"]
-        Tech["📈 Technical Analyst<br/>(30m+4H 多週期共振 + 纏論頂底背馳)"]
-        Bear["🐻 Bear Researcher<br/>(主動尋找一賣/二賣/三賣做空邏輯)"]
-        Bull["🐂 Bull Researcher<br/>(尋找一買/二買/三買做多邏輯)"]
-        RM["👔 Research Manager<br/>(輸出多空勝率 p 與目標點位)"]
-        Trader["📋 Trader Agent<br/>(給出 Entry, SL, TP 點位與風控結構)"]
-        PM["👨‍💼 Portfolio Manager<br/>(裁決 Action: OPEN/ADD/TP/SL/HOLD)"]
+    subgraph S2 ["2. 多 Agent 專業化推理 (LLM Layer)"]
+        Tech["📈 Tech Analyst (30m+4H 雙週期共振 + 纏論頂底背馳)"]
+        Bear["🐻 Bear Researcher (運用纏論一賣/二賣主動尋找做空邏輯)"]
+        Bull["🐂 Bull Researcher (運用一買/二買尋找做多邏輯)"]
+        RM["👔 Research Manager (多空辯論綜合評級 + 目標點位)"]
+        PM["👨‍💼 Portfolio Manager (裁決 Action 意圖)"]
     end
 
-    subgraph Math_Engine ["3. Python 嚴謹量化計算引擎 (非 LLM 算數)"]
-        Kelly["Half-Kelly 資金比例計算: f* = 0.5 * (bp - q) / b"]
-        ATRSizing["ATR 波動率調倉: Size = Risk / (ATR * Mult)"]
-        HardCap["風控硬限制門禁 (Max Notional & Leverage)"]
+    subgraph S3 ["3. 結構化通訊 (Pydantic Tool Call)"]
+        TC["submit_portfolio_decision(<br/>  action='TP_PARTIAL', confidence=0.8,<br/>  entry_price=65200, stop_loss=64200, take_profit=66800<br/>)"]
     end
 
-    subgraph Exec_Layer ["4. 執行與保護層 (Execution & Guardrails)"]
-        StateGuard["狀態機校驗 (防非法狀態轉換)"]
-        Executor["Paper / Binance Order Executor"]
+    subgraph S4 ["4. Python 量化數學引擎 (Auto-Math Engine)"]
+        M1["計算 b = |TP-Entry|/|Entry-SL| = 1.6, 勝率 p = 0.62"]
+        M2["執行 Half-Kelly f* = 0.5 * (bp - q) / b -> 資金比 18%"]
+        M3["結合 ATR 波動率調倉 -> 算得精確數量 0.00525 BTC"]
+        M4["風控硬限制檢驗 (Notional Cap <= 300 USDT, 槓桿 <= 5x)"]
     end
 
-    Data_Layer --> Tech
-    Tech --> Bear & Bull --> RM --> Trader --> PM
-    PM -->|"結構化輸出 (點位 + 動作)"| Math_Engine
-    Math_Engine --> Kelly & ATRSizing --> HardCap --> StateGuard --> Executor
+    subgraph S5 ["5. 執行與保護層 (Execution Guardrails)"]
+        G1["狀態機校驗 (無持倉禁止止盈，防非法狀態轉換)"]
+        EX["Paper / Binance Order Executor 成交"]
+    end
+
+    S1 --> S2 --> S3 --> S4 --> S5
 ```
 
 ---
 
-### 模組 1：決策語義與動作模型重構（Position Action Model）
+## 4. 具體代碼修改方向與檔案變更指南 (File-by-File Blueprint)
 
-#### ① 擴充合約專屬動作枚舉
-將原有現貨式的 `BUY / SELL / HOLD` 重構為合約全生命週期動作集：
-```python
-from enum import Enum
+以下為工程實施的六大核心檔案修改方向與具體改動點：
 
-class PositionAction(str, Enum):
-    OPEN_LONG = "OPEN_LONG"        # 新開多單
-    ADD_LONG = "ADD_LONG"          # 順勢加多
-    OPEN_SHORT = "OPEN_SHORT"      # 新開空單 (解決零做空)
-    ADD_SHORT = "ADD_SHORT"        # 順勢加空
-    TP_PARTIAL = "TP_PARTIAL"      # 主動部分止盈 (如平倉 50%)
-    CLOSE_ALL = "CLOSE_ALL"        # 全平離場
-    TRAIL_STOP = "TRAIL_STOP"      # 移動止損 (鎖定利潤)
-    HOLD = "HOLD"                  # 觀望維持現狀
+### ① `backend/src/vibe_trading/config/prompts.py`
+* **修改方向**：提示詞專業化改造，注入纏論賣點與雙週期視角。
+* **改動細節**：
+  1. **`BEAR_RESEARCHER_PROMPT`**：
+     * 將角色由被動的「風險質疑者」升級為「主動空頭獵手」。
+     * 注入纏論三類賣點判斷準則（一賣：頂背馳；二賣：反彈不過前高；三賣：跌破中樞回抽受阻）。
+  2. **`TECHNICAL_ANALYST_PROMPT`**：
+     * 增加 30m 執行週期與 4H 趨勢週期的多週期共振分析指南。
+     * 要求標記 MACD 面積背馳（紅柱面積縮小）與 RSI 頂底背馳。
+  3. **`PORTFOLIO_MANAGER_PROMPT`**：
+     * 定義全生命週期動作意圖（`OPEN_LONG`, `OPEN_SHORT`, `ADD_LONG`, `ADD_SHORT`, `TP_PARTIAL`, `CLOSE_ALL`, `TRAIL_STOP`, `HOLD`）。
+     * 增加「持倉狀態感知」規範：依據 Context 中的持倉盈虧做出止盈或平倉決定。
+
+---
+
+### ② `backend/src/vibe_trading/agents/decision/trading_tools.py`
+* **修改方向**：引入 Pydantic 結構化 Schema，淘汰脆弱的 Regex 文本解析。
+* **改動細節**：
+  1. 定義 `PositionAction` 枚舉：
+     ```python
+     class PositionAction(str, Enum):
+         OPEN_LONG = "OPEN_LONG"
+         ADD_LONG = "ADD_LONG"
+         OPEN_SHORT = "OPEN_SHORT"
+         ADD_SHORT = "ADD_SHORT"
+         TP_PARTIAL = "TP_PARTIAL"
+         CLOSE_ALL = "CLOSE_ALL"
+         TRAIL_STOP = "TRAIL_STOP"
+         HOLD = "HOLD"
+     ```
+  2. 定義結構化輸出 Model：
+     ```python
+     class PortfolioDecisionOutput(BaseModel):
+         action: PositionAction = Field(description="交易動作意圖")
+         confidence: float = Field(ge=0.0, le=1.0, description="決策信心分數")
+         suggested_entry_price: float = Field(description="建議進場或基準價格")
+         suggested_stop_loss: float = Field(description="結構止損價")
+         suggested_take_profit: float = Field(description="第一止盈目標價")
+         core_rationale: str = Field(description="核心邏輯摘要")
+     ```
+  3. 新增 Tool：`submit_portfolio_decision` 供 PM 在決策階段直接以 Tool Calling 調用。
+
+---
+
+### ③ `backend/src/vibe_trading/execution/position_sizing.py`（全新模組）
+* **修改方向**：建立純 Python 嚴謹量化數學引擎（無 LLM 算數）。
+* **改動細節**：
+  1. **Half-Kelly 計算器**：
+     ```python
+     def calculate_half_kelly(win_rate: float, reward_risk_ratio: float, fraction: float = 0.5) -> float:
+         if reward_risk_ratio <= 0:
+             return 0.0
+         q = 1.0 - win_rate
+         f_star = (reward_risk_ratio * win_rate - q) / reward_risk_ratio
+         return max(0.0, f_star * fraction)
+     ```
+  2. **ATR 波動率倉位計算器**：
+     ```python
+     def calculate_atr_position_size(
+         equity: float,
+         kelly_fraction: float,
+         atr: float,
+         entry_price: float,
+         risk_multiplier: float = 1.5,
+         max_notional: float = 300.0,
+     ) -> float:
+         if atr <= 0 or entry_price <= 0:
+             return 0.0
+         dollar_risk = equity * kelly_fraction
+         qty = dollar_risk / (atr * risk_multiplier)
+         # 風控硬限制截斷
+         max_qty = max_notional / entry_price
+         return min(qty, max_qty)
+     ```
+
+---
+
+### ④ `backend/src/vibe_trading/coordinator/trading_coordinator.py`
+* **修改方向**：狀態動態注入、4H 數據加載、量化計算銜接與狀態機防禦。
+* **改動細節**：
+  1. **多週期數據載入**：在 `_prepare_context()` 中透過 `storage.query_klines(symbol, "4h", limit=50)` 計算 4H EMA20/50 與 4H ADX，一併打包給 Technical Analyst。
+  2. **持倉狀態注入**：動態根據當前帳戶持倉生成 `valid_actions` 提示字串，注入 PM 的 Context。
+  3. **PM 決策執行對接**：
+     * 解析 `PortfolioDecisionOutput`。
+     * 調用 `position_sizing.py` 自動計算精確下單數量 `final_qty`。
+     * 呼叫 `order_executor` 執行開倉、加倉、分批止盈（50% 平倉）或更新移動止損。
+
+---
+
+### ⑤ `backend/src/vibe_trading/execution/order_executor.py`
+* **修改方向**：擴充 Paper / Live Executor 對合約全動作的支援。
+* **改動細節**：
+  1. **做空支援**：`OPEN_SHORT` 建立 `position_side="SHORT"` 部位，扣除保證金，以空頭方式計算未實現損益（$P_{\text{entry}} - P_{\text{mark}}$）。
+  2. **分批止盈（`TP_PARTIAL`）**：按比例（如 50%）減少 `position_amount`，按市價結算對應比例的 `realized_pnl` 並釋放保證金。
+  3. **全平離場（`CLOSE_ALL`）**：清空該方向所有持倉，結算全額已實現盈虧。
+  4. **移動止損（`TRAIL_STOP`）**：在 Position 模型中更新 `trailing_stop_price`，於行情反向觸及時由 Executor 自動平倉。
+
+---
+
+### ⑥ `replay/replay_leg_a.py` & `replay/replay_tool_isolation.py`
+* **修改方向**：適配新架構與 4H 多週期數據隔離。
+* **改動細節**：
+  1. **4H 歷史隔離支援**：在 `replay_tool_isolation.py` 讓 `_replay_get_kline_data` 支援 4H 週期，從 Replay Storage 計算 4H 歷史數據，保證無未來數據洩漏。
+  2. **決策日誌豐富化**：在 `leg_a_decisions.jsonl` 中新增記錄 `action`（如 `OPEN_SHORT`, `TP_PARTIAL`）、`kelly_f`（凱利比率）、`b_ratio`（盈虧比），便於後續精確回測分析。
+
+---
+
+## 5. 實施路線圖與驗證計劃 (Implementation & Verification)
+
+```
+[Phase 1 (P0)] 核心動作與空頭邏輯改造
+  ├── 1. prompts.py: 注入纏論三類賣點 (Bear) 與雙週期分析 (Tech)
+  ├── 2. trading_tools.py: 定義 PositionAction 枚舉與 Pydantic Output Schema
+  └── 3. trading_coordinator.py: 狀態注入 + Structured Output 對接
+  └── 驗證：跑 1-bar Replay，確認能產出 OPEN_SHORT 且 0% Scorecard 兜底。
+
+[Phase 2 (P0)] 量化數學與倉位引擎
+  ├── 1. position_sizing.py: 實作 Half-Kelly 與 ATR 調倉
+  ├── 2. order_executor.py: 支援 SHORT 部位、TP_PARTIAL 部分止盈、TRAIL_STOP
+  └── 驗證：單元測試不同勝率/波動率下的下單規模縮放，驗證浮盈單能主動平倉 50%。
+
+[Phase 3 (P1)] 4H 多週期技術分析整合
+  ├── 1. trading_coordinator.py: 注入 4H EMA/ADX 數據
+  ├── 2. replay_tool_isolation.py: 支援 4H Replay 歷史查詢
+  └── 驗證：在 4H 下行趨勢中，30m 超賣不再開多，反彈阻力位精準開空。
+
+[Phase 4 (驗證)] 398-Bar 二期完整 Replay 回測對比
+  ├── 運行環境: Server vbtpc 執行 398 根 Bar 回測
+  └── 驗證指標:
+      • 做空決策 (SHORT) 佔比達 25% ~ 45%
+      • 淨盈虧 (PnL) 顯著轉正 (目標 +3% ~ +8%)
+      • 最大回撤 (MDD) 控制在 3.0% 以內
+      • Scorecard 兜底率降至 0%
 ```
 
-#### ② AI 能否正確處理的工程防護架構
-針對 AI 是否能穩定執行多動作的疑慮，設計三層防護：
-1. **狀態動態注入（State Injection）**：在 PM 的 Prompt 中顯式注入當前持倉狀態與「當前合法可選動作」：
-   * *無持倉時*：合法可選動作僅為 `[OPEN_LONG, OPEN_SHORT, HOLD]`。
-   * *持有多單時*：合法可選動作僅為 `[ADD_LONG, TP_PARTIAL, CLOSE_ALL, TRAIL_STOP, HOLD]`。
-2. **結構化輸出（Pydantic Structured Outputs）**：直接透過 Tool Calling 或 JSON Schema 定義輸出，不再使用 Markdown 正則抓取。
-3. **執行層防禦（Defensive Guardrails）**：若 LLM 輸出與持倉狀態衝突（如無持倉卻輸出 `TP_PARTIAL`），執行層自動 Fall-open 退化為 `HOLD` 並記錄警告日誌。
-
 ---
 
-### 模組 2：AI 定性決策與 Python 定量計算分離
-
-為杜絕 LLM 數學計算幻覺，採取**「AI 負責定性與結構點位，Python 引擎負責定量算式」**的解耦架構：
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ 1. AI Agent 專長 (定性 & 價格結構)                          │
-│    • 判定交易動作: OPEN_LONG / OPEN_SHORT                   │
-│    • 尋找關鍵點位: Entry Price, Stop Loss (SL), Take Profit (TP) │
-│    • 評估信號質量: Confidence (0.0 ~ 1.0)                   │
-└──────────────────────────────┬──────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│ 2. Python 量化數學引擎 (嚴謹執行，零幻覺)                   │
-│    • 計算真實盈虧比: b = |TP - Entry| / |Entry - SL|         │
-│    • 估算勝率: p = 校準係數 * Confidence                    │
-│    • 執行分數凱利: f* = 0.5 * (bp - q) / b (Half-Kelly)      │
-│    • 結合 30m ATR: Position_Size = (Total_Equity * f*) / ATR │
-│    • 強制套用風控硬門禁: min(Position_Size, Max_Single_Cap)   │
-└─────────────────────────────────────────────────────────────┘
-```
-
----
-
-### 模組 3：多週期融合技術分析（30m + 4H 雙週期）
-
-遵循用戶確認的方案：**不增加剛性大週期門禁，由 Technical Analyst 在單一 30m Prompt 中同時載入 4H 技術指標**。
-
-* **Prompt 數據注入結構**：
-  ```markdown
-  ## 📊 當前市場多週期數據 (BTCUSDT)
-  
-  ### 1. 執行週期 (30m Timeframe)
-  - 價格：$63,500 | 30m RSI: 32.5 (超賣區間) | MACD: -45.2 (柱狀收斂)
-  - 布林帶: [63,100, 64,200] | 30m ATR: $280
-  
-  ### 2. 趨勢大週期 (4H Timeframe)
-  - 4H 均線結構: EMA20 ($64,100) < EMA50 ($64,800) -> [空頭排列 / 處於下行趨勢]
-  - 4H ADX: 28.6 (趨勢動能偏強)
-  - 4H 關鍵支撐/阻力: 支撐 $62,500 / 阻力 $64,200
-  
-  ### ⚠️ 多週期共振指引
-  - 若 4H 為空頭排列，30m 超賣僅能視為「短線超跌反彈」，禁止重倉做多；
-  - 優先尋找 30m 反彈受阻於 4H EMA20 阻力位的「順大勢開空（一賣/二賣）」機會。
-  ```
-
----
-
-### 模組 4：注入纏論頂底背馳與三類賣點（Bear Researcher 改造）
-
-在 `backend/src/vibe_trading/config/prompts.py` 中，將 `BEAR_RESEARCHER_PROMPT` 由原本被動的「風險質疑者」升級為**「主動空頭獵手」**：
-
-1. **第一類賣點（一賣 - 趨勢背馳點）**：
-   * 價格向上突破新高，但 30m MACD 紅柱面積縮小且黃白線未創新高 $\rightarrow$ 觸發頂背馳小倉試探開空。
-2. **第二類賣點（二賣 - 次級確認點）**：
-   * 頂背馳後快速回落，隨後次級別反彈未能突破前高，形成頂部分型 $\rightarrow$ 觸發標準順勢開空。
-3. **第三類賣點（三賣 - 中樞破位點）**：
-   * 跌破 30m 盤整中樞下軌，反抽未能重回中樞內部 $\rightarrow$ 觸發主跌浪突破加空。
-
----
-
-### 模組 5：結構化輸出與零兜底（Structured Outputs Engine）
-
-* **改造目標**：將 `DecisionScorecard` 兜底率從 **34.7% 降至 0%**。
-* **做法**：
-  * 使用 Pydantic 嚴格定義 `PortfolioDecisionOutput` 結構體。
-  * 呼叫 LLM 時使用 `json_object` 或 `tools/call` 原生輸出，徹底移除 Regex 字符匹配。
-
-```python
-class PortfolioDecisionOutput(BaseModel):
-    action: PositionAction
-    confidence: float = Field(ge=0.0, le=1.0)
-    target_entry_price: float
-    stop_loss_price: float
-    take_profit_price: float
-    rationale_summary: str
-    risk_assessment_notes: str
-```
-
----
-
-### 模組 6：歷史衍生品特徵管線規劃（Future Data Pipeline）
-
-針對目前資料庫缺乏歷史資金費率與持倉量（OI）的現狀，規劃兩階段數據升級：
-* **階段 A（當前）**：以 30m + 4H 雙週期 K 線、ATR、MACD、布林帶與纏論結構為核心，快速驗證雙向交易與 Kelly 倉位成效。
-* **階段 B（進階）**：開發 Binance 歷史衍生品爬蟲，回填歷史 8h Funding Rate 與 30m Open Interest 至 SQLite，解除 Fundamental/Sentiment 分析師的數據盲區。
-
----
-
-## 4. 實施階段與驗證路線圖 (Implementation Roadmap)
-
-| 階段 | 任務項目 | 預期交付成果 | 驗證標準 |
-|---|---|---|---|
-| **Phase 1<br/>(P0 核心)** | 1. 動作枚舉擴充 (`PositionAction`)<br/>2. Bear Researcher & Tech Analyst Prompt 改造（纏論賣點）<br/>3. PM Structured Output 結構化輸出 | `prompts.py`<br/>`trading_tools.py`<br/>`trading_coordinator.py` | 1-bar Replay 能正常產出 `OPEN_SHORT` 決策，Scorecard 兜底率降至 0%。 |
-| **Phase 2<br/>(P0 倉位)** | 1. 實作 Python Half-Kelly 與 ATR 調倉公式<br/>2. 結合浮盈主動部分止盈（`TP_PARTIAL`）與保本移動止損（`TRAIL_STOP`） | `position_sizing.py`<br/>`order_executor.py` | 模擬不同波動率與勝率，下單數量自適應縮放，獲利單可動態鎖利。 |
-| **Phase 3<br/>(P1 多週期)**| 1. Technical Analyst 注入 4H 大週期指標數據<br/>2. 雙週期 Prompt 模板整合 | `technical_analyst.py`<br/>`kline_storage.py` | 4H 空頭排列時，30m 能精準識別反彈阻力位發起做空。 |
-| **Phase 4<br/>(驗證與對比)**| 1. 在 Server 執行 398-Bar 完整二期 Replay 回測<br/>2. 與一期回測數據（-1.51% PnL, 0% Short）進行橫向 A/B 評估 | `replay_v2_report.md` | 1. 做空決策佔比達到 25%~45%<br/>2. 總體 PnL 轉正且最大回撤控制在 3% 以內。 |
-
----
-
-## 5. 檔案存放與知識庫索引
+## 6. 檔案存放與知識庫索引
 
 * **計劃書本體**：`docs/research/vbt-architecture-strategy-improvement-plan.md`
-* **VitePress 導航**：已整合至「研究與競品分析」專欄。
+* **知識庫索引**：已整合至 VitePress「研究與競品分析」專欄目錄。
