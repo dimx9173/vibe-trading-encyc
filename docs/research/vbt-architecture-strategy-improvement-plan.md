@@ -1,12 +1,12 @@
 # VBT 交易架構與策略改善計劃書 (Architecture & Strategy Improvement Plan)
 
-> **版本**：v1.6 (吸納 Reasoning Effort 與 Tearsheet 升級定案版)  
+> **版本**：v1.7 (持續獲利機制、防過度複雜化剪枝與四階驗證定案版)  
 > **更新日期**：2026-08-17  
 > **關聯專案**：`vibe-trading` / `vibe-trading-encyc`  
 > **理論與借鏡庫**：
 > - `Brian_Notes/wiki/Theory`（凱利公式、倉位管理、纏論動力學、市場體制、風險地圖）
 > - `AlphaGPT`（微結構因子挖掘、買賣壓力不平衡 `pressure`、FOMO 加速度、StackVM 算子）
-> - `HKUDS/Vibe-Trading`（Alpha Zoo 462+ 經典因子庫、影子帳戶 Shadow Account、**Reasoning Effort 透傳、Tearsheet 淚表**）
+> - `HKUDS/Vibe-Trading`（Alpha Zoo 462+ 經典因子庫、影子帳戶 Shadow Account、Reasoning Effort 透傳、Tearsheet 淚表）
 > **回測依據**：398-Bar（2026-07-31 至 2026-08-15）BTCUSDT 30m Server Replay 分析
 
 ---
@@ -88,18 +88,6 @@ flowchart TD
     AlphaGPT_Base --> VBT_Upgrade
     HKUDS_Base --> VBT_Upgrade
 ```
-
-### 核心理論與特點映射表
-
-| 來源體系 | 核心概念 / 演算法 | 對應 VBT 改造模組與獲利價值 |
-|---|---|---|
-| **凱利公式與倉位管理**<br/>(`Brian_Notes/Theory/01/02`) | $$f^* = \frac{bp - q}{b}, \quad f_{\text{half}} = 0.5 \cdot f^*$$<br/>$$\text{Size } (N) = \frac{\text{Risk Capital}}{\text{ATR} \times \text{Multiplier}}$$ | **Trader & Risk 模組**：<br/>由 Python 數學引擎精確計算 Half-Kelly 與 ATR 波動率倉位，取代固定 100 USDT 呆板下單。 |
-| **東方纏論技術體系**<br/>(`Brian_Notes/Theory/Chan_Theory`) | 頂底分型、MACD 面積背馳、<br/>**一賣（轉折空）、二賣（確認空）、三賣（破位空）** | **Bear Researcher & Technical Analyst**：<br/>注入頂部結構與背馳做空邏輯，徹底解決 0% 做空缺陷。 |
-| **微結構 Alpha 因子**<br/>(`AlphaGPT`) | • 買賣力量不平衡 (`pressure`)<br/>• 成交量加速度 (`fomo`)<br/>• 波動率聚集 (`vol_cluster`) | **Technical Analyst 特徵擴充**：<br/>提前 1~3 根 Bar 捕捉多空量能爆發與衰竭，在 FOMO 頂部精準平倉。 |
-| **算子門控機制**<br/>(`AlphaGPT`) | • `JUMP` (極端跳變檢測 $Z > 3$)<br/>• `GATE` (條件門控順勢過濾) | **風險與執行層 Guardrails**：<br/>防止極端插針時追高殺跌，強制在強趨勢下過濾逆勢信號。 |
-| **Reasoning Effort 透傳**<br/>(`HKUDS/Vibe-Trading`) | Anthropic Extended Thinking / DeepSeek R1 CoT 深度推理 | **PM & RM 決策層增強**：<br/>在關鍵轉折點啟用長鏈思考，顯著提升決策質量與大局觀。 |
-| **專業回測 Tearsheet**<br/>(`HKUDS/Vibe-Trading`) | 月度收益熱力圖 + Top-N 回撤區間分析 (Drawdown Episodes) | **Replay 回測引擎升級**：<br/>產出機構級專業績效報告，精確診斷策略回撤成因。 |
-| **影子帳戶學習迴圈**<br/>(`HKUDS/Vibe-Trading`) | Shadow Account 反事實模擬對比 | **Trade Reflector 反思模組**：<br/>平行模擬未執行的決策（如對沖、延遲止盈），實現自我演化。 |
 
 ---
 
@@ -253,7 +241,81 @@ class PortfolioDecisionOutput(BaseModel):
 
 ---
 
-## 5. 具體代碼修改方向與檔案變更指南 (File-by-File Blueprint)
+## 5. 持續獲利機制與防過度複雜化剪枝原則 (Sustainable Profitability & Anti-Over-Engineering)
+
+```mermaid
+flowchart TD
+    subgraph P1 ["1. 體制自適應 (Regime Awareness)"]
+        R1["4H 趨勢排列: 順大勢逆小勢"]
+        R2["ADX/ATR 波動率門控: 震盪市縮小倉位/多觀望，趨勢市重倉出擊"]
+    end
+
+    subgraph P2 ["2. 數學非對稱優勢 (Mathematical Asymmetry)"]
+        M1["截斷虧損: 嚴格 ATR 結構止損 (單筆風險固定 <= 2%)"]
+        M2["讓利潤奔跑: 33% 第一目標止盈 + 67% 保本移動止損吃到大波段"]
+        M3["Half-Kelly 動態調倉: 高勝率/高盈虧比時加碼，低置信度時輕倉"]
+    end
+
+    subgraph P3 ["3. 影子反思與自我進化 (Self-Evolution Loop)"]
+        S1["Shadow Account 平行模擬未執行決策"]
+        S2["動態校準 LLM 信心分數與實際勝率偏差 (防過度自信)"]
+    end
+
+    subgraph P4 ["4. 資本防禦熔斷機制 (Capital Protection)"]
+        C1["連續虧損冷卻 (連損 3 次強制暫停 6 小時)"]
+        C2["單日最大回撤熔斷 (MDD > 3% 當日停止開新倉)"]
+    end
+
+    P1 & P2 & P3 & P4 ==> Sustained_Profit["💰 穿越牛熊的持續穩定獲利能力"]
+```
+
+### 5.1 維持持續獲利的四大支柱
+1. **體制自適應（Regime Adaptation）**：4H 趨勢市（ADX > 25）順勢重倉，4H 震盪市（ADX < 20）縮小倉位或高拋低吸。
+2. **非對稱盈虧比（Mathematical Edge）**：不盲目追求 80% 高勝率，只要維持勝率 45%~55% 搭配盈虧比 $\ge 2:1$，透過 **33% 首批止盈 + 67% 保本移動止損**，在數學上鎖定正期望值。
+3. **自適應校準（Meta-Tuning）**：利用影子帳戶追蹤反事實決策，定期微調 LLM 信心分數與實際勝率的轉換權重。
+4. **資本防禦熔斷（Circuit Breakers）**：連續虧損 3 次觸發冷卻暫停，單日回撤超過 3% 強制休眠。
+
+### 5.2 防過度複雜化三大剪枝原則 (Occam's Razor for AI Trading)
+1. **三信號原則（The 3-Signal Rule）**：Prompt 中嚴禁塞入數十種互相矛盾的指標。分析師只聚焦 **4H 大趨勢 + 纏論結構位置 + Pressure 買賣壓力** 三大核心，防止「分析癱瘓（Analysis Paralysis）」。
+2. **風控不設一票否決（No Veto Trap）**：方向決定權歸屬辯論與 Research Manager，風控團隊只負責「縮減倉位規模」，不隨意沒收開倉機會。
+3. **極簡兩段式出場**：達到 TP1 平倉 33% 鎖定利潤並將止損移至開倉價，其餘 67% 倉位由大週期趨勢保護，避免過碎的止盈被小回撤提前震出場。
+
+---
+
+## 6. 四階漸進式閉環驗證體系 (4-Stage Verification Protocol)
+
+為確保系統真實具備持續獲利能力，嚴格執行以下四階驗證流程：
+
+```
+[Level 1: 煙霧驗證 (1~3 Bars)]
+  └── 目標：驗證程式碼與架構連通性 (無語法報錯、成功產出 OPEN_SHORT、0% 評分卡兜底)
+
+[Level 2: 歷史回測 A/B 對比 (398-Bar 基準測試)]
+  └── 目標：橫向對比一期 vs 二期表現 (驗證做空佔比 25%~45%、PnL 轉正、MDD < 3%)
+
+[Level 3: 跨市場體制壓力測試 (Stress Testing across 3 Regimes)]
+  ├── 體制 A (單邊暴跌 15% 行情)：驗證纏論一賣做空與止盈能力
+  ├── 體制 B (單邊大牛市行情)：驗證順勢加多與利潤奔跑能力
+  └── 體制 C (縮量橫盤磨損行情)：驗證 HOLD 觀望與摩擦成本控制
+
+[Level 4: 伺服器端 72 小時 Paper Trading 實盤影子監控]
+  └── 目標：驗證即時 WebSocket 延遲、成交滑點、訂單隊列與狀態機長期穩定性
+```
+
+### 核心量化 KPI 驗證矩陣
+
+| 量化指標 | 最低達標門檻 (Pass) | 優秀標準 (Target) | 檢驗目的 |
+|---|---|---|---|
+| **夏普比率 (Sharpe Ratio)** | $> 1.2$ | **$> 1.8$** | 衡量承擔每單位風險的超額回報。 |
+| **盈虧比 (Profit Factor)** | $> 1.5$ | **$> 2.0$** | 總盈利金額 / 總虧損金額。 |
+| **做空決策佔比 (Short Ratio)** | $20\% \sim 50\%$ | **$30\% \sim 40\%$** | 徹底杜絕 0% 做空偏斜，具備雙向獲利能力。 |
+| **最大賬戶回撤 (MDD)** | $< 5.0\%$ | **$< 3.0\%$** | 衡量最極端逆境下的本金防守能力。 |
+| **評分卡兜底率 (Fallback Rate)** | $< 5\%$ | **$0.0\%$** | 確保決策皆由 AI 實質思考鏈與 Pydantic 正確產出。 |
+| **平均單筆盈虧比 (Avg R:R)** | $> 1.8 : 1$ | **$> 2.5 : 1$** | 確保「大賺小賠」的非對稱數學期望值。 |
+
+---
+
+## 7. 具體代碼修改方向與檔案變更指南 (File-by-File Blueprint)
 
 | 檔案路徑 | 主要修改內容與目標 | 核心改動細節 |
 |---|---|---|
@@ -268,40 +330,7 @@ class PortfolioDecisionOutput(BaseModel):
 
 ---
 
-## 6. 漸進式實施路線圖與驗證計劃 (Implementation & Verification)
-
-```
-[Phase 1 (P0)] 核心動作、空頭邏輯與結構化輸出 (第一階段驗證)
-  ├── 1. prompts.py: 注入纏論三類賣點 (Bear) 與雙週期分析 (Tech)
-  ├── 2. trading_tools.py: 定義 PositionAction 枚舉與 Pydantic Output Schema
-  ├── 3. market_data_tools.py: 實作 pressure 與 fomo (支援缺數據中性 fallback)
-  ├── 4. trading_coordinator.py: 狀態注入 + Structured Output 對接 + Reasoning Effort 配置
-  └── 驗證：在伺服器端運行 1-Bar / 3-Bar Replay 煙霧測試，確認能產出 OPEN_SHORT 且 0% Scorecard 兜底。
-
-[Phase 2 (P0)] 量化數學與進取型倉位引擎
-  ├── 1. position_sizing.py: 實作 Half-Kelly 與 ATR 調倉 (Max 500 USDT, 5x 槓桿)
-  ├── 2. order_executor.py: 支援 SHORT 部位、TP_PARTIAL 分批平倉 33%、TRAIL_STOP
-  └── 驗證：單元測試不同勝率/波動率下的下單規模縮放，驗證浮盈單能主動平倉 33%。
-
-[Phase 3 (P1)] 4H 多週期、影子帳戶與 Tearsheet 淚表
-  ├── 1. trading_coordinator.py: 注入 4H EMA/ADX 數據
-  ├── 2. replay_tool_isolation.py: 支援 4H Replay 歷史查詢
-  ├── 3. reflection.py & tearsheet.py: 導入 Shadow Account 影子反思與回測淚表組件
-  └── 驗證：在 4H 下行趨勢中，30m 超賣不再盲目開多，反彈阻力位精準開空。
-
-[Phase 4 (終極驗證)] 398-Bar 二期完整 Replay 回測對比
-  ├── 運行環境: Server vbtpc 執行 398 根 Bar 回測
-  └── 驗證指標:
-      • 做空決策 (SHORT) 佔比達 25% ~ 45%
-      • 淨盈虧 (PnL) 顯著轉正 (目標 +3% ~ +8%)
-      • 最大回撤 (MDD) 控制在 3.0% 以內
-      • Scorecard 兜底率降至 0%
-      • 生成包含月度熱力圖與回撤區間分析的 Tearsheet 完整報告
-```
-
----
-
-## 7. 系統核心相容性與防 API 風暴審查 (Core Integrity & Anti-Storm Audit)
+## 8. 系統核心相容性與防 API 風暴審查 (Core Integrity & Anti-Storm Audit)
 
 ```mermaid
 flowchart TD
@@ -329,15 +358,15 @@ flowchart TD
     Storm_Check --> Four_Guards
 ```
 
-### 7.1 核心架構相容性結論
+### 8.1 核心架構相容性結論
 * **零架構破壞（Non-breaking In-place Evolution）**：本計劃未改變流水線拓撲、未增刪 Agent 角色、未變動底層資料庫 Schema。僅透過提示詞專業化、Pydantic 介面標準化與執行層數學回填，使原有系統發揮雙向交易與動態風控能力。
 
-### 7.2 API 流量與 Token 消耗結論
+### 8.2 API 流量與 Token 消耗結論
 * **LLM 調用次數維持常數**：每 30 分鐘決策週期總調用次數依然為 14~16 次，所有 Kelly 數學運算由 Python 在本地 0.1 毫秒內完成，不消耗任何額外 API 額度。
 * **Token 消耗反向降低 30%**：結構化 JSON 輸出取代長篇 Markdown 作文，且完全消除了正則失敗時觸發的補償性重試（`RETRY_COMPENSATORY_PROMPT`）。
 * **交易所請求增加為 0**：4H 週期由本地 30m K 線動態聚合，Replay 模式 100% 離線隔離。
 
-### 7.3 四重內建防禦護欄
+### 8.3 四重內建防禦護欄
 1. **並發信號量隔離（`asyncio.Semaphore(3)`）**：同時間最多 3 個 Agent 調用 LLM，防止瞬間併發超過 API Rate Limit。
 2. **辯論輪數與超時截斷（45s/180s Timeout）**：硬性限制辯論次數與單次等待時間，杜絕 LLM 思考死循環。
 3. **下單冷卻防連擊（`_insurance_on_cooldown`）**：強制同向操作冷卻間隔，防止短時間重複下單。
@@ -345,7 +374,7 @@ flowchart TD
 
 ---
 
-## 8. 檔案存放與知識庫索引
+## 9. 檔案存放與知識庫索引
 
 * **計劃書本體**：`docs/research/vbt-architecture-strategy-improvement-plan.md`
 * **知識庫索引**：已整合至 VitePress「研究與競品分析」專欄目錄。
