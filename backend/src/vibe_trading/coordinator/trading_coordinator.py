@@ -1054,6 +1054,69 @@ class TradingCoordinator:
         logger.info(f"  ⏱  [性能] 总耗时: {elapsed:.2f}s")
         logger.info("=" * 60)
 
+    def _compute_4h_regime(self, klines: list) -> dict:
+        """30m K線聚合為 4H, 計算 EMA20/50 + ADX(14) 判定大週期體制 (Phase 5 §2.1).
+
+        Returns:
+            {"ema20": float|None, "ema50": float|None, "adx": float|None,
+             "regime": "4H_STRONG_DOWNTREND"|"4H_STRONG_UPTREND"|"4H_CHOPPY_RANGE"}
+        """
+        import numpy as np
+        import pandas as pd
+        if not klines or len(klines) < 16:
+            return {"ema20": None, "ema50": None, "adx": None, "regime": "4H_CHOPPY_RANGE"}
+        # 30m → 4H 重採樣 (每 8 根 30m = 1 根 4H)
+        n = len(klines)
+        closes4h, highs4h, lows4h = [], [], []
+        for i in range(0, n - (n % 8), 8):
+            chunk = klines[i:i + 8]
+            closes4h.append(chunk[-1].close)
+            highs4h.append(max(k.high for k in chunk))
+            lows4h.append(min(k.low for k in chunk))
+        if len(closes4h) < 20:
+            return {"ema20": None, "ema50": None, "adx": None, "regime": "4H_CHOPPY_RANGE"}
+
+        closes = np.array(closes4h, dtype=float)
+        highs = np.array(highs4h, dtype=float)
+        lows = np.array(lows4h, dtype=float)
+
+        # EMA20 / EMA50
+        ema20 = float(pd.Series(closes).ewm(span=20, adjust=False).mean().iloc[-1])
+        ema50 = float(pd.Series(closes).ewm(span=50, adjust=False).mean().iloc[-1])
+
+        # ADX(14) — Wilder 平滑
+        period = 14
+        up_move = np.diff(highs)
+        down_move = -np.diff(lows)
+        plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+        minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+        tr = np.maximum.reduce([
+            highs[1:] - lows[1:],
+            np.abs(highs[1:] - closes[:-1]),
+            np.abs(lows[1:] - closes[:-1]),
+        ])
+        def _wilder(arr):
+            out = np.full(len(arr), np.nan)
+            out[period - 1] = arr[:period].sum()
+            for j in range(period, len(arr)):
+                out[j] = out[j - 1] - out[j - 1] / period + arr[j]
+            return out
+        atr = _wilder(tr)
+        pdi = _wilder(plus_dm) / np.where(atr > 0, atr, 1e-9) * 100
+        mdi = _wilder(minus_dm) / np.where(atr > 0, atr, 1e-9) * 100
+        dx = np.abs(pdi - mdi) / np.where((pdi + mdi) > 0, pdi + mdi, 1e-9) * 100
+        dx_valid = dx[~np.isnan(dx)]
+        adx = float(dx_valid[-period:].mean()) if len(dx_valid) >= period else None
+
+        # 體制判定 (規格書 §2.1)
+        if ema20 < ema50 and adx is not None and adx > 22:
+            regime = "4H_STRONG_DOWNTREND"
+        elif ema20 > ema50 and adx is not None and adx > 22:
+            regime = "4H_STRONG_UPTREND"
+        else:
+            regime = "4H_CHOPPY_RANGE"
+        return {"ema20": ema20, "ema50": ema50, "adx": adx, "regime": regime}
+
     async def _prepare_context(self, current_price: float) -> TradingContext:
         """准备交易上下文"""
         # 获取 K线数据
@@ -1104,6 +1167,12 @@ class TradingCoordinator:
                 indicators.update({f"micro_{k}": v for k, v in micro.items()})
             except Exception as e:
                 logger.warning(f"Microstructure factors failed: {e}")
+
+            # Phase 5: 30m+4H 雙週期 (規格書 §2.1) — 4H 大週期體制注入
+            try:
+                indicators.update(self._compute_4h_regime(klines))
+            except Exception as e:
+                logger.warning(f"4H regime computation failed: {e}")
 
         return TradingContext(
             symbol=self.symbol,

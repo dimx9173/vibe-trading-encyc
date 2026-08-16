@@ -237,6 +237,24 @@ Technical Indicators:
         if micro_lines:
             indicator_text += "\nMicrostructure Factors:\n" + "\n".join(micro_lines) + "\n"
 
+        # Phase 5: 4H 大週期體制 (規格書 §2.1 三信號原則 — 4H 趨勢)
+        if "regime" in ind:
+            regime_map = {
+                "4H_STRONG_DOWNTREND": "空頭排列 / 下行趨勢",
+                "4H_STRONG_UPTREND": "多頭排列 / 上行趨勢",
+                "4H_CHOPPY_RANGE": "震盪盤整",
+            }
+            regime_cn = regime_map.get(ind["regime"], ind["regime"])
+            indicator_text += f"""
+4H Macro Timeframe (Trend):
+- 4H Regime: {ind.get('regime')} [{regime_cn}]
+- 4H EMA20: {ind.get('ema20', 'N/A')}
+- 4H EMA50: {ind.get('ema50', 'N/A')}
+- 4H ADX: {ind.get('adx', 'N/A')}
+⚠️ 指引: 4H 空頭排列下, 嚴禁因 30m 短線超賣盲目抄底; 優先尋找反彈阻力位做空機會.
+   4H 多頭排列下, 30m 回調為順勢加多機會.
+"""
+
         prompt = f"""Analyze the technical indicators for {self._tool_context.symbol}:
 
 {indicator_text}
