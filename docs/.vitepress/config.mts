@@ -71,7 +71,8 @@ export default withMermaid(defineConfig({
           { text: '自定义Agent', link: '/guide/custom-agent' },
           { text: 'API文档', link: '/guide/api' },
           { text: 'ADR-0001 工具隔离', link: '/adr/0001-replay-tool-isolation' },
-          { text: 'ADR-0002 回测与Replay', link: '/adr/0002-agent-replay-vs-rule-backtest' }
+          { text: 'ADR-0002 回测与Replay', link: '/adr/0002-agent-replay-vs-rule-backtest' },
+          { text: '策略重构与双向交易规范', link: '/specs/vbt-architecture-strategy-improvement-spec' }
         ]
       },
       {
