@@ -987,6 +987,81 @@ def get_execution_tools(tool_context: Any) -> list[AgentTool]:
     return [create_submit_trade_order_tool(tool_context)]
 
 
+class PortfolioDecisionParams(BaseModel):
+    """submit_portfolio_decision 參數 (規格書 v1.0.0 §4.2).
+
+    Phase 5 — PM 以結構化動作意圖取代一期現貨式 BUY/HOLD/SELL 字串,
+    徹底消滅 34.7% 評分卡兜底 (R3) 並解鎖做空 (R1).
+    """
+    action: str = Field(description=(
+        "合約全生命週期動作: OPEN_LONG / ADD_LONG / OPEN_SHORT / "
+        "ADD_SHORT / TP_PARTIAL / CLOSE_ALL / TRAIL_STOP / HOLD"))
+    confidence: float = Field(ge=0.0, le=1.0, description="決策置信度 (0.0-1.0)")
+    suggested_entry_price: float = Field(description="建議進場或基準參考價")
+    suggested_stop_loss: float = Field(description="結構止損價格")
+    suggested_take_profit: float = Field(description="第一目標止盈價格 (TP1)")
+    core_rationale: str = Field(default="", description="核心決策邏輯摘要")
+
+
+def create_submit_portfolio_decision_tool(tool_context: Any) -> AgentTool:
+    """Create the structured decision tool bound to a ToolContext (Phase 5).
+
+    PM 呼叫此工具輸出結構化決策 (action + 點位)。執行層將其暫存於
+    tool_context.portfolio_decision, 供 coordinator 量化引擎消費
+    (Half-Kelly 倉位計算 → 執行)。HOLD 動作僅記錄, 不觸發下單。
+    """
+
+    async def execute_submit_portfolio_decision(
+        name: str,
+        args: PortfolioDecisionParams,
+        extra: Any = None,
+        callback: Any = None,
+    ) -> AgentToolResult:
+        from vibe_trading.agents.decision.trading_tools import PositionAction
+        try:
+            action = PositionAction(args.action.upper())
+        except ValueError:
+            # 非法動作 → Fail-Open 安全降級 HOLD (護欄 4)
+            logger.warning(f"[決策] 非法動作 '{args.action}' → 降級 HOLD")
+            action = PositionAction.HOLD
+
+        decision = {
+            "action": action.value,
+            "confidence": float(args.confidence),
+            "entry_price": float(args.suggested_entry_price),
+            "stop_loss": float(args.suggested_stop_loss),
+            "take_profit": float(args.suggested_take_profit),
+            "rationale": args.core_rationale,
+        }
+        # 暫存供 coordinator 消費 (量化引擎)
+        tool_context.portfolio_decision = decision
+        logger.info(
+            f"[決策] submit_portfolio_decision: {action.value} "
+            f"conf={args.confidence:.2f} entry={args.suggested_entry_price:.0f} "
+            f"SL={args.suggested_stop_loss:.0f} TP={args.suggested_take_profit:.0f}"
+        )
+        return AgentToolResult(content=[TextContent(
+            text=f"Portfolio decision recorded: {action.value}"
+        )])
+
+    return AgentTool(
+        name="submit_portfolio_decision",
+        label="提交投資組合決策",
+        description=(
+            "Portfolio Manager 專用結構化決策工具 (Phase 5 雙向對稱決策)。"
+            "輸出合約全生命週期動作 (OPEN_LONG/OPEN_SHORT/TP_PARTIAL/TRAIL_STOP/...) "
+            "與結構點位 (entry/SL/TP), 取代文字決策。"
+        ),
+        parameters=PortfolioDecisionParams,
+        execute=execute_submit_portfolio_decision,
+    )
+
+
+def get_decision_tools(tool_context: Any) -> list[AgentTool]:
+    """Get Phase 5 structured decision tool bound to ToolContext."""
+    return [create_submit_portfolio_decision_tool(tool_context)]
+
+
 def get_technical_tools(tool_context: Any) -> list[AgentTool]:
     """Get context-bound technical analysis tools (compose_factor, Phase 2.2)."""
     return [create_compose_factor_tool(tool_context)]

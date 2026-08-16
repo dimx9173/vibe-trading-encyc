@@ -44,6 +44,35 @@ class ExecutionStyle(str, Enum):
     PULLBACK = "pullback"  # 等待回调
 
 
+class PositionAction(str, Enum):
+    """合約全生命週期動作 (Phase 5 — 雙向對稱決策).
+
+    解決一期 100% 多頭偏斜 (0 次做空) 的現貨式單向思維:
+    新增 OPEN_SHORT / ADD_SHORT / TP_PARTIAL / TRAIL_STOP 等合約專屬動作.
+    """
+    OPEN_LONG = "OPEN_LONG"        # 新開多單
+    ADD_LONG = "ADD_LONG"          # 順勢加多
+    OPEN_SHORT = "OPEN_SHORT"      # 新開空單 (解鎖做空)
+    ADD_SHORT = "ADD_SHORT"        # 順勢加空
+    TP_PARTIAL = "TP_PARTIAL"      # 主動部分止盈 (分批平倉 33%)
+    CLOSE_ALL = "CLOSE_ALL"        # 全平離場
+    TRAIL_STOP = "TRAIL_STOP"      # 移動止損 (鎖定利潤)
+    HOLD = "HOLD"                  # 觀望維持現狀
+
+    @classmethod
+    def valid_actions_for_position(cls, has_long: bool, has_short: bool) -> list["PositionAction"]:
+        """動態合法動作集 (規格書 4.3 狀態注入).
+
+        - 無持倉: 只能開倉或觀望
+        - 持多單: 加多 / 部分止盈 / 移動止損 / 全平 / 觀望
+        - 持空單: 加空 / 部分止盈 / 移動止損 / 全平 / 觀望
+        """
+        if has_long or has_short:
+            side = [cls.ADD_LONG] if has_long else [cls.ADD_SHORT]
+            return side + [cls.TP_PARTIAL, cls.TRAIL_STOP, cls.CLOSE_ALL, cls.HOLD]
+        return [cls.OPEN_LONG, cls.OPEN_SHORT, cls.HOLD]
+
+
 @dataclass
 class TradingPlan:
     """交易执行计划

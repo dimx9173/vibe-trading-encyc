@@ -341,10 +341,14 @@ class PortfolioManagerAgent:
         # 获取tools - 使用角色特定的工具集合
         agent_tools = []
         try:
-            from vibe_trading.agents.agent_tools import get_execution_tools, get_tools_for_agent
+            from vibe_trading.agents.agent_tools import (
+                get_decision_tools, get_execution_tools, get_tools_for_agent,
+            )
             agent_tools = get_tools_for_agent("portfolio_manager")
             if getattr(tool_context, "executor", None):
                 agent_tools.extend(get_execution_tools(tool_context))
+            # Phase 5: 結構化決策工具 (submit_portfolio_decision)
+            agent_tools.extend(get_decision_tools(tool_context))
             logger.info(f"Loaded {len(agent_tools)} tools for Portfolio Manager")
         except Exception as e:
             logger.warning(f"Could not load agent tools: {e}")
@@ -646,6 +650,26 @@ Current Positions: {len(current_positions)}
 
         for pos in current_positions:
             prompt += f"  - {pos.get('symbol', 'N/A')}: {pos.get('position_amount', 'N/A')} @ {pos.get('entry_price', 'N/A')} (PnL: {pos.get('unrealized_profit', 'N/A')})\n"
+
+        # Phase 5: 動態合法動作集注入 (規格書 §4.3) — 依持倉狀態限制可選動作
+        from vibe_trading.agents.decision.trading_tools import PositionAction
+        has_long = any(p.get("position_side", "LONG") == "LONG" for p in current_positions)
+        has_short = any(p.get("position_side") == "SHORT" for p in current_positions)
+        valid = PositionAction.valid_actions_for_position(has_long, has_short)
+        prompt += f"""
+VALID ACTIONS (Phase 5 合約全生命週期動作):
+可選動作: {', '.join(a.value for a in valid)}
+- OPEN_LONG/ADD_LONG: 開多/加多 (4H 多頭排列 + 纏論買點)
+- OPEN_SHORT/ADD_SHORT: 開空/加空 (4H 空頭排列 + 纏論一賣/二賣/三賣)
+- TP_PARTIAL: 主動部分止盈 (平倉 33%, 餘 67% 保本移動止損)
+- TRAIL_STOP: 移動止損鎖利
+- CLOSE_ALL: 全平離場
+- HOLD: 觀望
+若無持倉只可選 OPEN_LONG/OPEN_SHORT/HOLD; 持倉時不可再開反向新倉 (需先 CLOSE_ALL).
+
+REASONING EFFORT (深度推理要求):
+重大動作前 (開倉/加倉/平倉) 請進行長鏈推導: 4H 大趨勢 → 纏論結構位置 → 盈虧比 → 倉位風險。不可僅憑 30m 局部訊號草率決策。
+"""
 
         # 注入相关历史反思（每根 bar 检索，非仅初始化时）
         prompt += self._build_memory_section(scorecard)

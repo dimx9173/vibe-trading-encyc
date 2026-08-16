@@ -73,3 +73,21 @@ class TraderAnalysisSchema(BaseModel):
     timing_suggestion: str = Field(description="Execution timing suggestion")
     risk_warnings: List[str] = Field(default_factory=list, description="Risk warnings")
     confidence: float = Field(ge=0, le=1, description="Confidence level 0-1")
+
+
+class PortfolioDecisionOutput(BaseModel):
+    """投資組合經理 (PM) 最終結構化決策輸出 (規格書 v1.0.0 §4.2).
+
+    Phase 5 — 以合約全生命週期動作取代一期現貨式 BUY/HOLD/SELL,
+    徹底消滅 34.7% 評分卡兜底 (R3) 與 0% 做空偏斜 (R1).
+    """
+    action: Literal[
+        "OPEN_LONG", "ADD_LONG",
+        "OPEN_SHORT", "ADD_SHORT",
+        "TP_PARTIAL", "CLOSE_ALL", "TRAIL_STOP", "HOLD",
+    ] = Field(description="交易動作枚舉意圖 (合約全生命週期)")
+    confidence: float = Field(ge=0.0, le=1.0, description="決策置信度 (0.0 到 1.0)")
+    suggested_entry_price: float = Field(description="建議進場或基準參考價")
+    suggested_stop_loss: float = Field(description="結構止損價格")
+    suggested_take_profit: float = Field(description="第一目標止盈價格 (TP1)")
+    core_rationale: str = Field(description="核心決策邏輯摘要 (不超過 100 字)")
