@@ -1,7 +1,7 @@
 # VBT 交易架構與策略改善計劃書 (Architecture & Strategy Improvement Plan)
 
-> **版本**：v1.4 (核心相容性與防風暴審查定案版)  
-> **更新日期**：2026-08-16  
+> **版本**：v1.5 (多頭偏斜根因剖析與架構升級定稿版)  
+> **更新日期**：2026-08-17  
 > **關聯專案**：`vibe-trading` / `vibe-trading-encyc`  
 > **理論與借鏡庫**：
 > - `Brian_Notes/wiki/Theory`（凱利公式、倉位管理、纏論動力學、市場體制、風險地圖）
@@ -11,12 +11,12 @@
 
 ---
 
-## 1. 執行摘要與問題診斷
+## 1. 執行摘要與多頭偏斜四大深層根因剖析
 
-在對伺服器端完成的 398 根 Bar（約 15.3 天）歷史 Replay 進行深度審查後，系統暴露出以下五大結構性瓶頸：
+在對伺服器端完成的 398 根 Bar（約 15.3 天）歷史 Replay 進行深度審查後，系統暴露出 **0 次做空（100% 多頭偏置）** 與 **34.7% 評分卡兜底** 的嚴重問題：
 
 ```mermaid
-pie title 398 根 Bar 決策分佈硬傷
+pie title 398 根 Bar 決策分佈硬傷 (100% 多頭偏斜)
     "WEAK BUY (試探多)" : 185
     "BUY (標準多)" : 144
     "HOLD (觀望)" : 65
@@ -25,11 +25,29 @@ pie title 398 根 Bar 決策分佈硬傷
     "SELL / SHORT (做空/賣出)" : 0
 ```
 
-1. **100% 多頭偏置（零做空）**：全週期 398 根 Bar 出現 **0 次 SELL / SHORT**，在震盪與下跌行情中不斷抄底，失去雙向獲利與套保能力。
-2. **缺乏主動倉位生命週期管理**：決策語義只有現貨思維的 `BUY / HOLD`，缺乏合約專屬的「部分止盈（TP）」、「移動止損（Trailing Stop）」與「平倉離場（Close）」，導致浮盈大幅回吐。
-3. **34.7% 的評分卡兜底率**：在 398 筆決策中有 138 筆因格式解析或單次響應邊界觸發靜態規則兜底，削弱了多 Agent 實質思考鏈。
-4. **衍生品特徵數據盲區**：Replay 工具隔離使資金費率、持倉量（OI）與清算地圖返回 `N/A`，Agent 僅依賴 30m 單一週期指標，陷入「局部超賣逆勢接飛刀」的失效模式。
-5. **每 Bar 耗時過長（~226 秒）**：13-Agent 全流水線逐 Bar 呼叫，導致 15 天回測需耗費 25 小時。
+經過全鏈路代碼審查，我們確認**多頭偏斜（Long Bias）是由以下四大深層根因共同作用的結果**，本改善計劃已全數精準覆蓋：
+
+```mermaid
+flowchart TD
+    subgraph Root_Causes ["🔍 多頭偏斜 (0% 做空) 四大深層根因"]
+        R1["1. Prompt 語義與角色框架偏斜<br/>• PM Prompt: WEAK SELL 被定義為「減倉」(現貨思維)<br/>• Bear Researcher: 定位為被動防守而非主動做空獵手<br/>• Tech Analyst: 缺纏論一賣/二賣/三賣頂部框架"]
+        R2["2. 衍生品與情緒特徵常態缺失 (Data Blindspot)<br/>• Replay 工具隔離使 Funding Rate / OI / 清算地圖返回 N/A<br/>• 缺失數據時，僅憑 30m 局部超賣 (RSI<30) 頻繁逆勢抄底"]
+        R3["3. 靜態評分卡兜底硬編碼偏多 (Scorecard Fallback Bias)<br/>• trading_tools.py:808 行硬編碼「情緒面強勁，建議 WEAK_BUY」<br/>• 34.7% (138筆) 決策因格式解析邊界直接被鎖死為多頭"]
+        R4["4. 單一 30m 週期視野盲區 (Single-Timeframe Trap)<br/>• 缺乏 4H 大週期空頭排列約束，在下跌趨勢中不斷接飛刀"]
+    end
+
+    subgraph Solutions ["🎯 本計劃對應解決模組"]
+        S1["模組 1 & 4: PositionAction 合約動作 + 纏論三類賣點獵手 Prompt"]
+        S2["模組 5 & 8: 衍生品歷史管線 + 微結構中性容錯處理"]
+        S3["模組 6: Pydantic 結構化輸出 (Tool Calling)，徹底消滅兜底"]
+        S4["模組 3: 30m + 4H 雙週期趨勢融合，4H 空頭禁止抄底"]
+    end
+
+    R1 ==> S1
+    R2 ==> S2
+    R3 ==> S3
+    R4 ==> S4
+```
 
 ---
 
@@ -128,7 +146,7 @@ flowchart TD
 ## 4. 八大核心模組詳細設計 (Core Architectural Modules)
 
 ### 模組 1：合約全生命週期動作模型（Position Action Model）
-定義完整的合約交易動作枚舉，解決現貨單向買賣思維：
+解決原本現貨式單向思維與 PM Prompt 誤將 `WEAK SELL` 標記為減倉的缺陷：
 ```python
 from enum import Enum
 
@@ -164,7 +182,7 @@ class PositionAction(str, Enum):
 
 ---
 
-### 模組 3：30m + 4H 雙週期技術融合（Multi-Timeframe Integration）
+### 模組 3：30m + 4H 雙週期技術融合（解決根因 4：單一週期盲區）
 在單一 30m Prompt 中同時載入 4H 大週期趨勢數據，提供宏觀視野（不設剛性硬門禁）：
 ```markdown
 ## 📊 市場多週期數據
@@ -178,17 +196,17 @@ class PositionAction(str, Enum):
 
 ---
 
-### 模組 4：纏論三類賣點注入（Bear Researcher 升級）
-將 `BEAR_RESEARCHER_PROMPT` 改造為**主動空頭獵手**：
+### 模組 4：纏論三類賣點注入（解決根因 1：Prompt 缺空頭框架）
+將 `BEAR_RESEARCHER_PROMPT` 由原本被動防禦升級為**主動空頭獵手**：
 1. **一賣（頂背馳）**：價格創新高但 30m MACD 紅柱面積縮小 $\rightarrow$ 試探開空。
 2. **二賣（次級確認）**：頂背馳後反彈不破前高，形成頂部分型 $\rightarrow$ 標準開空。
 3. **三賣（中樞破位）**：跌破 30m 盤整中樞回抽不進中樞 $\rightarrow$ 主跌浪突破追空。
 
 ---
 
-### 模組 5：AlphaGPT 盤口微結構特徵（Microstructure Features）
+### 模組 5：AlphaGPT 盤口微結構特徵（解決根因 2：數據缺失中性容錯）
 在 `market_data_tools.py` 實作微結構特徵計算，提供即時盤口 Alpha：
-* **Replay 容錯處理**：Replay 歷史數據缺少 Taker 成交量時自動回傳 0.0（中性可選），不中斷回測；Live 模式無縫啟用真實計算。
+* **Replay 容錯處理**：Replay 歷史數據缺少 Taker 成交量時自動回傳 0.0（中性可選），不誤判為多頭信號；Live 模式無縫啟用真實計算。
 ```python
 def calculate_microstructure_features(klines_df):
     if 'taker_buy_base' not in klines_df.columns or klines_df['taker_buy_base'].sum() == 0:
@@ -201,8 +219,8 @@ def calculate_microstructure_features(klines_df):
 
 ---
 
-### 模組 6：結構化輸出與零兜底（Pydantic Structured Outputs）
-徹底移除正則表達式，採用 Tool Calling 原生輸出：
+### 模組 6：結構化輸出與零兜底（解決根因 3：消滅 34.7% 硬編碼多頭兜底）
+徹底移除正則表達式，採用 Tool Calling 原生輸出，消滅 `trading_tools.py:808` 行的硬編碼 `WEAK_BUY`：
 ```python
 class PortfolioDecisionOutput(BaseModel):
     action: PositionAction
