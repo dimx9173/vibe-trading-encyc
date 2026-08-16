@@ -86,3 +86,9 @@ backups/
 
 # vbt runtime pidfile
 .vbt/
+
+# vbt runtime (state/memory/cache — 非 source)
+backend/data/memory_storage.pkl
+backend/data/memory_storage_fts5.db
+/data/
+.omp/

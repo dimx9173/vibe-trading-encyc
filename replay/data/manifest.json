@@ -1,0 +1,33 @@
+{
+  "prompts": {
+    "analyst:fundamental": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "analyst:news": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "analyst:sentiment": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "analyst:technical": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "portfolio_manager": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "researcher:bear": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "researcher:bull": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "researcher:manager": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "risk:aggressive": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "risk:conservative": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "risk:neutral": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "trader": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "tools": [],
+  "packages": {
+    "numpy": "2.5.1",
+    "pandas": "3.0.3",
+    "pi-ai": "unknown",
+    "pi_agent_core": "unknown",
+    "python-telegram-bot": "22.8"
+  },
+  "config": {
+    "symbol": "BTCUSDT",
+    "interval": "30m",
+    "start": 120,
+    "end": 121,
+    "skip_debate": true,
+    "use_cache": true
+  },
+  "manifest_hash": "8f4cd3f0efe46f93fa9a691a5cd26c2b205fce55ab644cdbcffc5b68d9ca8981"
+}
