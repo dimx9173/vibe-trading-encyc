@@ -1,6 +1,6 @@
 # VBT 交易架構與策略改善計劃書 (Architecture & Strategy Improvement Plan)
 
-> **版本**：v1.3 (Grill-Me 審閱定稿版)  
+> **版本**：v1.4 (核心相容性與防風暴審查定案版)  
 > **更新日期**：2026-08-16  
 > **關聯專案**：`vibe-trading` / `vibe-trading-encyc`  
 > **理論與借鏡庫**：
@@ -275,7 +275,51 @@ class PortfolioDecisionOutput(BaseModel):
 
 ---
 
-## 7. 檔案存放與知識庫索引
+## 7. 系統核心相容性與防 API 風暴審查 (Core Integrity & Anti-Storm Audit)
+
+```mermaid
+flowchart TD
+    subgraph Core_Check ["1. VBT 核心架構相容性 (100% Non-Breaking)"]
+        C1["4 階段決策流水線順序完全不變 (Phase 1 -> 2 -> 3 -> 4)"]
+        C2["13 個 Agent 繼承關係與角色契約保持 100% 相容"]
+        C3["StateMachine 狀態流轉與 SQLite 資料表結構完全相容"]
+    end
+
+    subgraph Storm_Check ["2. API 流量與 Token 消耗防浪費審查"]
+        S1["單 Bar LLM 呼叫次數固定常數 (~14-16 次，與原架構一致)"]
+        S2["Pydantic Structured Output 節省 ~30% Output Tokens，杜絕重試"]
+        S3["4H 數據由本地 SQLite KlineStorage 聚合重採樣 (0 額外網路 API)"]
+        S4["Replay 模式由 replay_tool_isolation 攔截 (0 外部網路請求)"]
+    end
+
+    subgraph Four_Guards ["3. 四大內建防風暴與防崩潰護欄"]
+        G1["🔒 護欄 1: asyncio.Semaphore(3) 並發信號量隔離 (防 429 限制)"]
+        G2["🔒 護欄 2: 多空辯論 2~3 輪硬上限 + 45s/180s 逾時截斷 (防無限循環)"]
+        G3["🔒 護欄 3: _insurance_on_cooldown 下單冷卻 (防秒級重複連擊)"]
+        G4["🔒 護欄 4: Fail-Open 安全降級機制 (異常參數安全回退 HOLD)"]
+    end
+
+    Core_Check --> Four_Guards
+    Storm_Check --> Four_Guards
+```
+
+### 7.1 核心架構相容性結論
+* **零架構破壞（Non-breaking In-place Evolution）**：本計劃未改變流水線拓撲、未增刪 Agent 角色、未變動底層資料庫 Schema。僅透過提示詞專業化、Pydantic 介面標準化與執行層數學回填，使原有系統發揮雙向交易與動態風控能力。
+
+### 7.2 API 流量與 Token 消耗結論
+* **LLM 調用次數維持常數**：每 30 分鐘決策週期總調用次數依然為 14~16 次，所有 Kelly 數學運算由 Python 在本地 0.1 毫秒內完成，不消耗任何額外 API 額度。
+* **Token 消耗反向降低 30%**：結構化 JSON 輸出取代長篇 Markdown 作文，且完全消除了正則失敗時觸發的補償性重試（`RETRY_COMPENSATORY_PROMPT`）。
+* **交易所請求增加為 0**：4H 週期由本地 30m K 線動態聚合，Replay 模式 100% 離線隔離。
+
+### 7.3 四重內建防禦護欄
+1. **並發信號量隔離（`asyncio.Semaphore(3)`）**：同時間最多 3 個 Agent 調用 LLM，防止瞬間併發超過 API Rate Limit。
+2. **辯論輪數與超時截斷（45s/180s Timeout）**：硬性限制辯論次數與單次等待時間，杜絕 LLM 思考死循環。
+3. **下單冷卻防連擊（`_insurance_on_cooldown`）**：強制同向操作冷卻間隔，防止短時間重複下單。
+4. **狀態機安全降級（Fail-Open Fallback）**：遭遇不可解析或非法動作時，一律安全回退為 `HOLD`（觀望）並記入日誌，絕不產生幽靈訂單。
+
+---
+
+## 8. 檔案存放與知識庫索引
 
 * **計劃書本體**：`docs/research/vbt-architecture-strategy-improvement-plan.md`
 * **知識庫索引**：已整合至 VitePress「研究與競品分析」專欄目錄。
