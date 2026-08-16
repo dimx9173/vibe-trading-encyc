@@ -117,35 +117,35 @@ graph LR
 > **狀態**: 規劃完成，即刻按分段驗證節奏實施。
 
 #### Step 1: 核心動作模型、做空提示詞與結構化輸出 (P0) ⏳
-- [ ] **1.1 動作枚舉擴充 (`agents/decision/trading_tools.py`)**：
+- [x] **1.1 動作枚舉擴充 (`agents/decision/trading_tools.py`)**：
   - 定義 `PositionAction`（`OPEN_LONG`, `OPEN_SHORT`, `ADD_LONG`, `ADD_SHORT`, `TP_PARTIAL`, `CLOSE_ALL`, `TRAIL_STOP`, `HOLD`）。
-- [ ] **1.2 纏論空頭獵手改造 (`config/prompts.py`)**：
+- [x] **1.2 纏論空頭獵手改造 (`config/prompts.py`)**：
   - `BEAR_RESEARCHER_PROMPT` 注入纏論三類賣點（一賣：頂背馳、二賣：反彈不過前高、三賣：破中樞回抽受阻），主動提議 `OPEN_SHORT`。
-- [ ] **1.3 結構化輸出消除兜底 (`agents/decision/trading_tools.py`)**：
+- [x] **1.3 結構化輸出消除兜底 (`agents/decision/trading_tools.py`)**：
   - 定義 Pydantic `PortfolioDecisionOutput` 結構體，以 Tool Calling 取代 Regex 解析，將 34.7% Scorecard 兜底降至 0%。
-- [ ] **1.4 狀態動態注入與 Reasoning Effort (`coordinator/trading_coordinator.py`)**：
+- [x] **1.4 狀態動態注入與 Reasoning Effort (`coordinator/trading_coordinator.py`)**：
   - 根據當前持倉動態生成 `valid_actions` 注入 PM Context；為 PM & RM 配置 `reasoning_effort="high"`（CoT 深度推理）。
 - [ ] **1.5 第一階段伺服器煙霧測試驗證 (`vbtpc`)**：
   - 運行 1-Bar / 3-Bar Replay 驗證產生 `OPEN_SHORT` 且 0% 兜底。
 
 #### Step 2: Python 嚴謹量化數學與進取型倉位引擎 (P0) ⏳
-- [ ] **2.1 Half-Kelly 計算引擎 (`execution/position_sizing.py` 新模組)**：
+- [x] **2.1 Half-Kelly 計算引擎 (`execution/position_sizing.py` 新模組)**：
   - 實作 $f^* = 0.5 \cdot \frac{bp - q}{b}$，依 AI 提供的點位精確計算真實盈虧比 $b$ 與校準勝率 $p$。
-- [ ] **2.2 ATR 波動率調倉與進取型風控門禁**：
+- [x] **2.2 ATR 波動率調倉與進取型風控門禁**：
   - 結合 30m ATR 動態計算開倉數量；設定單筆上限 **500 USDT**（5% 本金）、槓桿上限 **5x**。
-- [ ] **2.3 部位全生命週期執行器 (`execution/order_executor.py`)**：
+- [x] **2.3 部位全生命週期執行器 (`execution/order_executor.py`)**：
   - 支援 SHORT 部位保證金管理、`TP_PARTIAL` 分批平倉 33% 並啟動保本止損、`TRAIL_STOP` 移動鎖利。
 
 #### Step 3: 30m + 4H 多週期技術融合、影子帳戶與 Tearsheet 淚表 (P1) ⏳
-- [ ] **3.1 雙週期技術指標注入 (`coordinator/trading_coordinator.py`)**：
+- [x] **3.1 雙週期技術指標注入 (`coordinator/trading_coordinator.py`)**：
   - 同時載入 4H K 線計算 EMA20/50 與 4H ADX，一併注入 Technical Analyst 提示詞中，進行宏觀順勢共振。
-- [ ] **3.2 Replay 4H 歷史隔離支援 (`replay/replay_tool_isolation.py`)**：
+- [x] **3.2 Replay 4H 歷史隔離支援 (`replay/replay_tool_isolation.py`)**：
   - 支援 4H 歷史數據無未來數據洩漏讀取；微結構特徵在缺 Taker 數據時自動回傳 0.0 中性。
-- [ ] **3.3 影子帳戶反思與 Tearsheet 淚表組件 (`memory/reflection.py` & `replay/tearsheet.py`)**：
+- [x] **3.3 影子帳戶反思與 Tearsheet 淚表組件 (`memory/reflection.py` & `replay/tearsheet.py`)**：
   - 背景平行模擬反事實決策（HOLD 時模擬做空，TP 時模擬持倉）；產出月度收益熱力圖與回撤區間分析。
 
 #### Step 4: 終極回測對比與實盤驗證 (驗證) ⏳
-- [ ] **4.1 伺服器端 398-Bar Replay V2 回測 (`vbtpc`)**：
+- [ ] **4.1 伺服器端 398-Bar Replay V4 回測 (運行中) (`vbtpc`)**：
   - 執行 398 根 Bar 完整回測，輸出 `replay_v2_report.md`。
 - [ ] **4.2 驗證達標標準**：
   - 做空決策 (SHORT) 佔比達 25% ~ 45%。

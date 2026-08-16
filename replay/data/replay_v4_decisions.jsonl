@@ -1,0 +1,1 @@
+{"symbol": "BTCUSDT", "interval": "30m", "bar_open_ms": 1786123800000, "bar_close": 64764.33, "decision": "HOLD", "rationale": "Decision: HOLD\nRationale: 情绪面表现疲弱，因此建议HOLD", "rationale_full": "Decision: HOLD\nRationale: 情绪面表现疲弱，因此建议HOLD", "confidence": 0.4, "elapsed_s": 137.7, "ts": "2026-08-16T18:12:58+00:00", "account": {"balance": 10000.0, "positions": [], "equity": 10000.0}}
