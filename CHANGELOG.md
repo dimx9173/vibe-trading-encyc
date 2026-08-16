@@ -5,6 +5,8 @@
 ## [Unreleased]
 
 ### Fixed
+- **回測報告 P&L 嚴重高估虧損**: `agent_report` 用 balance 變化算 realized/total, 但 balance 是可用餘額 (開倉/加倉扣未返還 margin) → 把 margin 當虧損 (一週 -150 實為 -16.5)。修: total 用 (equity + 未返還 margin), realized/unrealized/win_rate 亦 margin-aware
+### Fixed
 - **回測管線 skip_debate bug**: `set_settings(**{**settings.__dict__, ...})` 傳 kwargs dict 給收 Settings 物件的函式 → TypeError 使回測完全跑不動; 改 `Settings(**{...})` 重建
 - **回測 LLM cache wrapper**: 對 Trader/PM 包錯物件 (`agent.prompt` 不存在) → cache 完全失效; 改解析實際 `_agent.prompt` 讓 cache 對所有角色生效
 - **Sentiment 分析師 funding_rate 崩潰**: `data["funding_rate"]["funding_rate"]` 在資料源回 error dict 時拋 KeyError; 加容錯降級 (N/A 標記, 不崩潰)

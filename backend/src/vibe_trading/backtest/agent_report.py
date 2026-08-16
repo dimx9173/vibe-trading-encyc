@@ -54,15 +54,37 @@ def _account_balance(rec: Dict) -> float:
     return 0.0
 
 
-def _realized_via_roundtrips(records: List[Dict[str, Any]], initial_balance: float) -> float:
-    """已平倉 P&L: 累計 balance 變化中扣除 mark-to-market 的部分.
+def _locked_margin(positions: list) -> float:
+    """未平倉持倉鎖定的 margin (平倉時返還, 不應算作已實現虧損).
 
-    簡化: balance 只在平倉/費用時變化; 未平倉的浮動體現在 equity−balance。
-    realized = 末 balance − 初 balance (含費用, 不含浮動)。
+    每倉 margin = entry_price × position_amount / leverage.
+    """
+    total = 0.0
+    for p in positions:
+        try:
+            total += float(p["entry_price"]) * float(p["position_amount"]) / float(p.get("leverage", 1))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return total
+
+
+def _unrealized_pnl(rec: Dict) -> float:
+    """期末未平倉浮動損益 = equity − balance."""
+    return _account_equity(rec) - _account_balance(rec)
+
+
+def _realized_via_roundtrips(records: List[Dict[str, Any]], initial_balance: float) -> float:
+    """已平倉 P&L (含費用, 不含浮動, 不含未返還 margin).
+
+    balance 是可用餘額 (開倉/加倉扣 margin, 平倉返還 + realized)。因此
+    有效已實現損益 = balance 變化 + 期末未返還 margin (強平時返還的部分)。
     """
     if not records:
         return 0.0
-    return _account_balance(records[-1]) - initial_balance
+    end_balance = _account_balance(records[-1])
+    end_margin = _locked_margin(records[-1].get("account", {}).get("positions", [])) \
+        if isinstance(records[-1].get("account"), dict) else 0.0
+    return (end_balance + end_margin) - initial_balance
 
 
 def build_report(
@@ -94,21 +116,28 @@ def build_report(
 
     start_equity = records[0].equity if records else initial_balance
     end_equity = records[-1].equity if records else initial_balance
-    total_pnl = end_equity - start_equity
-    realized = _realized_via_roundtrips(raw, records[0].balance if records else initial_balance)
-    unrealized = total_pnl - realized
+    end_margin = _locked_margin(records[-1].positions) if records else 0.0
+    # 真實總損益 = (期末 equity + 未返還 margin) − 期初 equity
+    # (margin 平倉時返還, 不應計為虧損)
+    total_pnl = (end_equity + end_margin) - start_equity
+    unrealized = _unrealized_pnl(raw[-1]) if raw else 0.0  # 期末浮動
+    realized = total_pnl - unrealized
 
-    # Win rate: 已平倉 round-trip = balance 上升的 bar 比例 (排除無平倉 bar)
+    # Win rate: 已平倉 round-trip = 「有效已實現」為正的 bar 比例
+    # 有效 = balance Δ − margin Δ (開倉/加倉扣 margin 不計; 平倉返還 margin + realized 才計)
     closed_bars = 0
     winning = 0
     prev_balance = records[0].balance if records else initial_balance
+    prev_margin = _locked_margin(records[0].positions) if records else 0.0
     for rec in records[1:]:
-        delta = rec.balance - prev_balance
-        if abs(delta) > 1e-9:  # balance 變動 = 有平倉/費用事件
+        cur_margin = _locked_margin(rec.positions)
+        eff_delta = (rec.balance - prev_balance) - (cur_margin - prev_margin)
+        if abs(eff_delta) > 1e-9:  # 有已實現事件 (平倉/費用/realized)
             closed_bars += 1
-            if delta > 0:
+            if eff_delta > 0:
                 winning += 1
         prev_balance = rec.balance
+        prev_margin = cur_margin
     win_rate = (winning / closed_bars) if closed_bars else 0.0
 
     decision_counts = dict(Counter(r.decision for r in records))

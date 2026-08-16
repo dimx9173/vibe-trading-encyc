@@ -185,3 +185,49 @@ class TestToolIsolation:
             assert isinstance(result, dict)
         finally:
             await storage.close()
+
+
+def _margin_records():
+    """含未平倉持倉的場景: balance 扣了 margin, 但 margin 平倉返還, 不應算虧損."""
+    return [
+        {
+            "symbol": "BTCUSDT", "interval": "30m",
+            "bar_open_ms": 1784876400000, "bar_close": 100.0,
+            "decision": "BUY", "confidence": 0.8, "elapsed_s": 1.0,
+            "account": {"balance": 10000.0, "positions": [], "equity": 10000.0},
+        },
+        {
+            "symbol": "BTCUSDT", "interval": "30m",
+            "bar_open_ms": 1784878200000, "bar_close": 100.0,
+            "decision": "BUY", "confidence": 0.8, "elapsed_s": 1.0,
+            # 開倉 0.1 @ 100, 5x → margin 2.0 鎖定; equity = balance + 浮動(0) = 9998
+            "account": {"balance": 9998.0, "positions": [
+                {"symbol": "BTCUSDT", "position_side": "LONG",
+                 "position_amount": 0.1, "entry_price": 100.0,
+                 "unrealized_profit": 0.0, "leverage": 5}],
+                "equity": 9998.0},
+        },
+        {
+            "symbol": "BTCUSDT", "interval": "30m",
+            "bar_open_ms": 1784880000000, "bar_close": 105.0,
+            "decision": "HOLD", "confidence": 0.6, "elapsed_s": 1.0,
+            # 價格升到 105 → 浮動 +0.5; balance 仍扣 2 margin; equity = 9998 + 0.5 = 9998.5
+            "account": {"balance": 9998.0, "positions": [
+                {"symbol": "BTCUSDT", "position_side": "LONG",
+                 "position_amount": 0.1, "entry_price": 100.0,
+                 "unrealized_profit": 0.5, "leverage": 5}],
+                "equity": 9998.5},
+        },
+    ]
+
+
+class TestReportMarginAware:
+    def test_total_pnl_excludes_locked_margin(self):
+        with tempfile.TemporaryDirectory() as td:
+            log = _write_jsonl(Path(td) / "d.jsonl", _margin_records())
+            result = build_report(str(log), with_cost=False)
+            # 真實總損益: (equity 9998.5 + 未返還 margin 2.0) − 10000 = +0.5 (浮動獲利)
+            assert result.total_pnl == pytest.approx(0.5)
+            # 已實現: total − unrealized(浮動 +0.5) = 0.0 (無平倉/費用)
+            assert result.realized_pnl == pytest.approx(0.0)
+            assert result.unrealized_pnl == pytest.approx(0.5)
