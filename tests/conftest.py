@@ -34,6 +34,24 @@ def pytest_collection_modifyitems(session, config, items):
 import pytest
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _clear_persistent_file_cache():
+    """
+    HybridCache persists to ./cache/*.cache (file TTL 1h). A live vbt /
+    backtest process writes real market data there, which then pollutes
+    tool tests (e.g. get_open_interest returns a real cached value instead
+    of the mocked one). Clear the file cache before each test session.
+    """
+    import asyncio
+    from vibe_trading.data_sources.cache import get_global_cache
+    cache = get_global_cache()
+    try:
+        asyncio.run(cache.clear())
+    except Exception:
+        pass
+    yield
+
+
 @pytest.fixture(autouse=True)
 def _isolate_checkpoint_db():
     """

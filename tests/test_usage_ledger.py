@@ -147,7 +147,7 @@ class TestUsageLedger:
         now = datetime(2026, 8, 15, 12, 0, tzinfo=timezone.utc)
         ts1 = now - timedelta(hours=2)  # Today
         ts2 = now - timedelta(hours=6)  # Today
-        ts3 = now - timedelta(days=1, hours=2)  # Yesterday
+        ts3 = now - timedelta(hours=20)  # Yesterday (08-14 16:00, 在 days=2 cutoff 內)
 
         await ledger.record_usage("agent1", "model1", "BTCUSDT", 100, 50, 0.01, timestamp=ts1)
         await ledger.record_usage("agent2", "model1", "ETHUSDT", 200, 100, 0.02, timestamp=ts2)

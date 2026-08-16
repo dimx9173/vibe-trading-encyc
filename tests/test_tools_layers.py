@@ -346,7 +346,7 @@ class TestFundingAndInterest:
         client.close = AsyncMock()
         with patch.object(market_data_tools, "BinanceClient",
                           return_value=client):
-            result = await market_data_tools.get_open_interest("BTCUSDT")
+            result = await market_data_tools.get_open_interest("ETHUSDT")
         assert result["open_interest"] == 1234.5
         assert result["timestamp"] == 999
 

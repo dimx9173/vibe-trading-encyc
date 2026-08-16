@@ -5,6 +5,8 @@
 ## [Unreleased]
 
 ### Fixed
+- **測試穩定性**: 隔離 HybridCache 文件持久化 (`./cache`) — 運行中 vbt/回測寫入的真實市場資料不再汙染工具測試 (get_open_interest 等); 修 usage ledger daily summary 測試 cutoff bug
+### Fixed
 - **回測報告 P&L 嚴重高估虧損**: `agent_report` 用 balance 變化算 realized/total, 但 balance 是可用餘額 (開倉/加倉扣未返還 margin) → 把 margin 當虧損 (一週 -150 實為 -16.5)。修: total 用 (equity + 未返還 margin), realized/unrealized/win_rate 亦 margin-aware
 ### Fixed
 - **回測管線 skip_debate bug**: `set_settings(**{**settings.__dict__, ...})` 傳 kwargs dict 給收 Settings 物件的函式 → TypeError 使回測完全跑不動; 改 `Settings(**{...})` 重建
