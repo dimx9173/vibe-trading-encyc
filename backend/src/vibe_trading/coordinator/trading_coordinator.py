@@ -745,8 +745,12 @@ class TradingCoordinator:
 
             # ===== Grounding Gate (Roadmap Phase 1.2) =====
             # 校驗 TradingPlan 價格 vs 當前 bar OHLC; 違規 → 降級 HOLD
+            # Phase 5 R3: HOLD 決策無執行意圖, 其計畫 (Trader 建議) 不需
+            # 經 grounding 價格校驗 — 避免誤報「違規」噪音 (V3 回測實證).
             grounding_result: Dict[str, Any] = {"passed": True, "violations": [], "checked_points": 0, "reason": None}
-            if trading_plan is not None and getattr(trading_plan, "entry_orders", None) is not None:
+            pm_action = str(final_decision.get("decision", "HOLD")).upper()
+            is_trade_decision = not any(k in pm_action for k in ("HOLD", "UNKNOWN"))
+            if is_trade_decision and trading_plan is not None and getattr(trading_plan, "entry_orders", None) is not None:
                 try:
                     from vibe_trading.execution.grounding_gate import validate_trading_plan_prices
                     latest = context.klines[-1] if getattr(context, "klines", None) else None
