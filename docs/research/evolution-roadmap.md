@@ -1,10 +1,10 @@
 # 主專案技術演進與架構升級路線圖（Roadmap 報告）
 
 > **文檔狀態**：正式技術路線圖（Technical Evolution Roadmap）  
-> **更新日期**：2026-08-16  
+> **更新日期**：2026-08-17  
 > **修訂記錄**：
 > - 2026-08-15：標記 Phase 1 ~ Phase 4 基建完成（QuantLib, StackVM, Alpha Mining, CEX/DEX 矩陣, RunManifest）。
-> - 2026-08-16：**新增 Phase 5 雙向對稱決策與量化倉位實戰演進**（基於 398-Bar Replay 發現與 `Brian_Notes/wiki/Theory` 理論庫、`AlphaGPT`、`HKUDS` 借鏡，明確標記已完成與待實施項目）。  
+> - 2026-08-16~17：**新增 Phase 5 雙向對稱決策與量化倉位實戰演進**（基於 398-Bar Replay 發現與 `Brian_Notes/wiki/Theory` 理論庫、`AlphaGPT`、`HKUDS` 借鏡，吸納 Reasoning Effort 深度推理與 Tearsheet 淚表，明確標記已完成與待實施項目）。  
 > **核心戰略**：**專注加密貨幣 CEX / DEX 垂直深耕**，以「AI 定性認知與結構點位 + Python 嚴謹量化與邊界防禦」的混合架構，實現自適應雙向獲利。
 
 ---
@@ -20,7 +20,7 @@ graph LR
     P1["Phase 1: 決策防護基建 ✅<br>(QuantLib + Grounding Gate)"] --> P2["Phase 2: 微觀因子與運算元 ✅<br>(6大微結構特徵 + StackVM)"]
     P2 --> P3["Phase 3: 因子挖掘與假說庫 ✅<br>(演化式搜尋 + Hypothesis)"]
     P3 --> P4["Phase 4: 全鏈路 Crypto 矩陣 ✅<br>(CEX/DEX + RunManifest + MCP)"]
-    P4 --> P5["Phase 5: 雙向對稱決策與量化倉位 🚧<br>(合約全動作 + 纏論賣點 + Half-Kelly + 雙週期)"]
+    P4 --> P5["Phase 5: 雙向對稱決策與量化倉位 🚧<br>(合約全動作 + 纏論賣點 + Half-Kelly + Tearsheet)"]
 ```
 
 ---
@@ -51,8 +51,10 @@ graph LR
 │          - PositionAction 合約動作模型 (OPEN_SHORT, TP_PARTIAL, TRAIL_STOP, CLOSE_ALL) │
 │          - Bear Researcher 纏論一賣/二賣/三賣 提示詞改造 (根除 0% 做空缺陷)             │
 │          - PortfolioDecisionOutput (Pydantic Tool Calling, 根除 34.7% 兜底)            │
+│          - Reasoning Effort 深度推理透傳 (PM & RM 啟用 CoT 深度思考)                    │
 │          - Python Half-Kelly + ATR 波動率倉位引擎 (進取型 Max 500 USDT, 5x 槓桿)        │
 │          - 30m + 4H 雙週期技術分析融合 + Replay 歷史隔離適配                            │
+│          - 回測 Tearsheet 淚表 (月度收益熱力圖 + Top-N 最大回撤區間分析)                 │
 │          - 伺服器端 398-Bar Replay V2 A/B 對比回測 (目標 PnL 轉正, 做空佔比 25%~45%)     │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -111,7 +113,7 @@ graph LR
 
 ### 🚧 Phase 5：雙向對稱決策與量化倉位實戰（待實施 / 進行中）
 > **起因**：2026-08-16 完成 398-Bar Server Replay 分析，發現 100% 多頭偏置（零做空）、缺乏倉位管理、34.7% 評分卡兜底。  
-> **改善依據**：`docs/research/vbt-architecture-strategy-improvement-plan.md` (v1.3)  
+> **改善依據**：`docs/research/vbt-architecture-strategy-improvement-plan.md` (v1.6)  
 > **狀態**: 規劃完成，即刻按分段驗證節奏實施。
 
 #### Step 1: 核心動作模型、做空提示詞與結構化輸出 (P0) ⏳
@@ -121,8 +123,8 @@ graph LR
   - `BEAR_RESEARCHER_PROMPT` 注入纏論三類賣點（一賣：頂背馳、二賣：反彈不過前高、三賣：破中樞回抽受阻），主動提議 `OPEN_SHORT`。
 - [ ] **1.3 結構化輸出消除兜底 (`agents/decision/trading_tools.py`)**：
   - 定義 Pydantic `PortfolioDecisionOutput` 結構體，以 Tool Calling 取代 Regex 解析，將 34.7% Scorecard 兜底降至 0%。
-- [ ] **1.4 狀態動態注入 (`coordinator/trading_coordinator.py`)**：
-  - 根據當前持倉動態生成 `valid_actions` 注入 PM Context（無持倉不出現止盈，有持倉出現 TP/TRAIL）。
+- [ ] **1.4 狀態動態注入與 Reasoning Effort (`coordinator/trading_coordinator.py`)**：
+  - 根據當前持倉動態生成 `valid_actions` 注入 PM Context；為 PM & RM 配置 `reasoning_effort="high"`（CoT 深度推理）。
 - [ ] **1.5 第一階段伺服器煙霧測試驗證 (`vbtpc`)**：
   - 運行 1-Bar / 3-Bar Replay 驗證產生 `OPEN_SHORT` 且 0% 兜底。
 
@@ -134,13 +136,13 @@ graph LR
 - [ ] **2.3 部位全生命週期執行器 (`execution/order_executor.py`)**：
   - 支援 SHORT 部位保證金管理、`TP_PARTIAL` 分批平倉 33% 並啟動保本止損、`TRAIL_STOP` 移動鎖利。
 
-#### Step 3: 30m + 4H 多週期技術融合與影子帳戶 (P1) ⏳
+#### Step 3: 30m + 4H 多週期技術融合、影子帳戶與 Tearsheet 淚表 (P1) ⏳
 - [ ] **3.1 雙週期技術指標注入 (`coordinator/trading_coordinator.py`)**：
   - 同時載入 4H K 線計算 EMA20/50 與 4H ADX，一併注入 Technical Analyst 提示詞中，進行宏觀順勢共振。
 - [ ] **3.2 Replay 4H 歷史隔離支援 (`replay/replay_tool_isolation.py`)**：
   - 支援 4H 歷史數據無未來數據洩漏讀取；微結構特徵在缺 Taker 數據時自動回傳 0.0 中性。
-- [ ] **3.3 影子帳戶反思迴圈 (`memory/reflection.py`)**：
-  - 背景平行模擬反事實決策（HOLD 時模擬做空，TP 時模擬持倉），生成 24h 對比矩陣。
+- [ ] **3.3 影子帳戶反思與 Tearsheet 淚表組件 (`memory/reflection.py` & `replay/tearsheet.py`)**：
+  - 背景平行模擬反事實決策（HOLD 時模擬做空，TP 時模擬持倉）；產出月度收益熱力圖與回撤區間分析。
 
 #### Step 4: 終極回測對比與實盤驗證 (驗證) ⏳
 - [ ] **4.1 伺服器端 398-Bar Replay V2 回測 (`vbtpc`)**：
@@ -150,6 +152,7 @@ graph LR
   - 總體淨盈虧 (PnL) 顯著轉正（目標 +3% ~ +8%）。
   - 最大賬戶回撤 (MDD) 控制在 3.0% 以內。
   - Scorecard 兜底率為 0%。
+  - 產出包含月度收益熱力圖與 Top-N 回撤事件的完整 Tearsheet 淚表。
 
 ---
 
@@ -161,7 +164,7 @@ graph LR
 | **Phase 2** | `M2-FactorVM` | • 6 微觀結構特徵庫 (pressure 用真實 taker_buy) ✅<br>• StackVM 符號運算元 (12 ops) ✅<br>• 永續回測保真度 (8h 資金費率 + 分級維持保證金) ✅ | **✅ 已完成** (2026-08-15) |
 | **Phase 3** | `M3-AlphaEvolution` | • Alpha Mining Agent (演化式搜尋, **非 RL**) ✅<br>• 張量因子預篩打分器 ✅<br>• P3 假說庫自動沈澱閉環 ✅ | **✅ 已完成** (2026-08-15) |
 | **Phase 4** | `M4-CryptoNexus` | • Binance/OKX/Bybit/Bitget/Hyperliquid/Jupiter 執行器 ✅<br>• 動態標的宇宙 + 退出階梯 ✅<br>• RunManifest 方法論指紋 + Crypto MCP Server ✅ | **✅ 已完成** (2026-08-15) |
-| **Phase 5** | `M5-DualAlpha` | • **Step 1**: PositionAction + 纏論做空 Prompt + Pydantic Schema ⏳<br>• **Step 2**: Python Half-Kelly + 500U/5x 倉位引擎 + 33% 分批止盈 ⏳<br>• **Step 3**: 30m+4H 雙週期融合 + 影子帳戶反思 ⏳<br>• **Step 4**: 伺服器端 398-Bar Replay V2 回測對比 ⏳ | **🚧 進行中 / 待實施** (2026-08-16 啟動) |
+| **Phase 5** | `M5-DualAlpha` | • **Step 1**: PositionAction + 纏論做空 + Pydantic Schema + Reasoning Effort ⏳<br>• **Step 2**: Python Half-Kelly + 500U/5x 倉位引擎 + 33% 分批止盈 ⏳<br>• **Step 3**: 30m+4H 雙週期融合 + 影子反思 + Tearsheet 淚表 ⏳<br>• **Step 4**: 伺服器端 398-Bar Replay V2 回測對比 ⏳ | **🚧 進行中 / 待實施** (2026-08-16~17 啟動) |
 
 ---
 
@@ -169,4 +172,4 @@ graph LR
 
 透過本升級路線圖的推進：
 1. 主專案已奠定 **`QuantLib` + `Grounding Gate` + `StackVM` + `CEX/DEX 多所矩陣`**（Phase 1~4）的強大底層基建；
-2. 當前正聚焦於 **Phase 5 雙向對稱決策與量化倉位實戰**，透過纏論三類賣點徹底釋放做空盈利空間，並以「AI 定性 + Python Half-Kelly 定量」解決倉位與止盈痛點，打造可真正實戰盈利的加密貨幣多智能體量化系統。
+2. 當前正聚焦於 **Phase 5 雙向對稱決策與量化倉位實戰**，透過纏論三類賣點徹底釋放做空盈利空間，並以「AI 定性 + Python Half-Kelly 定量 + Reasoning Effort 深度推理 + Tearsheet 專業淚表」全面升級策略與決策能力，打造可真正實戰盈利的加密貨幣多智能體量化系統。

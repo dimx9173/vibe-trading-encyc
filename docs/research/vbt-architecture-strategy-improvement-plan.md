@@ -1,12 +1,12 @@
 # VBT 交易架構與策略改善計劃書 (Architecture & Strategy Improvement Plan)
 
-> **版本**：v1.5 (多頭偏斜根因剖析與架構升級定稿版)  
+> **版本**：v1.6 (吸納 Reasoning Effort 與 Tearsheet 升級定案版)  
 > **更新日期**：2026-08-17  
 > **關聯專案**：`vibe-trading` / `vibe-trading-encyc`  
 > **理論與借鏡庫**：
 > - `Brian_Notes/wiki/Theory`（凱利公式、倉位管理、纏論動力學、市場體制、風險地圖）
 > - `AlphaGPT`（微結構因子挖掘、買賣壓力不平衡 `pressure`、FOMO 加速度、StackVM 算子）
-> - `HKUDS/Vibe-Trading`（Alpha Zoo 462+ 經典量化因子庫、影子帳戶 Shadow Account 學習迴圈）
+> - `HKUDS/Vibe-Trading`（Alpha Zoo 462+ 經典因子庫、影子帳戶 Shadow Account、**Reasoning Effort 透傳、Tearsheet 淚表**）
 > **回測依據**：398-Bar（2026-07-31 至 2026-08-15）BTCUSDT 30m Server Replay 分析
 
 ---
@@ -72,14 +72,16 @@ flowchart TD
     subgraph HKUDS_Base ["3. HKUDS Vibe-Trading 基建體系"]
         H1["Alpha Zoo 因子動物園 (462+ WorldQuant / Qlib 經典因子)"]
         H2["影子帳戶反思學習迴圈 (Shadow Account Loop)"]
+        H3["Reasoning Effort 深度推理透傳 (Claude / DeepSeek CoT)"]
+        H4["回測 Tearsheet 淚表 (月度收益熱力圖 + Top-N 回撤區間)"]
     end
 
     subgraph VBT_Upgrade ["🎯 VBT 核心架構升級成果"]
         V1["Technical Analyst: 30m+4H 多週期 + Alpha Zoo + 盤口微結構"]
         V2["Bear Researcher: 纏論一賣/二賣/三賣 主動做空發起"]
         V3["Trader & Risk: Python Half-Kelly 數學引擎 + ATR 波動率調倉"]
-        V4["Portfolio Manager: 全生命週期動作 (OPEN/ADD/TP/TRAIL/CLOSE)"]
-        V5["Trade Reflector: 影子帳戶對比反思，自適應動態調參"]
+        V4["Portfolio Manager: 全生命週期動作 + Reasoning Effort 深度決策"]
+        V5["Replay Engine: Tearsheet 專業淚表 + 影子帳戶對比反思"]
     end
 
     Theory_Base --> VBT_Upgrade
@@ -95,7 +97,8 @@ flowchart TD
 | **東方纏論技術體系**<br/>(`Brian_Notes/Theory/Chan_Theory`) | 頂底分型、MACD 面積背馳、<br/>**一賣（轉折空）、二賣（確認空）、三賣（破位空）** | **Bear Researcher & Technical Analyst**：<br/>注入頂部結構與背馳做空邏輯，徹底解決 0% 做空缺陷。 |
 | **微結構 Alpha 因子**<br/>(`AlphaGPT`) | • 買賣力量不平衡 (`pressure`)<br/>• 成交量加速度 (`fomo`)<br/>• 波動率聚集 (`vol_cluster`) | **Technical Analyst 特徵擴充**：<br/>提前 1~3 根 Bar 捕捉多空量能爆發與衰竭，在 FOMO 頂部精準平倉。 |
 | **算子門控機制**<br/>(`AlphaGPT`) | • `JUMP` (極端跳變檢測 $Z > 3$)<br/>• `GATE` (條件門控順勢過濾) | **風險與執行層 Guardrails**：<br/>防止極端插針時追高殺跌，強制在強趨勢下過濾逆勢信號。 |
-| **Alpha Zoo 因子動物園**<br/>(`HKUDS/Vibe-Trading`) | 462+ 預建量化因子庫 (Alpha101 / Qlib158 / GTJA191) | **分析師特徵增強**：<br/>提供頂級量化數學因子得分，大幅提升 Agent 勝率 $p$。 |
+| **Reasoning Effort 透傳**<br/>(`HKUDS/Vibe-Trading`) | Anthropic Extended Thinking / DeepSeek R1 CoT 深度推理 | **PM & RM 決策層增強**：<br/>在關鍵轉折點啟用長鏈思考，顯著提升決策質量與大局觀。 |
+| **專業回測 Tearsheet**<br/>(`HKUDS/Vibe-Trading`) | 月度收益熱力圖 + Top-N 回撤區間分析 (Drawdown Episodes) | **Replay 回測引擎升級**：<br/>產出機構級專業績效報告，精確診斷策略回撤成因。 |
 | **影子帳戶學習迴圈**<br/>(`HKUDS/Vibe-Trading`) | Shadow Account 反事實模擬對比 | **Trade Reflector 反思模組**：<br/>平行模擬未執行的決策（如對沖、延遲止盈），實現自我演化。 |
 
 ---
@@ -113,12 +116,12 @@ flowchart TD
         D4["動態合法動作集 (如: TP_PARTIAL, TRAIL_STOP, HOLD)"]
     end
 
-    subgraph S2 ["2. 多 Agent 專業化推理 (LLM Layer)"]
+    subgraph S2 ["2. 多 Agent 專業化推理 (LLM Layer + Reasoning Effort)"]
         Tech["📈 Tech Analyst (30m+4H 共振 + 纏論背馳 + 微結構特徵)"]
         Bear["🐻 Bear Researcher (運用纏論一賣/二賣/三賣主動尋找做空邏輯)"]
         Bull["🐂 Bull Researcher (運用一買/二買/三買尋找做多邏輯)"]
         RM["👔 Research Manager (多空辯論綜合評級 + 目標點位)"]
-        PM["👨‍💼 Portfolio Manager (裁決 Action 意圖)"]
+        PM["👨‍💼 Portfolio Manager (Reasoning Effort: high 深度推理裁決 Action)"]
     end
 
     subgraph S3 ["3. 結構化通訊 (Pydantic Tool Call)"]
@@ -132,13 +135,14 @@ flowchart TD
         M4["進取型風控約束: 單筆 Max 500 USDT (5% 本金), 槓桿 <= 5x"]
     end
 
-    subgraph S5 ["5. 執行與影子學習層 (Execution & Shadow Loop)"]
+    subgraph S5 ["5. 執行、淚表與影子學習層 (Execution & Tearsheet)"]
         EX["Paper / Binance Order Executor 成交 (TP_PARTIAL 平倉 33%)"]
+        Tearsheet["📊 Tearsheet 淚表分析 (月度收益熱力圖 / Top-N 回撤事件)"]
         Shadow["👻 Shadow Account (背景平行模擬反事實決策，評估改進空間)"]
     end
 
     S1 --> S2 --> S3 --> S4 --> S5
-    S4 --> Shadow
+    S4 --> Tearsheet & Shadow
 ```
 
 ---
@@ -219,8 +223,9 @@ def calculate_microstructure_features(klines_df):
 
 ---
 
-### 模組 6：結構化輸出與零兜底（解決根因 3：消滅 34.7% 硬編碼多頭兜底）
-徹底移除正則表達式，採用 Tool Calling 原生輸出，消滅 `trading_tools.py:808` 行的硬編碼 `WEAK_BUY`：
+### 模組 6：結構化輸出與 Reasoning Effort 深度推理（解決根因 3：消滅兜底）
+* 徹底移除正則表達式，採用 Tool Calling 原生輸出；
+* 為 `PortfolioManager` 與 `ResearchManager` 配置 `reasoning_effort="high"`（或 Thinking 模式），提升長鏈決策質量：
 ```python
 class PortfolioDecisionOutput(BaseModel):
     action: PositionAction
@@ -233,10 +238,12 @@ class PortfolioDecisionOutput(BaseModel):
 
 ---
 
-### 模組 7：HKUDS 影子帳戶反思學習迴圈（Shadow Account Loop）
-在背景運行 `ShadowAccount` 平行模擬反事實決策：
-* **機制**：當實盤 `HOLD` 時，影子帳戶模擬執行 `OPEN_SHORT` 或 `OPEN_LONG`；當實盤 `TP_PARTIAL` 止盈時，影子帳戶模擬 `HOLD_TREND`。
-* **反饋**：每 24 小時由 `TradeReflector` 生成績效對比矩陣，自動微調決策信心閥值。
+### 模組 7：HKUDS 影子帳戶與專業 Tearsheet 淚表分析
+1. **影子帳戶（Shadow Account）**：
+   * 背景平行模擬反事實決策（HOLD 時模擬做空，TP 時模擬持倉），生成 24h 對比矩陣。
+2. **回測 Tearsheet 淚表**：
+   * 產出月度收益熱力圖（Monthly Returns Heatmap）。
+   * 剖析 Top-N 最大回撤事件（Drawdown Episodes），包含起止時間、峰谷落差與恢復週期。
 
 ---
 
@@ -256,7 +263,7 @@ class PortfolioDecisionOutput(BaseModel):
 | **4. `coordinator/trading_coordinator.py`** | **狀態注入、4H 加載與量化對接** | • `_prepare_context()`：載入 4H K 線計算 EMA20/50 與 ADX，並動態生成合法動作集注入 PM Context。<br/>• `_execute_pm_decision()`：接收 PM 點位，自動調用 `position_sizing.py` 計算倉位並下單。 |
 | **5. `execution/order_executor.py`** | **合約部位全生命週期支援** | • 支援建立與管理 `SHORT` 部位（保證金扣除與空頭浮動盈虧計算）。<br/>• 實作 `TP_PARTIAL`（分批平倉 33%、結算已實現盈虧並釋放保證金）。<br/>• 實作 `TRAIL_STOP`（記錄與觸發移動止損線）。 |
 | **6. `tools/market_data_tools.py`** | **AlphaGPT 微結構特徵計算** | • 新增 `get_microstructure_indicators`：計算買賣壓力不平衡 (`pressure`)、FOMO 成交量加速度 (`fomo`) 與收盤區間位置 (`close_pos`)，支援缺數據自動返回中性。 |
-| **7. `memory/reflection.py`** | **HKUDS 影子帳戶反思擴充** | • 擴充 `TradeReflector`：在決策成熟後，比對實盤動作與反事實影子動作的獲利差異，寫入長期記憶庫。 |
+| **7. `memory/reflection.py` & `replay/tearsheet.py`** | **影子反思與 Tearsheet 淚表** | • 擴充 `TradeReflector`：比對實盤與影子動作獲利差異。<br/>• 新增 `tearsheet.py`：產出月度收益熱力圖與回撤區間分析。 |
 | **8. `replay/replay_tool_isolation.py` & `replay_leg_a.py`** | **回測工具隔離與日誌欄位升級** | • 在 `replay_tool_isolation.py` 支援 4H 歷史 K 線與微結構特徵讀取（避免未來數據洩漏）。<br/>• 在 `leg_a_decisions.jsonl` 中記錄 `action`, `kelly_f`, `b_ratio`, `pressure` 等指標。 |
 
 ---
@@ -268,7 +275,7 @@ class PortfolioDecisionOutput(BaseModel):
   ├── 1. prompts.py: 注入纏論三類賣點 (Bear) 與雙週期分析 (Tech)
   ├── 2. trading_tools.py: 定義 PositionAction 枚舉與 Pydantic Output Schema
   ├── 3. market_data_tools.py: 實作 pressure 與 fomo (支援缺數據中性 fallback)
-  ├── 4. trading_coordinator.py: 狀態注入 + Structured Output 對接
+  ├── 4. trading_coordinator.py: 狀態注入 + Structured Output 對接 + Reasoning Effort 配置
   └── 驗證：在伺服器端運行 1-Bar / 3-Bar Replay 煙霧測試，確認能產出 OPEN_SHORT 且 0% Scorecard 兜底。
 
 [Phase 2 (P0)] 量化數學與進取型倉位引擎
@@ -276,10 +283,10 @@ class PortfolioDecisionOutput(BaseModel):
   ├── 2. order_executor.py: 支援 SHORT 部位、TP_PARTIAL 分批平倉 33%、TRAIL_STOP
   └── 驗證：單元測試不同勝率/波動率下的下單規模縮放，驗證浮盈單能主動平倉 33%。
 
-[Phase 3 (P1)] 4H 多週期與影子帳戶反思
+[Phase 3 (P1)] 4H 多週期、影子帳戶與 Tearsheet 淚表
   ├── 1. trading_coordinator.py: 注入 4H EMA/ADX 數據
   ├── 2. replay_tool_isolation.py: 支援 4H Replay 歷史查詢
-  ├── 3. reflection.py: 導入 Shadow Account 影子對比反思
+  ├── 3. reflection.py & tearsheet.py: 導入 Shadow Account 影子反思與回測淚表組件
   └── 驗證：在 4H 下行趨勢中，30m 超賣不再盲目開多，反彈阻力位精準開空。
 
 [Phase 4 (終極驗證)] 398-Bar 二期完整 Replay 回測對比
@@ -289,6 +296,7 @@ class PortfolioDecisionOutput(BaseModel):
       • 淨盈虧 (PnL) 顯著轉正 (目標 +3% ~ +8%)
       • 最大回撤 (MDD) 控制在 3.0% 以內
       • Scorecard 兜底率降至 0%
+      • 生成包含月度熱力圖與回撤區間分析的 Tearsheet 完整報告
 ```
 
 ---
