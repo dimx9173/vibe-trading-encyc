@@ -143,11 +143,13 @@ class TestUsageLedger:
 
     async def test_get_daily_summary(self, ledger):
         """Daily summary should aggregate by date."""
-        # 固定時間戳避免 UTC 凌晨跨日 (now-6h 落在昨天)
-        now = datetime(2026, 8, 15, 12, 0, tzinfo=timezone.utc)
+        # 使用相對真實時間 (而非固定日期): get_daily_summary 內部用 datetime.now()
+        # 做 cutoff, 固定日期在跨天後會使 yesterday 樣本落出 days=2 窗口 (flaky).
+        # ts3 設 now-30h: 必屬昨天, 且 30h < 48h 保證在 days=2 cutoff 內.
+        now = datetime.now(timezone.utc)
         ts1 = now - timedelta(hours=2)  # Today
         ts2 = now - timedelta(hours=6)  # Today
-        ts3 = now - timedelta(hours=20)  # Yesterday (08-14 16:00, 在 days=2 cutoff 內)
+        ts3 = now - timedelta(hours=30)  # Yesterday (30h < 48h cutoff, 穩定屬昨天)
 
         await ledger.record_usage("agent1", "model1", "BTCUSDT", 100, 50, 0.01, timestamp=ts1)
         await ledger.record_usage("agent2", "model1", "ETHUSDT", 200, 100, 0.02, timestamp=ts2)

@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+### Added (Phase 5 — 雙向對稱決策)
+- **PositionAction 合約全生命週期動作** (OPEN_LONG/OPEN_SHORT/ADD_LONG/ADD_SHORT/TP_PARTIAL/CLOSE_ALL/TRAIL_STOP/HOLD) + 依持倉動態 valid_actions (規格書 §4.3)
+- **PortfolioDecisionOutput** Pydantic 結構化決策 schema + **submit_portfolio_decision** tool (非法動作 Fail-Open 降級 HOLD, 護欄 4)
+- **Bear Researcher 纏論三類賣點** (一賣頂背馳/二賣反彈不過前高/三賣破中樞) 主動做空獵手框架
+- **PM prompt 深度推理要求** (Reasoning Effort, 保留 thinking_level=low 防 timeout 護欄)
+
+### Fixed
+- **usage ledger daily summary 時間依賴 flaky**: 測試固定日期 vs 方法用真實 datetime.now() cutoff, 跨天後 yesterday 樣本落出窗口 → 改相對時間
 ### Fixed
 - **測試穩定性**: 隔離 HybridCache 文件持久化 (`./cache`) — 運行中 vbt/回測寫入的真實市場資料不再汙染工具測試 (get_open_interest 等); 修 usage ledger daily summary 測試 cutoff bug
 ### Fixed
