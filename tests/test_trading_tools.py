@@ -216,9 +216,9 @@ class TestDecisionFramework:
             risk_assessment={},
             current_market_data={},
         )
-        # 全部中性: 50*0.3+50*0.25+50*0.2+50*0.15+70*0.1 = 52 (risk medium=70)
-        assert 50 <= sc.overall_score <= 55
-        assert sc.recommended_action == "WEAK_BUY"
+        # Phase 5 R3: 全部中性 → 50 (risk medium=50 中性), 中性=HOLD 非 WEAK_BUY
+        assert sc.overall_score == pytest.approx(50.0)
+        assert sc.recommended_action == "HOLD"
 
     def test_str_scorecard(self):
         f = self._framework()

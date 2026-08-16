@@ -664,11 +664,17 @@ class DecisionFramework:
         else:
             scores["fundamental"] = 50
 
-        # 3. 情绪面得分
+        # 3. 情绪面得分 (Phase 5 R3: 貪婪=過熱風險(反向), 恐懼=機會(反向))
         sent_report = analyst_reports.get("sentiment", "")
-        if "正面" in sent_report or "贪婪" in sent_report:
+        if "贪婪" in sent_report or "极度贪婪" in sent_report:
+            # 貪婪 → 過熱, 傾向做空/減倉 (反向指標)
+            scores["sentiment"] = 40
+        elif "恐惧" in sent_report or "极度恐惧" in sent_report:
+            # 恐懼 → 潛在機會, 傾向做多 (反向指標)
             scores["sentiment"] = 60
-        elif "负面" in sent_report or "恐惧" in sent_report:
+        elif "正面" in sent_report:
+            scores["sentiment"] = 60
+        elif "负面" in sent_report:
             scores["sentiment"] = 40
         else:
             scores["sentiment"] = 50
@@ -682,37 +688,38 @@ class DecisionFramework:
         else:
             scores["research"] = 50
 
-        # 5. 风险评估得分
+        # 5. 风险评估得分 (Phase 5 R3: medium=中性 50, 不預設偏多)
         risk_level = risk_assessment.get("risk_level", "medium")
         if risk_level == "low":
-            scores["risk"] = 90
+            scores["risk"] = 80
         elif risk_level == "medium":
-            scores["risk"] = 70
-        elif risk_level == "high":
             scores["risk"] = 50
+        elif risk_level == "high":
+            scores["risk"] = 35
         elif risk_level == "critical":
-            scores["risk"] = 20
+            scores["risk"] = 15
 
         # 计算总分
         overall_score = sum(scores[k] * weights[k] for k in scores)
 
-        # 确定推荐行动
+        # 确定推荐行动 (Phase 5 R3 修復: 對稱化 + 中性=HOLD)
+        # 一期: 45-70 全 BUY 帶 (中性 50 → WEAK_BUY), SELL 需 <30 → 多頭偏斜
         if overall_score >= 70:
             recommended_action = "STRONG_BUY"
             position_size = "large"
-        elif overall_score >= 55:
+        elif overall_score >= 58:
             recommended_action = "BUY"
             position_size = "medium"
-        elif overall_score >= 45:
+        elif overall_score >= 52:
             recommended_action = "WEAK_BUY"
             position_size = "small"
-        elif overall_score >= 30:
+        elif overall_score >= 45:
             recommended_action = "HOLD"
             position_size = "none"
-        elif overall_score >= 15:
+        elif overall_score >= 38:
             recommended_action = "WEAK_SELL"
             position_size = "small"
-        elif overall_score < 15:
+        elif overall_score >= 28:
             recommended_action = "SELL"
             position_size = "medium"
         else:
