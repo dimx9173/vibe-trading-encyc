@@ -63,6 +63,9 @@ class PaperPosition:
     leverage: int = 5
     unrealized_pnl: float = 0.0
     realized_pnl: float = 0.0
+    # Phase 5 (規格書 §6): 兩段式出場狀態
+    trailing_stop_price: float = 0.0   # 移動止損線 (LONG: 上移下限; SHORT: 下移上限)
+    breakeven_stop_price: float = 0.0  # 保本止損 (TP_PARTIAL 後設為成本價)
 
     @property
     def notional(self) -> float:
@@ -217,6 +220,134 @@ class PaperOrderExecutor(OrderExecutor):
             self._run_exit_ladder(symbol, price)
         except Exception as e:
             logger.warning(f"Exit ladder failed: {e}")
+        # Phase 5: 移動止損線觸發檢查 (TRAIL_STOP)
+        try:
+            self._check_trailing_stops(symbol, price)
+        except Exception as e:
+            logger.warning(f"Trailing stop check failed: {e}")
+
+    # ------------------------------------------------------------------
+    # Phase 5: 合約全生命週期動作執行 (規格書 §6.2/6.3)
+    # ------------------------------------------------------------------
+
+    def _find_position(self, symbol: str) -> Optional["PaperPosition"]:
+        """依 symbol 找持倉 (key 格式: {symbol}_{position_side.value} 小寫)."""
+        for k, p in self._positions.items():
+            if k.startswith(symbol + "_"):
+                return p
+        return None
+
+    def _sync_reduce_position(self, symbol: str, qty: float, price: float) -> None:
+        """同步減倉 (LONG/SHORT 通用) — 結算 realized + 返還保證金.
+
+        place_order 為 async, 而 execute_position_action 由 sync 的
+        update_price 觸發鏈呼叫, 故用 sync 平倉 (不經 async place_order).
+        """
+        pos = self._find_position(symbol)
+        if pos is None or pos.quantity <= 0:
+            return
+        close_qty = min(qty, pos.quantity)
+        if pos.position_side == PositionSide.LONG:
+            realized = (price - pos.entry_price) * close_qty
+        else:
+            realized = (pos.entry_price - price) * close_qty
+        pos.realized_pnl += realized
+        self._realized_pnl += realized
+        self._balance += pos.entry_price * close_qty / pos.leverage + realized
+        pos.quantity -= close_qty
+        logger.info(
+            f"[Phase5] 減倉 {close_qty} {pos.position_side.value} {symbol} @ {price:.2f} "
+            f"(realized {realized:+.2f})"
+        )
+        if pos.quantity <= 0:
+            del self._positions[symbol + "_" + pos.position_side.value]
+
+    def execute_position_action(
+        self,
+        action: str,
+        symbol: str,
+        price: float,
+        take_profit_price: float = 0.0,
+    ) -> dict:
+        """執行合約全生命週期動作 (Phase 5).
+
+        支援: TP_PARTIAL (平 33% + 保本止損) / TRAIL_STOP (移動止損鎖利) /
+              CLOSE_ALL (全平). 與持倉狀態衝突的動作安全降級 HOLD (護欄 4).
+
+        Returns:
+            {"action": str, "status": "executed"|"degraded"|"noop", "detail": str}
+        """
+        pos = next((p for p in self._positions.values() if p.symbol == symbol), None)
+        if action in ("CLOSE_ALL", "TP_PARTIAL", "TRAIL_STOP") and pos is None:
+            return {"action": action, "status": "degraded",
+                    "detail": "無持倉, 動作降級 HOLD (護欄 4)"}
+        if action == "TP_PARTIAL":
+            return self._execute_tp_partial(symbol, price)
+        if action == "TRAIL_STOP":
+            return self._execute_trail_stop(symbol, price)
+        if action == "CLOSE_ALL":
+            return self._execute_close_all(symbol, price)
+        return {"action": action, "status": "noop", "detail": "HOLD 或非執行動作"}
+
+    def _execute_tp_partial(self, symbol: str, price: float) -> dict:
+        """部分止盈: 平 33% 結算已實現, 剩餘 67% 設保本止損 (規格書 §6.2)."""
+        pos = self._find_position(symbol)
+        if pos is None:
+            return {"action": "TP_PARTIAL", "status": "degraded", "detail": "無持倉"}
+        close_qty = pos.quantity * 0.33
+        self._sync_reduce_position(symbol, close_qty, price)
+        # 剩餘 67% 設保本止損 (成本價)
+        pos = self._find_position(symbol)
+        if pos is not None:
+            pos.breakeven_stop_price = pos.entry_price
+        return {"action": "TP_PARTIAL", "status": "executed",
+                "detail": f"平倉 33% ({close_qty:.4f}) @ {price:.2f}, 剩餘設保本止損"}
+
+    def _execute_trail_stop(self, symbol: str, price: float) -> dict:
+        """移動止損: 更新止損線 (多單上移下限 / 空單下移上限) (規格書 §6.3)."""
+        pos = self._find_position(symbol)
+        if pos is None:
+            return {"action": "TRAIL_STOP", "status": "degraded", "detail": "無持倉"}
+        if pos.position_side == PositionSide.LONG:
+            pos.trailing_stop_price = max(pos.trailing_stop_price, price)
+        else:
+            new_trail = price if pos.trailing_stop_price == 0 else min(pos.trailing_stop_price, price)
+            pos.trailing_stop_price = new_trail
+        return {"action": "TRAIL_STOP", "status": "executed",
+                "detail": f"移動止損線更新至 {pos.trailing_stop_price:.2f}"}
+
+    def _execute_close_all(self, symbol: str, price: float) -> dict:
+        """全平離場 (規格書 §6)."""
+        key = next((k for k in self._positions if k.startswith(symbol + "_")), None)
+        if key is None:
+            return {"action": "CLOSE_ALL", "status": "degraded", "detail": "無持倉"}
+        pos = self._positions[key]
+        self._sync_reduce_position(symbol, pos.quantity, price)
+        return {"action": "CLOSE_ALL", "status": "executed",
+                "detail": f"全平 {key}"}
+
+    def _check_trailing_stops(self, symbol: str, price: float) -> None:
+        """移動止損/保本止損線觸發檢查 (update_price 每 bar 呼叫)."""
+        for key, pos in list(self._positions.items()):
+            if pos.symbol != symbol:
+                continue
+            # 移動止損線 (TRAIL_STOP, trailing_stop_price > 0 才啟用)
+            if pos.trailing_stop_price > 0:
+                if pos.position_side == PositionSide.LONG and price <= pos.trailing_stop_price:
+                    logger.info(f"[TRAIL_STOP] 多單觸發 @ {price:.2f} (線 {pos.trailing_stop_price:.2f})")
+                    self._execute_close_all(symbol, price)
+                elif pos.position_side == PositionSide.SHORT and price >= pos.trailing_stop_price:
+                    logger.info(f"[TRAIL_STOP] 空單觸發 @ {price:.2f} (線 {pos.trailing_stop_price:.2f})")
+                    self._execute_close_all(symbol, price)
+                continue  # 已設移動止損, 不再檢查保本
+            # 保本止損 (TP_PARTIAL 後, breakeven_stop_price > 0 才啟用)
+            if pos.breakeven_stop_price > 0:
+                if pos.position_side == PositionSide.LONG and price <= pos.breakeven_stop_price:
+                    logger.info(f"[BREAKEVEN] 多單保本觸發 @ {price:.2f}")
+                    self._execute_close_all(symbol, price)
+                elif pos.position_side == PositionSide.SHORT and price >= pos.breakeven_stop_price:
+                    logger.info(f"[BREAKEVEN] 空單保本觸發 @ {price:.2f}")
+                    self._execute_close_all(symbol, price)
 
     # ------------------------------------------------------------------
     # Phase 2.3: 永續合約資金費率結算 + 分級維持保證金強平

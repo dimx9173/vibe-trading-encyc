@@ -440,3 +440,78 @@ class TestBinanceDryRun:
             position_side=PositionSide.LONG)
         assert result.status == "FILLED"
         assert result.order_id.startswith("dryrun_")
+
+
+class TestPositionActions:
+    """Phase 5 合約全生命週期動作 (規格書 §6.2/6.3)."""
+
+    def test_tp_partial_closes_33pct_and_breakeven(self):
+        ex = PaperOrderExecutor()
+        ex._positions["BTCUSDT_LONG"] = PaperPosition(
+            symbol="BTCUSDT", position_side=PositionSide.LONG,
+            entry_price=50000.0, quantity=1.0, leverage=5)
+        result = ex.execute_position_action("TP_PARTIAL", "BTCUSDT", 52000.0)
+        assert result["status"] == "executed"
+        pos = ex._positions["BTCUSDT_LONG"]
+        assert abs(pos.quantity - 0.67) < 1e-6  # 剩 67%
+        assert pos.breakeven_stop_price == 50000.0  # 保本
+        assert ex._realized_pnl > 0  # 已實現盈虧入帳
+
+    def test_tp_partial_no_position_degraded(self):
+        ex = PaperOrderExecutor()
+        result = ex.execute_position_action("TP_PARTIAL", "BTCUSDT", 52000.0)
+        assert result["status"] == "degraded"  # Fail-Open 降級
+
+    def test_trail_stop_long_ratchets_up(self):
+        ex = PaperOrderExecutor()
+        ex._positions["BTCUSDT_LONG"] = PaperPosition(
+            symbol="BTCUSDT", position_side=PositionSide.LONG,
+            entry_price=50000.0, quantity=1.0, leverage=5)
+        ex.execute_position_action("TRAIL_STOP", "BTCUSDT", 52000.0)
+        ex.execute_position_action("TRAIL_STOP", "BTCUSDT", 51000.0)  # 跌不回移
+        assert ex._positions["BTCUSDT_LONG"].trailing_stop_price == 52000.0
+        ex.execute_position_action("TRAIL_STOP", "BTCUSDT", 53000.0)  # 新高上移
+        assert ex._positions["BTCUSDT_LONG"].trailing_stop_price == 53000.0
+
+    def test_trail_stop_short_ratchets_down(self):
+        ex = PaperOrderExecutor()
+        ex._positions["BTCUSDT_SHORT"] = PaperPosition(
+            symbol="BTCUSDT", position_side=PositionSide.SHORT,
+            entry_price=50000.0, quantity=1.0, leverage=5)
+        ex.execute_position_action("TRAIL_STOP", "BTCUSDT", 49000.0)
+        ex.execute_position_action("TRAIL_STOP", "BTCUSDT", 50000.0)  # 反彈不降
+        assert ex._positions["BTCUSDT_SHORT"].trailing_stop_price == 49000.0
+        ex.execute_position_action("TRAIL_STOP", "BTCUSDT", 48000.0)  # 新低下移
+        assert ex._positions["BTCUSDT_SHORT"].trailing_stop_price == 48000.0
+
+    def test_trailing_stop_triggers_close_all(self):
+        ex = PaperOrderExecutor()
+        ex._positions["BTCUSDT_LONG"] = PaperPosition(
+            symbol="BTCUSDT", position_side=PositionSide.LONG,
+            entry_price=50000.0, quantity=1.0, leverage=5)
+        ex._positions["BTCUSDT_LONG"].trailing_stop_price = 51500.0
+        ex.update_price("BTCUSDT", 51400.0)  # 跌破移動止損線
+        assert "BTCUSDT_LONG" not in ex._positions  # 已全平
+
+    def test_breakeven_stop_triggers(self):
+        ex = PaperOrderExecutor()
+        ex._positions["BTCUSDT_LONG"] = PaperPosition(
+            symbol="BTCUSDT", position_side=PositionSide.LONG,
+            entry_price=50000.0, quantity=1.0, leverage=5)
+        ex._positions["BTCUSDT_LONG"].breakeven_stop_price = 50000.0
+        ex.update_price("BTCUSDT", 49900.0)  # 跌破保本線
+        assert "BTCUSDT_LONG" not in ex._positions
+
+    def test_close_all(self):
+        ex = PaperOrderExecutor()
+        ex._positions["BTCUSDT_LONG"] = PaperPosition(
+            symbol="BTCUSDT", position_side=PositionSide.LONG,
+            entry_price=50000.0, quantity=0.5, leverage=5)
+        result = ex.execute_position_action("CLOSE_ALL", "BTCUSDT", 51000.0)
+        assert result["status"] == "executed"
+        assert "BTCUSDT_LONG" not in ex._positions
+
+    def test_hold_noop(self):
+        ex = PaperOrderExecutor()
+        result = ex.execute_position_action("HOLD", "BTCUSDT", 50000.0)
+        assert result["status"] == "noop"
