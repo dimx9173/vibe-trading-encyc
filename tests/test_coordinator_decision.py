@@ -837,3 +837,45 @@ class TestRunResearchDebate:
                 {"technical": "bullish"}, "D1", {"messages_sent": 0})
         assert result == "Buy BTC"
         assert coordinator._message_broker.send.call_count == 5  # 2*2 + 1
+
+
+class TestPortfolioDecisionConsume:
+    """Phase 5: submit_portfolio_decision 結構化動作 → 決策映射."""
+
+    @pytest.fixture(autouse=True)
+    def _ns(self):
+        global SimpleNamespace
+        from types import SimpleNamespace
+
+    @pytest.mark.asyncio
+    async def test_open_short_maps_to_sell(self, coordinator):
+        coordinator._portfolio_manager = MagicMock()
+        coordinator._portfolio_manager.make_final_decision = AsyncMock(
+            return_value={"decision_text": "whatever", "scorecard": None})
+        coordinator._tool_context.portfolio_decision = {
+            "action": "OPEN_SHORT", "confidence": 0.8,
+            "entry_price": 64000, "stop_loss": 64800,
+            "take_profit": 62800, "rationale": "纏論三賣破位",
+        }
+        result = await coordinator._run_portfolio_manager(
+            {}, "plan", MagicMock(), {}, [], 10000,
+            SimpleNamespace(current_price=64000))
+        assert result["decision"] == "SELL"  # OPEN_SHORT → SELL
+        assert result["position_action"] == "OPEN_SHORT"
+        # 消費後清除
+        assert coordinator._tool_context.portfolio_decision is None
+
+    @pytest.mark.asyncio
+    async def test_hold_action_maps_hold(self, coordinator):
+        coordinator._portfolio_manager = MagicMock()
+        coordinator._portfolio_manager.make_final_decision = AsyncMock(
+            return_value={"decision_text": "text", "scorecard": None})
+        coordinator._tool_context.portfolio_decision = {
+            "action": "HOLD", "confidence": 0.6,
+            "entry_price": 64000, "stop_loss": 0, "take_profit": 0,
+            "rationale": "觀望",
+        }
+        result = await coordinator._run_portfolio_manager(
+            {}, "plan", MagicMock(), {}, [], 10000,
+            SimpleNamespace(current_price=64000))
+        assert result["decision"] == "HOLD"

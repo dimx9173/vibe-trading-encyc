@@ -750,7 +750,16 @@ class TradingCoordinator:
             grounding_result: Dict[str, Any] = {"passed": True, "violations": [], "checked_points": 0, "reason": None}
             pm_action = str(final_decision.get("decision", "HOLD")).upper()
             is_trade_decision = not any(k in pm_action for k in ("HOLD", "UNKNOWN"))
-            if is_trade_decision and trading_plan is not None and getattr(trading_plan, "entry_orders", None) is not None:
+            # Phase 5: 決策方向與 Trader 計畫方向不一致 (如 PM OPEN_SHORT 但 Trader 計畫 LONG)
+            # → 計畫價格不適用, 跳過 grounding (避免誤殺結構化做空決策)
+            plan_direction = str(getattr(trading_plan, "direction", "")).upper()
+            pm_is_short = "SELL" in pm_action
+            pm_is_long = "BUY" in pm_action
+            direction_mismatch = (
+                (pm_is_short and plan_direction == "LONG")
+                or (pm_is_long and plan_direction == "SHORT")
+            )
+            if is_trade_decision and not direction_mismatch and trading_plan is not None and getattr(trading_plan, "entry_orders", None) is not None:
                 try:
                     from vibe_trading.execution.grounding_gate import validate_trading_plan_prices
                     latest = context.klines[-1] if getattr(context, "klines", None) else None
@@ -1524,6 +1533,35 @@ class TradingCoordinator:
 
         # 解析决策文本 — 走共享 parser，与 signal_processor 保持一致
         from vibe_trading.tools.signal_parser import parse_decision
+
+        # Phase 5: 若 PM 呼叫了 submit_portfolio_decision (結構化動作), 優先消費 —
+        # 解鎖做空 (OPEN_SHORT→SELL) 且 0% 兜底 (規格書 §4/§6)
+        pd = getattr(self._tool_context, "portfolio_decision", None)
+        if isinstance(pd, dict) and pd.get("action"):
+            action = str(pd["action"]).upper()
+            action_to_decision = {
+                "OPEN_LONG": "BUY", "ADD_LONG": "BUY",
+                "OPEN_SHORT": "SELL", "ADD_SHORT": "SELL",
+                "TP_PARTIAL": "SELL", "TRAIL_STOP": "HOLD",
+                "CLOSE_ALL": "SELL", "HOLD": "HOLD",
+            }
+            mapped = action_to_decision.get(action, "HOLD")
+            logger.info(
+                f"[決策] submit_portfolio_decision {action} → 決策 {mapped} "
+                f"(conf={pd.get('confidence')})"
+            )
+            decision = mapped
+            decision_text = str(pd.get("rationale") or f"PositionAction {action}")
+            pm_confidence = pd.get("confidence")
+            self._tool_context.portfolio_decision = None  # 消費後清除
+            return {
+                "decision": decision,
+                "rationale": decision_text,
+                "confidence": pm_confidence,
+                "execution_instructions": None,
+                "position_action": action,
+            }
+
         decision = parse_decision(decision_text)
 
         # Fix ② (2026-08-09 SWDA P0): 決策 UNKNOWN/HOLD 但 audit 已顯示成交訂單 → 回填實際執行。
