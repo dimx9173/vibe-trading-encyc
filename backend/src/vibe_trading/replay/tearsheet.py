@@ -169,6 +169,51 @@ def build_tearsheet(
         "short_ratio": round(short_ratio, 1),
         "fallback_count": fallback_count,
         "fallback_rate": round(fallback_count / total_decisions * 100, 1) if total_decisions else 0.0,
+        "shadow": _build_shadow(records),
+    }
+
+
+def _build_shadow(records: List[Dict]) -> Dict:
+    """影子帳戶簡化版 (規格書 §7 影子反思): 反事實決策評估.
+
+    對每根 bar 的決策, 用其後 4 根 bar 的價格變動計算:
+    - 實際決策收益 (BUY=做多, SELL=做空, HOLD=0)
+    - 反事實做空收益 (若當時開空會怎樣)
+    統計: 若全程無腦做空 vs 實際決策 vs 無腦做多 的假設總收益.
+    評估改進空間 (多頭偏斜時, 做空反事實收益應顯著).
+    """
+    if len(records) < 5:
+        return {"horizon_bars": 4, "always_short_pnl": 0.0, "always_long_pnl": 0.0,
+                "actual_pnl": 0.0, "hold_short_counterfactual": 0.0}
+    closes = []
+    for rec in records:
+        try:
+            closes.append(float(rec.get("bar_close", 0.0)))
+        except (TypeError, ValueError):
+            closes.append(0.0)
+    horizon = 4
+    always_short = 0.0
+    always_long = 0.0
+    actual = 0.0
+    hold_short_cf = 0.0
+    n = len(records)
+    for i in range(n - horizon):
+        fwd = (closes[i + horizon] - closes[i]) / closes[i] if closes[i] else 0.0
+        always_long += fwd
+        always_short += -fwd
+        decision = str(records[i].get("decision", "HOLD")).upper()
+        if "SELL" in decision or "SHORT" in decision:
+            actual += -fwd
+        elif "BUY" in decision or "LONG" in decision:
+            actual += fwd
+        elif "HOLD" in decision:
+            hold_short_cf += -fwd  # HOLD 時若做空的反事實收益
+    return {
+        "horizon_bars": horizon,
+        "always_short_pnl": round(always_short * 100, 2),
+        "always_long_pnl": round(always_long * 100, 2),
+        "actual_pnl": round(actual * 100, 2),
+        "hold_short_counterfactual": round(hold_short_cf * 100, 2),
     }
 
 

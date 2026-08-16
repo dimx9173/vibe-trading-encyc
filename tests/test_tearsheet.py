@@ -6,10 +6,10 @@ from pathlib import Path
 from vibe_trading.replay.tearsheet import build_tearsheet, format_tearsheet
 
 
-def _rec(bar_ms, equity, decision="HOLD", balance=None, positions=None, rationale=""):
+def _rec(bar_ms, equity, decision="HOLD", balance=None, positions=None, rationale="", price=100.0):
     return {
         "symbol": "BTCUSDT", "interval": "30m",
-        "bar_open_ms": bar_ms, "bar_close": 100.0,
+        "bar_open_ms": bar_ms, "bar_close": price,
         "decision": decision, "rationale": rationale, "confidence": 0.5,
         "elapsed_s": 1.0, "ts": "t",
         "account": {"balance": balance if balance is not None else equity,
@@ -110,3 +110,27 @@ class TestFormat:
 
     def test_format_empty(self):
         assert "無資料" in format_tearsheet({"bars": 0})
+
+
+class TestShadow:
+    def test_shadow_counterfactual(self, tmp_path):
+        base = 1784876400000
+        # 下跌行情: 100 → 99 → 98 → 97 → 96 (每 bar -1%)
+        records = []
+        for i in range(8):
+            px = 100.0 - i
+            records.append(_rec(base + i * 1800000, 10000.0 - i * 50,
+                                decision="HOLD" if i < 4 else "BUY",
+                                balance=10000.0 - i * 50, price=px))
+        p = tmp_path / "s.jsonl"
+        _write(p, records)
+        d = build_tearsheet(str(p))
+        shadow = d["shadow"]
+        assert shadow["horizon_bars"] == 4
+        # 下跌市: 無腦做空收益 > 0, 無腦做多 < 0
+        assert shadow["always_short_pnl"] > 0
+        assert shadow["always_long_pnl"] < 0
+        # 實際 (前 4 bar HOLD + 後 BUY) 應不如無腦做空
+        assert shadow["actual_pnl"] < shadow["always_short_pnl"]
+        # HOLD 反事實做空 > 0
+        assert shadow["hold_short_counterfactual"] > 0
