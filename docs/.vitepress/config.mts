@@ -57,7 +57,8 @@ export default withMermaid(defineConfig({
         items: [
           { text: '竞品深度分析报告', link: '/research/competitive-analysis' },
           { text: '技术演进路线图 (Roadmap)', link: '/research/evolution-roadmap' },
-          { text: '398-Bar Replay 回测分析报告', link: '/research/replay-analysis-398bars' }
+          { text: '398-Bar Replay 回测分析报告', link: '/research/replay-analysis-398bars' },
+          { text: '架构与策略改善计划书', link: '/research/vbt-architecture-strategy-improvement-plan' }
         ]
       },
       {
