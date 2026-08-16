@@ -6,7 +6,7 @@ tags: [user-guide, documentation]
 
 # Agent 团队
 
-Vibe Trading 系统包含12个专业Agent，每个Agent都有特定的职责和专长，共同协作完成复杂的交易决策。
+Vibe Trading 系统包含 **13 个专业 Agent**（12 个核心决策 Agent 协同推进 4 阶段流水线，1 个独立宏观分析 Agent 在背景运行），每个 Agent 都有特定的职责和专长，共同协作完成复杂的量化交易决策。
 
 ## Agent 概览
 
@@ -352,6 +352,18 @@ flowchart TB
   "confidence": 0.75
 }
 ```
+
+## 背景独立 Agent: 宏观分析师
+
+### MacroAnalysisAgent（宏观分析师）
+
+**职责**：在 Macro Thread 中按小時週期獨立運行，分析總體市場環境、宏觀政經與週期 Regime，將狀態寫入 `MacroStorage` 供決策線程讀取。
+
+**核心功能**：
+- **Trend Analysis**：判斷大週期趨勢與多空結構
+- **Sentiment Regime**：識別市場當前處於恐慌、亢奮或震盪
+- **Major Events**：分析加息、CPI、監管等重磅事件影響
+- **狀態持久化**：定期寫入 `macro_states` 資料表供 On-Bar 線程調用
 
 ## Agent 协作示例
 

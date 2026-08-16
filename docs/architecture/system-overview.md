@@ -132,23 +132,24 @@ CLI (`cli.py`) 流程：
 
 ---
 
-## 5. Agent 生態（12 Agents）
+## 5. Agent 生態（13 Agents）
 
-### 角色定義（`config/agent_config.py` AgentRole）
-| 團隊 | Agent | Role |
-|------|-------|------|
-| 分析師 | 技術分析師 | technical_analyst |
-| | 基本面分析師 | fundamental_analyst |
-| | 新聞分析師 | news_analyst |
-| | 情緒分析師 | sentiment_analyst |
-| 研究員 | Bull 看漲 | bull_researcher |
-| | Bear 看跌 | bear_researcher |
-| | 研究經理 | research_manager |
-| 風控 | 激進風控 | aggressive_debator |
-| | 中立風控 | neutral_debator |
-| | 保守風控 | conservative_debator |
-| 決策 | 交易員 | trader |
-| | 投資組合經理 | portfolio_manager |
+### 角色定義（`config/agent_config.py` AgentRole & `macro_agent.py`）
+| 團隊 | Agent | Role | 運行線程 |
+|------|-------|------|----------|
+| 分析師 | 技術分析師 | technical_analyst | On-Bar Thread |
+| | 基本面分析師 | fundamental_analyst | On-Bar Thread |
+| | 新聞分析師 | news_analyst | On-Bar Thread |
+| | 情緒分析師 | sentiment_analyst | On-Bar Thread |
+| 研究員 | Bull 看漲 | bull_researcher | On-Bar Thread |
+| | Bear 看跌 | bear_researcher | On-Bar Thread |
+| | 研究經理 | research_manager | On-Bar Thread |
+| 風控 | 激進風控 | aggressive_debator | On-Bar Thread |
+| | 中立風控 | neutral_debator | On-Bar Thread |
+| | 保守風控 | conservative_debator | On-Bar Thread |
+| 決策 | 交易員 | trader | On-Bar Thread |
+| | 投資組合經理 | portfolio_manager | On-Bar Thread |
+| 宏觀背景 | 宏觀分析師 | MacroAnalysisAgent | Macro Thread (獨立週期) |
 
 ### Agent 建構（`agents/agent_factory.py` create_trading_agent）
 - 統一用 `pi_agent_core.Agent` + `AgentOptions`（model、model_router、tools）
