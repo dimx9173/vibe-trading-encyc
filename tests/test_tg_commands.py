@@ -248,3 +248,41 @@ class TestNotifierRouting:
         update = SimpleNamespace(update_id=42, callback_query=None, message=None)
         await notifier._handle_update(update)
         assert notifier._update_offset == 43
+
+
+class TestSystemInfo:
+    async def test_format_status_contains_model(self):
+        from vibe_trading.notifications.commands import format_status
+        system = MagicMock()
+        system.symbol = "BTCUSDT"
+        system.interval = "30m"
+        system.mode = "paper"
+        system._running = True
+        system.executor = MagicMock()
+        system.emergency_handler = None
+        system.thread_manager = None
+        system.trigger_registry = None
+        text = await format_status(system)
+        assert "BTCUSDT" in text
+        assert "paper" in text
+        # 模型資訊 (mimo 或 deepseek 皆可, 但必須有)
+        assert "模型" in text
+        assert "Provider" in text or "provider" in text
+
+    async def test_format_status_graceful_no_system(self):
+        from vibe_trading.notifications.commands import format_status
+        text = await format_status(MagicMock())  # 全缺省 → 不 raise
+        assert isinstance(text, str)
+
+
+class TestStartupSystemInfo:
+    async def test_collect_system_info(self):
+        from vibe_trading.notifications.telegram_notifier import TelegramNotifier
+        from vibe_trading.notifications.config import TelegramConfig
+        n = TelegramNotifier.__new__(TelegramNotifier)
+        n.chat_id = "c"
+        n.bot = MagicMock()
+        info = n._collect_system_info("BTCUSDT", "30m", "paper")
+        assert "BTCUSDT" in info
+        assert "模型" in info
+        assert "Provider" in info

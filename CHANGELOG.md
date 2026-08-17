@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Added
+- **Telegram 系統資訊擴充**: /status 與啟動通知加入模型 (mimo-v2.5)/Provider/Base URL、Git 版本、交易對/模式/運行狀態、執行器類型
+
 ### Added (Phase 5 — L3 跨體制壓力測試)
 - **L3 短回測完成**: 體制 A 下跌段 62% 做空 ✅ / 體制 B 上漲段上沿做空 (均值回歸特性) / 體制 C 橫盤 100% HOLD ✅ — 報告 `replay/l3_stress_report.md`
 

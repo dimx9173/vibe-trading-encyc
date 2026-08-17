@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
@@ -90,8 +91,55 @@ async def format_positions(executor: Any) -> str:
 # ---------------------------------------------------------------------------
 
 async def format_status(system: Any) -> str:
-    """🖥️ 系統狀態 — threads/triggers/emergency stats."""
-    lines = ["🖥️ <b>系統狀態</b>"]
+    """🖥️ 系統狀態 — threads/triggers/emergency + 模型/系統資訊."""
+    lines = ["🖥️ <b>VBT 系統狀態</b>"]
+
+    # ── 基本系統資訊 ──
+    symbol = getattr(system, "symbol", "?")
+    interval = getattr(system, "interval", "?")
+    mode = getattr(system, "mode", "?")
+    running = getattr(system, "_running", False)
+    lines.append(
+        f"\n📈 <b>系統</b>: {symbol} {interval} | 模式 <b>{mode}</b> | "
+        f"{'🟢 運行中' if running else '🔴 已停止'}"
+    )
+
+    # ── 模型 / Provider 資訊 ──
+    try:
+        from vibe_trading.config.llm_config import get_llm_config
+        cfg = get_llm_config()
+        name = cfg.get_current_name()
+        mcfg = cfg.get_config(name)
+        lines.append(
+            f"\n🤖 <b>模型</b>: {mcfg.get('model', '?')} "
+            f"(<i>{mcfg.get('description', name)}</i>)\n"
+            f"   Provider: {mcfg.get('provider', '?')} | "
+            f"<code>{mcfg.get('base_url', '?')}</code>"
+        )
+    except Exception as e:
+        logger.warning(f"Model info failed: {e}")
+        lines.append("\n🤖 模型: N/A")
+
+    # ── Git 版本 ──
+    try:
+        import subprocess
+        commit = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, cwd=str(Path(__file__).resolve().parent.parent.parent.parent),
+        ).stdout.strip()
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"],
+            capture_output=True, text=True, cwd=str(Path(__file__).resolve().parent.parent.parent.parent),
+        ).stdout.strip()
+        if commit:
+            lines.append(f"\n📦 <b>版本</b>: {branch or '?'} @ <code>{commit}</code>")
+    except Exception:
+        pass
+
+    # ── 執行器 ──
+    ex = getattr(system, "executor", None)
+    if ex is not None:
+        lines.append(f"\n💼 <b>執行器</b>: {type(ex).__name__}")
 
     # Emergency handler stats
     eh = getattr(system, "emergency_handler", None)

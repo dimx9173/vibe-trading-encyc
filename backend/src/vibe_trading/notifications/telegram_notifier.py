@@ -6,6 +6,7 @@ Telegram Notifier 核心
 import asyncio
 import logging
 import uuid
+from pathlib import Path
 from typing import Any, List, Optional, Set
 from datetime import datetime
 
@@ -306,15 +307,47 @@ class TelegramNotifier:
             return False
 
     async def send_startup_notification(self, symbol: str, interval: str, mode: str) -> None:
-        """發送啟動通知"""
+        """發送啟動通知 (含模型/provider/系統資訊)"""
+        info = self._collect_system_info(symbol, interval, mode)
         notification = Notification(
             id=f"startup_{uuid.uuid4().hex[:8]}",
             priority=NotificationPriority.LOW,
             title="VBT 啟動完成",
-            message=f"交易對: {symbol}\n間隔: {interval}\n模式: {mode}",
+            message=info,
             metadata={"type": "startup", "symbol": symbol}
         )
         await self.queue.enqueue(notification)
+
+    def _collect_system_info(self, symbol: str, interval: str, mode: str) -> str:
+        """收集啟動/狀態用的系統資訊 (模型/provider/版本/執行器)."""
+        import subprocess
+        lines = [f"交易對: {symbol}\n間隔: {interval}\n模式: {mode}"]
+        # 模型 / Provider
+        try:
+            from vibe_trading.config.llm_config import get_llm_config
+            cfg = get_llm_config()
+            name = cfg.get_current_name()
+            mcfg = cfg.get_config(name)
+            lines.append(
+                f"模型: {mcfg.get('model', '?')} ({mcfg.get('description', name)})\n"
+                f"Provider: {mcfg.get('provider', '?')}\n"
+                f"Base URL: {mcfg.get('base_url', '?')}"
+            )
+        except Exception as e:
+            logger.warning(f"Model info failed: {e}")
+            lines.append("模型: N/A")
+        # Git 版本
+        try:
+            root = str(Path(__file__).resolve().parent.parent.parent.parent)
+            commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                                    capture_output=True, text=True, cwd=root).stdout.strip()
+            branch = subprocess.run(["git", "branch", "--show-current"],
+                                    capture_output=True, text=True, cwd=root).stdout.strip()
+            if commit:
+                lines.append(f"版本: {branch or '?'} @ {commit}")
+        except Exception:
+            pass
+        return "\n".join(lines)
 
     async def send_shutdown_notification(self, reason: str = "正常關閉") -> None:
         """發送關閉通知"""
