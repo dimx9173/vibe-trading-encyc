@@ -1624,12 +1624,13 @@ class TradingCoordinator:
             rsi = float(rsi)
         except (TypeError, ValueError):
             return decision
-        # 放寬: 非強多頭 (空頭或震盪) + 超買 → 上沿做空 (規格書「区间上沿做空机会」)
-        if regime != "4H_STRONG_UPTREND" and rsi >= 70:
+        # 放寬: 非強多頭 + RSI≥60 (超買區) → 上沿做空 (規格書「区间上沿做空机会」)
+        # 30 天掃描: RSI≥60 觸發 27.1% SELL — 達 short KPI 25-45% 帶
+        if regime != "4H_STRONG_UPTREND" and rsi >= 60:
             logger.info(f"[規則訊號] {regime} + RSI {rsi:.0f} 超買 → 上沿做空 SELL")
             return "SELL"
-        # 放寬: 非強空頭 (多頭或震盪) + 超賣 → 下沿做多
-        if regime != "4H_STRONG_DOWNTREND" and rsi <= 30:
+        # 放寬: 非強空頭 + RSI≤40 → 下沿做多
+        if regime != "4H_STRONG_DOWNTREND" and rsi <= 40:
             logger.info(f"[規則訊號] {regime} + RSI {rsi:.0f} 超賣 → 下沿做多 BUY")
             return "BUY"
         return decision
