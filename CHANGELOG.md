@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### Added (Harvested Alpha — 七大獲利與元認知模組)
+- **Exit Ladder 三級階梯** (`exit_ladder.py`): TP1@1.5R 平 30% 保本 → TP2@2.5R 平 40% 鎖利 → Trailing 30% + 動能枯竭放量滯漲平 50%
+- **AlphaZoo 23 因子工具化** (`technical_tools.get_alpha_factor_summary`): V_RET/Z-Score/GK 波動/MFI/VWAP 偏離/假突破警示
+- **衍生品數據層** (`derivatives_provider.py`): funding Z-Score/OI surge/taker ratio/squeeze risk (API 失敗降級)
+- **Battle Cards 戰法庫** (8 卡 + YAML): match_active_cards + record_trade_outcome 動態演化
+- **Dynamic IC 調權** (`quant/factor_ic.py`): Spearman Rank IC + 平滑乘數 (0.3x~1.5x)
+- **DSR 檢驗** (`quant/deflated_sharpe.py`): Bailey & López de Prado 多重檢驗校正
+- **Meta-Cognition** (`research/meta_cognition.py`): 戰績看板 + 平倉覆盤歸因 + 避坑記憶 + 節奏控制
+- **coordinator 整合**: 7 引擎接入 _prepare_context + PM 上下文注入 (看板/戰法/因子/衍生品)
+- **DoD**: mypy 0 errors / ruff 乾淨 / 新模組 coverage 93% / L1 單元測試全過
+
 ### Added
 - **Telegram 系統資訊擴充**: /status 與啟動通知加入模型 (mimo-v2.5)/Provider/Base URL、Git 版本、交易對/模式/運行狀態、執行器類型
 

@@ -7,7 +7,8 @@ moonbag: TP1 +10% 賣 50%, 剩 50% 繼續跑 trailing
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict
+from enum import Enum
+from typing import Any, Dict, Optional, Tuple
 
 
 @dataclass
@@ -66,10 +67,6 @@ def update_exit(
 # =============================================================================
 # Harvested Alpha — 三級階梯止盈 + 動能枯竭引擎 (規格書 §2.1)
 # =============================================================================
-
-from enum import Enum
-from typing import Optional, Tuple
-
 
 class LadderStage(str, Enum):
     """階梯出場狀態機."""
@@ -136,7 +133,6 @@ class ExitLadderEngine:
             return (current_stage, 0.0, None, "zero risk distance")
 
         gain = self._directional_gain(position_side, entry_price, current_price)
-        tp1_level = r * self.config.tp1_r_multiple / self.config.tp1_r_multiple  # = R * 1 = 1.5ATR... 直接算
         # 標準化: TP1 = 1.5R, TP2 = 2.5R (R = 1.5ATR)
         tp1_distance = self.config.tp1_r_multiple * r
         tp2_distance = self.config.tp2_r_multiple * r

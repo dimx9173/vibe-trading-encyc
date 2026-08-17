@@ -10,7 +10,7 @@ Bailey & López de Prado (2014):
 from __future__ import annotations
 
 import math
-from typing import List, Optional
+from typing import Dict, List
 
 _EULER_GAMMA = 0.5772156649015329  # γ
 

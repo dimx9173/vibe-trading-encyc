@@ -55,3 +55,44 @@ class TestDerivativesMetrics:
         assert r["funding_rate"] is None
         assert "funding" in r["degraded"]
         assert r["squeeze_risk"] == "NEUTRAL"
+
+
+class TestDerivativeMethods:
+    @pytest.mark.asyncio
+    async def test_funding_zscore(self, provider):
+        with patch("vibe_trading.tools.fundamental_tools.get_funding_rates",
+                   new=AsyncMock(return_value={"funding_rate": 0.0002})):
+            z = await provider.get_funding_rate_zscore("BTCUSDT")
+        assert z is not None and z > 0
+
+    @pytest.mark.asyncio
+    async def test_funding_zscore_error(self, provider):
+        with patch("vibe_trading.tools.fundamental_tools.get_funding_rates",
+                   new=AsyncMock(side_effect=RuntimeError("down"))):
+            assert await provider.get_funding_rate_zscore("BTCUSDT") is None
+
+    @pytest.mark.asyncio
+    async def test_funding_zscore_missing_key(self, provider):
+        with patch("vibe_trading.tools.fundamental_tools.get_funding_rates",
+                   new=AsyncMock(return_value={"error": "no data"})):
+            assert await provider.get_funding_rate_zscore("BTCUSDT") is None
+
+    @pytest.mark.asyncio
+    async def test_oi_surge(self, provider):
+        with patch("vibe_trading.tools.fundamental_tools.get_open_interest",
+                   new=AsyncMock(return_value={"open_interest": 1.0e9})):
+            s = await provider.get_oi_surge_ratio("BTCUSDT")
+        assert s is not None
+
+    @pytest.mark.asyncio
+    async def test_taker_ratio(self, provider):
+        with patch("vibe_trading.tools.fundamental_tools.get_taker_buy_sell_ratio",
+                   new=AsyncMock(return_value={"buy_sell_ratio": 1.2})):
+            t = await provider.get_taker_volume_ratio("BTCUSDT")
+        assert t == 1.2
+
+    @pytest.mark.asyncio
+    async def test_taker_ratio_missing(self, provider):
+        with patch("vibe_trading.tools.fundamental_tools.get_taker_buy_sell_ratio",
+                   new=AsyncMock(return_value={"error": "x"})):
+            assert await provider.get_taker_volume_ratio("BTCUSDT") is None

@@ -103,7 +103,7 @@ class DynamicICMonitor:
                 returns.append(0.0)
         return returns
 
-    def evaluate(self) -> Dict[str, Dict[str, float]]:
+    def evaluate(self) -> Dict[str, Dict[str, object]]:
         """評估所有因子 IC + 乘數 (平滑).
 
         Returns:
@@ -112,7 +112,7 @@ class DynamicICMonitor:
         fwd = self._forward_returns()
         if len(fwd) < 3:
             return {}
-        results: Dict[str, Dict[str, float]] = {}
+        results: Dict[str, Dict[str, object]] = {}
         for name, hist in self._factor_history.items():
             if len(hist) < self.lookback:
                 continue
@@ -122,7 +122,8 @@ class DynamicICMonitor:
                 continue
             mapped = ic_multiplier(ic)
             prev = self._multipliers.get(name, 1.0)
-            smooth = ema_smooth_multiplier(prev, mapped["multiplier"])
+            mapped_mult = float(mapped["multiplier"]) if isinstance(mapped["multiplier"], (int, float)) else 1.0
+            smooth = ema_smooth_multiplier(prev, mapped_mult)
             self._multipliers[name] = smooth
             results[name] = {
                 "rank_ic": round(ic, 4),
