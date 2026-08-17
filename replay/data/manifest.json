@@ -25,7 +25,7 @@
     "symbol": "BTCUSDT",
     "interval": "30m",
     "start": 120,
-    "end": 121,
+    "end": 141,
     "skip_debate": true,
     "use_cache": true
   },
