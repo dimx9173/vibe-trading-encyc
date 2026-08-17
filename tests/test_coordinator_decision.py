@@ -318,15 +318,18 @@ class TestPortfolioManager:
 
     @pytest.mark.asyncio
     async def test_pm_hold_decision(self, coordinator):
+        from types import SimpleNamespace
         pm = MagicMock()
         pm.make_final_decision = AsyncMock(return_value={
             "decision_text": "Decision: HOLD\nRationale: 觀望",
             "scorecard": MagicMock(confidence=0.4),
         })
         coordinator._portfolio_manager = pm
+        # 明確中性 indicators (避免 MagicMock 觸發 R4 規則訊號)
+        ctx = SimpleNamespace(current_price=1.0,
+                              indicators={"regime": "4H_CHOPPY_RANGE", "rsi": 55.0})
         result = await coordinator._run_portfolio_manager(
-            {}, "plan", "tplan", {}, [], 10000.0,
-            MagicMock(current_price=1.0),
+            {}, "plan", "tplan", {}, [], 10000.0, ctx,
         )
         assert result["decision"] == "HOLD"
 
