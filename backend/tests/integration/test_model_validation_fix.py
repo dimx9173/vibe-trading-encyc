@@ -96,7 +96,11 @@ async def test_T1_agent_state_model_is_agent_loop_model_type(
     )
     # sanity: provider/id carried through
     assert agent._state.model.provider == "openai"
-    assert agent._state.model.id == "deepseek-v4-flash"
+    # 模型由 llm.yaml use_llm 決定 (當前 mimo-v2.5); 斷言與配置一致
+    from vibe_trading.config.llm_config import get_llm_config
+    expected = get_llm_config().get_current_name()
+    mcfg = get_llm_config().get_config(expected)
+    assert agent._state.model.id == mcfg["model"]
 
 
 @pytest.mark.asyncio
