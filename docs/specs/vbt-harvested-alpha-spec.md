@@ -3,7 +3,7 @@
 ## 版本資訊
 - **版本**: 1.0.0
 - **日期**: 2026-08-17
-- **狀態**: 📐 開發交付規格書 (`READY FOR IMPLEMENTATION`)
+- **狀態**: ✅ 已實施 (Implemented) — 七大模組 + coordinator 整合 + L1 測試 + DoD (coverage 93%), L2 規則層消融完成 (完整 LLM 版待後續)
 - **關聯計劃書**: [docs/research/vbt-harvested-alpha-expansion-plan.md](file:///Users/carlos/pywork/vibe-trading-encyc/docs/research/vbt-harvested-alpha-expansion-plan.md) (v1.3.0)
 - **架構原則**: **「AI 認知賦能 (軟) + 物理風控護航 (硬)」**（100% 保留 LLM 方向決策權，代碼嚴格執行物理常識、資金風控與階梯保本）
 

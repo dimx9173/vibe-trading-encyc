@@ -175,3 +175,24 @@ graph LR
 透過本升級路線圖的推進：
 1. 主專案已奠定 **`QuantLib` + `Grounding Gate` + `StackVM` + `CEX/DEX 多所矩陣`**（Phase 1~4）的強大底層基建；
 2. 當前正聚焦於 **Phase 5 雙向對稱決策與量化倉位實戰**，透過纏論三類賣點徹底釋放做空盈利空間，並以「AI 定性 + Python Half-Kelly 定量 + Reasoning Effort 深度推理 + Tearsheet 專業淚表」全面升級策略與決策能力，打造可真正實戰盈利的加密貨幣多智能體量化系統。
+
+---
+
+## 6. Phase 6 — Harvested Alpha 全要素獲利與元認知 (✅ 已實作)
+
+> 基於 `docs/specs/vbt-harvested-alpha-spec.md` + `docs/research/vbt-harvested-alpha-expansion-plan.md`
+
+| 模組 | 交付 | 狀態 |
+|---|---|---|
+| Exit Ladder 三級階梯 + 動能枯竭 | `execution/exit_ladder.py` | ✅ 2026-08-17 |
+| AlphaZoo 23 因子工具化 | `technical_tools.get_alpha_factor_summary` | ✅ |
+| 合約衍生品數據層 | `derivatives_provider.py` (funding/OI/taker/squeeze) | ✅ |
+| Battle Cards 戰法庫 | 8 卡 + `battle_cards.yaml` | ✅ |
+| Dynamic IC 調權 | `quant/factor_ic.py` (Spearman + 平滑) | ✅ |
+| DSR 顯著性檢驗 | `quant/deflated_sharpe.py` | ✅ |
+| Meta-Cognition 元認知 | `research/meta_cognition.py` (看板/覆盤/節奏) | ✅ |
+| coordinator 整合 | 7 引擎接入 + context/PM 注入 | ✅ |
+| **L1 單元測試** | 規格書 7 檔全過 | ✅ |
+| **DoD** | mypy 0 / ruff clean / coverage 93% | ✅ |
+| **L2 消融** | 規則層: Baseline→B1 +9.42 (完整 LLM 版待後續) | ⏳ 部分 |
+| **L3/L4** | 蒙地卡羅 / 72h paper | ⏳ 待後續 |

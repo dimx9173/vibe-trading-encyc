@@ -3,7 +3,7 @@
 > **版本**：v1.3.0 (全要素機構級旗艦版：納入 AlphaZoo 23 因子打通、衍生品數據源與 DSR 因子檢驗)  
 > **更新日期**：2026-08-17  
 > **借鏡來源**：`/Users/carlos/pywork/AlphaGPT` & `/Users/carlos/pywork/Vibe-Trading` (HKUDS) & 華爾街非對稱盈虧工程  
-> **文檔狀態**：架構審定完成 (`OFFICIALLY PLANNED`)  
+> **文檔狀態**：✅ 已實施 (Implemented) — 七大模組實作完成 (2026-08-17)  
 
 ---
 
@@ -209,16 +209,16 @@ gantt
     section 模組規格與架構
     全要素擴展計劃書定稿 (v1.3.0)                   :done,    des1, 2026-08-17, 1d
     section 核心因子與數據層
-    AlphaZoo 23 因子 & 微結構工具化打通              :active,  dev1, 2026-08-18, 2d
-    Binance 合約衍生品數據源串接 (Funding/OI)        :         dev2, 2026-08-19, 2d
+    AlphaZoo 23 因子 & 微結構工具化打通              :done,  dev1, 2026-08-17, 1d
+    Binance 合約衍生品數據源串接 (Funding/OI)        :done,  dev2, 2026-08-17, 1d
     section 認知與執行層
-    Exit Ladder 階梯止盈與動能枯竭提前平倉            :         dev3, 2026-08-20, 2d
-    Battle Cards 戰法庫與 DSR 顯著性檢驗             :         dev4, 2026-08-21, 2d
-    Dynamic IC 權重計算與 MetaCognition 覆盤系統      :         dev5, 2026-08-22, 2d
-    TradingCoordinator 全流水線聯調                  :         dev6, 2026-08-23, 2d
+    Exit Ladder 階梯止盈與動能枯竭提前平倉            :done,  dev3, 2026-08-17, 1d
+    Battle Cards 戰法庫與 DSR 顯著性檢驗             :done,  dev4, 2026-08-17, 1d
+    Dynamic IC 權重計算與 MetaCognition 覆盤系統      :done,  dev5, 2026-08-17, 1d
+    TradingCoordinator 全流水線聯調                  :done,  dev6, 2026-08-17, 1d
     section 驗證與基準測試
-    本機單元測試套件通過 (pytest)                    :         val1, 2026-08-24, 1d
-    伺服器端 Mode 1 Replay 50-Bar 對比驗證           :         val2, 2026-08-25, 1d
+    本機單元測試套件通過 (pytest)                    :done,  val1, 2026-08-17, 1d
+    完整 398-Bar Replay 消融 (需後續)                :       val2, 2026-08-18, 3d
 ```
 
 ### 6.2 驗收指標對照表 (Acceptance KPIs)
