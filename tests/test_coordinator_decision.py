@@ -879,3 +879,46 @@ class TestPortfolioDecisionConsume:
             {}, "plan", MagicMock(), {}, [], 10000,
             SimpleNamespace(current_price=64000))
         assert result["decision"] == "HOLD"
+
+
+class TestTechnicalRuleSignal:
+    """Phase 5 R4: 4H regime + RSI 規則方向訊號 (解鎖全 HOLD 功能退化)."""
+
+    def _ctx(self, regime, rsi=None):
+        from types import SimpleNamespace
+        ind = {"regime": regime}
+        if rsi is not None:
+            ind["rsi"] = rsi
+        return SimpleNamespace(indicators=ind)
+
+    def test_downtrend_overbought_sells(self, coordinator):
+        c = coordinator
+        result = c._apply_technical_rule_signal("HOLD", self._ctx("4H_STRONG_DOWNTREND", 72.0), [])
+        assert result == "SELL"  # 4H 空頭 + 超買 → 做空
+
+    def test_uptrend_oversold_buys(self, coordinator):
+        c = coordinator
+        result = c._apply_technical_rule_signal("HOLD", self._ctx("4H_STRONG_UPTREND", 28.0), [])
+        assert result == "BUY"
+
+    def test_choppy_keeps_hold(self, coordinator):
+        c = coordinator
+        result = c._apply_technical_rule_signal("HOLD", self._ctx("4H_CHOPPY_RANGE", 55.0), [])
+        assert result == "HOLD"
+
+    def test_non_hold_unchanged(self, coordinator):
+        c = coordinator
+        result = c._apply_technical_rule_signal("BUY", self._ctx("4H_STRONG_DOWNTREND", 80.0), [])
+        assert result == "BUY"  # 非 HOLD 不覆寫
+
+    def test_with_position_skips(self, coordinator):
+        c = coordinator
+        result = c._apply_technical_rule_signal(
+            "HOLD", self._ctx("4H_STRONG_DOWNTREND", 80.0),
+            [{"symbol": "BTCUSDT", "position_side": "LONG"}])
+        assert result == "HOLD"  # 有持倉不開反向
+
+    def test_rsi_missing_keeps(self, coordinator):
+        c = coordinator
+        result = c._apply_technical_rule_signal("HOLD", self._ctx("4H_STRONG_DOWNTREND"), [])
+        assert result == "HOLD"

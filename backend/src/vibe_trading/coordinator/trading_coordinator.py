@@ -1578,12 +1578,48 @@ class TradingCoordinator:
                 decision_text = fallback["text"]
                 decision = fallback["decision"]
 
+        # Phase 5 R4: 技術規則方向訊號 (PM 保守全 HOLD 時, 依 4H+RSI 規則補充方向)
+        rule_decision = self._apply_technical_rule_signal(decision, context, current_positions)
+        if rule_decision != decision:
+            decision_text = f"{decision_text}\n[技術規則訊號] {decision} → {rule_decision} (4H regime + RSI)"
+            decision = rule_decision
+
         return {
             "decision": decision,
             "rationale": decision_text,
             "confidence": pm_confidence,
             "execution_instructions": None,  # 可以从 decision_text 中解析
         }
+
+    def _apply_technical_rule_signal(
+        self, decision: str, context: TradingContext, current_positions: List[Dict]
+    ) -> str:
+        """Phase 5 R4 — 技術規則方向訊號 (三信號原則).
+
+        LLM 鏈路 (分析師/Trader/PM) 在 R3 修復後過度保守 (V4 267 bars 全 HOLD,
+        short 0%)。以技術指標規則補充方向判斷, 避免功能退化:
+        - 4H STRONG_DOWNTREND + 30m RSI ≥ 70 (超買) → 反彈做空 SELL
+        - 4H STRONG_UPTREND + 30m RSI ≤ 30 (超賣) → 回調做多 BUY
+        僅在無持倉且 PM 保守 (HOLD) 時觸發。
+        """
+        if decision != "HOLD" or current_positions:
+            return decision
+        ind = getattr(context, "indicators", None) or {}
+        regime = ind.get("regime", "")
+        rsi = ind.get("rsi")
+        if rsi is None:
+            return decision
+        try:
+            rsi = float(rsi)
+        except (TypeError, ValueError):
+            return decision
+        if regime == "4H_STRONG_DOWNTREND" and rsi >= 70:
+            logger.info(f"[規則訊號] 4H 空頭 + RSI {rsi:.0f} 超買 → 反彈做空 SELL")
+            return "SELL"
+        if regime == "4H_STRONG_UPTREND" and rsi <= 30:
+            logger.info(f"[規則訊號] 4H 多頭 + RSI {rsi:.0f} 超賣 → 回調做多 BUY")
+            return "BUY"
+        return decision
 
     async def _decision_fallback_from_audit(self) -> Optional[Dict[str, Any]]:
         """audit 已成交訂單存在但決策 UNKNOWN/HOLD 時，依實際執行回填。
