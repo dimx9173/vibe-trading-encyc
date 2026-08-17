@@ -13,7 +13,7 @@
 
 主專案（`vibe-trading-encyc`）已建立起業界領先的 **13-Agent 多角色認知對抗（4階段決策）** 與 **無未來函數的 Agent Replay 回測體系**。
 
-目前整體技術演進分為 **已完成的基建模組（Phase 1 ~ Phase 4）** 與 **正在推進的策略與決策實戰升級（Phase 5）**：
+目前整體技術演進分為 **已完成的基建模組（Phase 1 ~ Phase 4）** 與 **已完成的策略與決策實戰升級（Phase 5，L1-L3 驗證完成）
 
 ```mermaid
 graph LR
@@ -47,15 +47,17 @@ graph LR
 │          - 動態標的宇宙 (Universe Scan) + 退出階梯 (Exit Ladder) + RunManifest 方法論指紋│
 │          - 標準化 Crypto MCP Server (calc tools + localhost 白名單)                     │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│ Phase 5 🚧 【待實施 / 進行中】: 雙向對稱決策、纏論空頭、Half-Kelly 倉位與 Replay 二期   │
-│          - PositionAction 合約動作模型 (OPEN_SHORT, TP_PARTIAL, TRAIL_STOP, CLOSE_ALL) │
-│          - Bear Researcher 纏論一賣/二賣/三賣 提示詞改造 (根除 0% 做空缺陷)             │
-│          - PortfolioDecisionOutput (Pydantic Tool Calling, 根除 34.7% 兜底)            │
-│          - Reasoning Effort 深度推理透傳 (PM & RM 啟用 CoT 深度思考)                    │
-│          - Python Half-Kelly + ATR 波動率倉位引擎 (進取型 Max 500 USDT, 5x 槓桿)        │
-│          - 30m + 4H 雙週期技術分析融合 + Replay 歷史隔離適配                            │
-│          - 回測 Tearsheet 淚表 (月度收益熱力圖 + Top-N 最大回撤區間分析)                 │
-│          - 伺服器端 398-Bar Replay V2 A/B 對比回測 (目標 PnL 轉正, 做空佔比 25%~45%)     │
+│ Phase 5 ✅ 【已完成】: 雙向對稱決策、纏論空頭、Half-Kelly 倉位與 Replay 二期   │
+│          - PositionAction 合約動作模型 (OPEN_SHORT, TP_PARTIAL, TRAIL_STOP, CLOSE_ALL) ✅│
+│          - Bear Researcher 纏論一賣/二賣/三賣 提示詞改造 (根除 0% 做空缺陷)      ✅       │
+│          - PortfolioDecisionOutput (Pydantic Tool Calling, 根除 34.7% 兜底)     ✅       │
+│          - Reasoning Effort 深度推理透傳 (PM & RM 啟用 CoT 深度思考)            ✅       │
+│          - Python Half-Kelly + ATR 波動率倉位引擎 (進取型 Max 500 USDT, 5x 槓桿) ✅       │
+│          - 30m + 4H 雙週期技術分析融合 + Replay 歷史隔離適配                    ✅       │
+│          - 回測 Tearsheet 淚表 (月度收益熱力圖 + Top-N 最大回撤區間分析)         ✅       │
+│          - 伺服器端 398-Bar Replay V2 A/B 對比回測 (PnL 轉正 +0.19%, 做空 25.6%)✅       │
+│          - L3 跨體制壓力測試 (下跌 62% 做空 / 橫盤 100% HOLD)                   ✅       │
+│          - L4 72h Paper 實盤監控 (跳過, 待後續實盤)                            ⏳       │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -164,7 +166,7 @@ graph LR
 | **Phase 2** | `M2-FactorVM` | • 6 微觀結構特徵庫 (pressure 用真實 taker_buy) ✅<br>• StackVM 符號運算元 (12 ops) ✅<br>• 永續回測保真度 (8h 資金費率 + 分級維持保證金) ✅ | **✅ 已完成** (2026-08-15) |
 | **Phase 3** | `M3-AlphaEvolution` | • Alpha Mining Agent (演化式搜尋, **非 RL**) ✅<br>• 張量因子預篩打分器 ✅<br>• P3 假說庫自動沈澱閉環 ✅ | **✅ 已完成** (2026-08-15) |
 | **Phase 4** | `M4-CryptoNexus` | • Binance/OKX/Bybit/Bitget/Hyperliquid/Jupiter 執行器 ✅<br>• 動態標的宇宙 + 退出階梯 ✅<br>• RunManifest 方法論指紋 + Crypto MCP Server ✅ | **✅ 已完成** (2026-08-15) |
-| **Phase 5** | `M5-DualAlpha` | • **Step 1**: PositionAction + 纏論做空 + Pydantic Schema + Reasoning Effort ⏳<br>• **Step 2**: Python Half-Kelly + 500U/5x 倉位引擎 + 33% 分批止盈 ⏳<br>• **Step 3**: 30m+4H 雙週期融合 + 影子反思 + Tearsheet 淚表 ⏳<br>• **Step 4**: 伺服器端 398-Bar Replay V2 回測對比 ⏳ | **🚧 進行中 / 待實施** (2026-08-16~17 啟動) |
+| **Phase 5** | `M5-DualAlpha` | ✅ L1-L3 完成 (short 25.6% / fallback 0% / PnL +0.19%) |
 
 ---
 

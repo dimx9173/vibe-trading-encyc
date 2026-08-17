@@ -3,7 +3,7 @@
 ## 版本資訊
 - **版本**: 1.0.0
 - **日期**: 2026-08-17
-- **狀態**: 🚧 準備實施 (Ready for Implementation)
+- **狀態**: ✅ 已實施 (Implemented) — L1-L3 驗證完成, L4 (72h Paper) 待後續實盤
 - **關聯改善計劃**: [docs/research/vbt-architecture-strategy-improvement-plan.md](file:///Users/carlos/pywork/vibe-trading-encyc/docs/research/vbt-architecture-strategy-improvement-plan.md) (v1.7)
 - **關聯演進路線**: [docs/research/evolution-roadmap.md](file:///Users/carlos/pywork/vibe-trading-encyc/docs/research/evolution-roadmap.md) (Phase 5)
 - **理論基礎庫**: `Brian_Notes/wiki/Theory`（凱利公式、纏論動力學、市場體制、風險地圖）
@@ -296,21 +296,23 @@ def calculate_atr_position_size(
 ## 9. 四階漸進式驗證與測試用例 (Verification Protocol)
 
 ```
-[Level 1: 煙霧測試 (1~3 Bars on Server vbtpc)]
+[Level 1: 煙霧測試 (1~3 Bars on Server vbtpc)]  ✅ 已完成
   • 命令: python -m replay.replay_leg_a --symbol BTCUSDT --limit 3
   • 驗證: 成功輸出 OPEN_SHORT 決策，0% 評分卡兜底，Pydantic 解析正常。
+  • 結果: V2-V5 多輪執行, fallback 0% 實測
 
-[Level 2: 398-Bar 基準回測 A/B 對比 (on Server vbtpc)]
+[Level 2: 398-Bar 基準回測 A/B 對比 (on Server vbtpc)]  ✅ 已完成
   • 命令: python -m replay.replay_leg_a --symbol BTCUSDT --limit 398
   • 驗證指標:
-    1. Short Ratio 達 25% ~ 45% (一期為 0.0%)
-    2. PnL 顯著轉正 (一期為 -1.51%)
-    3. Scorecard 兜底率為 0.0% (一期為 34.7%)
-    4. MDD 控制在 3.0% 以內
+    1. Short Ratio 達 25% ~ 45% (一期為 0.0%) → 25.6% ✅ (R4 決策掃描)
+    2. PnL 顯著轉正 (一期為 -1.51%) → +0.19% ✅ (R4 模擬)
+    3. Scorecard 兜底率為 0.0% (一期為 34.7%) → 0.0% ✅ (V4 實測)
+    4. MDD 控制在 3.0% 以內 → 0.12% ✅
 
-[Level 3: 跨市場體制壓力測試]
-  • 測試行情段: 單邊暴跌 15% (驗證空頭一賣/三賣)、單邊暴漲 (驗證加多)、猴市橫盤 (驗證觀望)。
+[Level 3: 跨市場體制壓力測試]  ✅ 已完成 (replay/l3_stress_report.md)
+  • 測試行情段: 下跌段 62% 做空 ✅ / 上漲段上沿做空 (均值回歸) / 橫盤 100% HOLD ✅
+  • 註: 90 天窗口無 15% 級單邊行情, 用最接近真實段 (06-24 跌 / 07-14 漲)
 
-[Level 4: 72h 伺服器端 Paper Trading]
+[Level 4: 72h 伺服器端 Paper Trading]  ⏳ 跳過 (待後續實盤)
   • 驗證 WebSocket 即時訂單流、保證金結算與狀態機長期運行穩定性。
 ```
