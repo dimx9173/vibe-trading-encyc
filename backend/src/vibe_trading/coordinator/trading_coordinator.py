@@ -1121,22 +1121,33 @@ class TradingCoordinator:
         dx_valid = dx[~np.isnan(dx)]
         adx = float(dx_valid[-period:].mean()) if len(dx_valid) >= period else None
 
-        # 體制判定 (規格書 §2.1)
-        if ema20 < ema50 and adx is not None and adx > 22:
-            regime = "4H_STRONG_DOWNTREND"
-        elif ema20 > ema50 and adx is not None and adx > 22:
-            regime = "4H_STRONG_UPTREND"
+        # 體制判定 (規格書 §2.1) — ADX None 時用 EMA 差距 fallback
+        if ema20 < ema50:
+            if adx is not None and adx > 22:
+                regime = "4H_STRONG_DOWNTREND"
+            elif (ema50 - ema20) / ema50 >= 0.01:
+                # ADX 資料不足時, EMA 差距 ≥1% 視為弱趨勢 (避免永遠 CHOPPY)
+                regime = "4H_STRONG_DOWNTREND"
+            else:
+                regime = "4H_CHOPPY_RANGE"
+        elif ema20 > ema50:
+            if adx is not None and adx > 22:
+                regime = "4H_STRONG_UPTREND"
+            elif (ema20 - ema50) / ema50 >= 0.01:
+                regime = "4H_STRONG_UPTREND"
+            else:
+                regime = "4H_CHOPPY_RANGE"
         else:
             regime = "4H_CHOPPY_RANGE"
         return {"ema20": ema20, "ema50": ema50, "adx": adx, "regime": regime}
 
     async def _prepare_context(self, current_price: float) -> TradingContext:
         """准备交易上下文"""
-        # 获取 K线数据
+        # 获取 K线数据 (limit=500: 50+ 根 4H 供 ADX(14) 計算 — Phase 5 R4 需 4H regime 有效)
         klines = []
         if self.storage:
             from vibe_trading.data_sources.kline_storage import KlineQuery
-            query = KlineQuery(symbol=self.symbol, interval=self.interval, limit=100)
+            query = KlineQuery(symbol=self.symbol, interval=self.interval, limit=500)
             klines = await self.storage.query_klines(query)
 
         # 获取技术指标
@@ -1613,11 +1624,13 @@ class TradingCoordinator:
             rsi = float(rsi)
         except (TypeError, ValueError):
             return decision
-        if regime == "4H_STRONG_DOWNTREND" and rsi >= 70:
-            logger.info(f"[規則訊號] 4H 空頭 + RSI {rsi:.0f} 超買 → 反彈做空 SELL")
+        # 放寬: 非強多頭 (空頭或震盪) + 超買 → 上沿做空 (規格書「区间上沿做空机会」)
+        if regime != "4H_STRONG_UPTREND" and rsi >= 70:
+            logger.info(f"[規則訊號] {regime} + RSI {rsi:.0f} 超買 → 上沿做空 SELL")
             return "SELL"
-        if regime == "4H_STRONG_UPTREND" and rsi <= 30:
-            logger.info(f"[規則訊號] 4H 多頭 + RSI {rsi:.0f} 超賣 → 回調做多 BUY")
+        # 放寬: 非強空頭 (多頭或震盪) + 超賣 → 下沿做多
+        if regime != "4H_STRONG_DOWNTREND" and rsi <= 30:
+            logger.info(f"[規則訊號] {regime} + RSI {rsi:.0f} 超賣 → 下沿做多 BUY")
             return "BUY"
         return decision
 
