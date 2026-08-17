@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Added (Phase 5 — L3 跨體制壓力測試)
+- **L3 短回測完成**: 體制 A 下跌段 62% 做空 ✅ / 體制 B 上漲段上沿做空 (均值回歸特性) / 體制 C 橫盤 100% HOLD ✅ — 報告 `replay/l3_stress_report.md`
+
 ### Added (Phase 5 — 雙向對稱決策)
 - **PositionAction 合約全生命週期動作** (OPEN_LONG/OPEN_SHORT/ADD_LONG/ADD_SHORT/TP_PARTIAL/CLOSE_ALL/TRAIL_STOP/HOLD) + 依持倉動態 valid_actions (規格書 §4.3)
 - **PortfolioDecisionOutput** Pydantic 結構化決策 schema + **submit_portfolio_decision** tool (非法動作 Fail-Open 降級 HOLD, 護欄 4)
