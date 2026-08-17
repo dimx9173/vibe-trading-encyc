@@ -130,6 +130,7 @@ class TradingContext:
     indicators: dict
     market_data: dict
     timestamp: int
+    harvested: dict = field(default_factory=dict)  # Harvested Alpha 因子/衍生品/戰法/看板
 
 
 @dataclass
@@ -238,6 +239,15 @@ class TradingCoordinator:
 
         # 信号处理器
         self._signal_processor = SignalProcessor()
+
+        # ===== Harvested Alpha 七大引擎 (lazy 注入, 失敗不阻斷) =====
+        self._alpha_engine = None          # AlphaZoo 摘要 (technical_tools)
+        self._derivatives_provider = None  # 合約衍生品數據
+        self._battle_registry = None       # 戰法卡片庫
+        self._ic_monitor = None            # 動態 IC 調權
+        self._meta_engine = None           # 元認知看板/覆盤
+        self._dsr_engine = None            # DSR 檢驗
+        self._ladder_engine = None         # Exit Ladder 階梯
 
         # 质量跟踪器
         self._quality_tracker = get_quality_tracker()
@@ -731,9 +741,29 @@ class TradingCoordinator:
             phase_start = time.time()
             self._tool_context.current_bar_open_time_ms = bar_open_time_ms
             self._tool_context.current_trace_id = f"{self.symbol}:{self.interval}:{bar_open_time_ms or int(time.time() * 1000)}"
+            # ===== Harvested Alpha: 看板/戰法/因子摘要注入 PM =====
+            _harvested = getattr(context, "harvested", None) or {}
+            _pm_input_plan = investment_plan or ""
+            if _harvested:
+                _pm_input_plan += "\n\n[HARVESTED ALPHA CONTEXT]\n"
+                if _harvested.get("dashboard"):
+                    _pm_input_plan += f"{_harvested['dashboard']}\n"
+                bc = _harvested.get("battle_cards") or []
+                if bc:
+                    _pm_input_plan += "匹配戰法: " + ", ".join(
+                        f"{c['id']}({c['name']},{c['direction']},RR{c['target_rr']})" for c in bc) + "\n"
+                alpha = _harvested.get("alpha_summary")
+                if alpha and "error" not in alpha:
+                    _pm_input_plan += f"AlphaZoo: {alpha.get('diagnosis', '')}\n"
+                der = _harvested.get("derivatives") or {}
+                if der.get("funding_rate_annualized") is not None:
+                    _pm_input_plan += (
+                        f"衍生品: 年化費率 {der['funding_rate_annualized']}% "
+                        f"| squeeze {der.get('squeeze_risk')} | "
+                        f"taker {der.get('taker_buy_sell_ratio')}\n")
             final_decision = await self._run_portfolio_manager(
                 analyst_reports,
-                investment_plan,
+                _pm_input_plan,
                 trading_plan,
                 risk_assessment,
                 current_positions,
@@ -1198,6 +1228,40 @@ class TradingCoordinator:
             except Exception as e:
                 logger.warning(f"4H regime computation failed: {e}")
 
+        # ===== Harvested Alpha: 因子/衍生品/戰法/看板注入 (失敗不阻斷) =====
+        harvested: Dict[str, Any] = {}
+        try:
+            # 1. AlphaZoo 23 因子摘要
+            from vibe_trading.tools.technical_tools import get_alpha_factor_summary
+            alpha = await get_alpha_factor_summary(self.symbol, self.interval, storage=self.storage)
+            if "error" not in alpha:
+                harvested["alpha_summary"] = alpha
+            # 2. 合約衍生品數據
+            if self._derivatives_provider is None:
+                from vibe_trading.data_sources.providers.derivatives_provider import DerivativesDataProvider
+                self._derivatives_provider = DerivativesDataProvider()
+            harvested["derivatives"] = await self._derivatives_provider.get_derivatives_metrics(self.symbol)
+            # 3. Battle Cards 匹配
+            if self._battle_registry is None:
+                from vibe_trading.research.battle_cards import BattleCardRegistry
+                self._battle_registry = BattleCardRegistry()
+            market_state = {
+                "macro_regime": indicators.get("regime", ""),
+                "rsi": indicators.get("rsi"),
+                "volume_ratio": indicators.get("volume_sma"),
+                "candle_type": "",
+                "funding_annualized": harvested["derivatives"].get("funding_rate_annualized"),
+            }
+            harvested["battle_cards"] = self._battle_registry.match_active_cards(market_state)
+            # 4. 元認知看板
+            if self._meta_engine is None:
+                from vibe_trading.research.meta_cognition import MetaCognitionEngine
+                self._meta_engine = MetaCognitionEngine()
+            harvested["dashboard"] = self._meta_engine.generate_dashboard_prompt()
+        except Exception as e:
+            logger.warning(f"Harvested alpha context failed (degraded): {e}")
+            harvested["degraded"] = str(e)
+
         return TradingContext(
             symbol=self.symbol,
             interval=self.interval,
@@ -1206,6 +1270,7 @@ class TradingCoordinator:
             indicators=indicators,
             market_data={},
             timestamp=int(datetime.now().timestamp() * 1000),
+            harvested=harvested,
         )
 
     async def _run_analysts(self, context: TradingContext) -> Dict[str, str]:
