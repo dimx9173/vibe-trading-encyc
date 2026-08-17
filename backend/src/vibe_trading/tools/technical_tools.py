@@ -4,7 +4,7 @@
 为 Agent 提供技术分析相关的工具函数。
 """
 import logging
-from typing import Optional
+from typing import Any, Dict, Optional
 from pydantic import BaseModel, Field
 
 from vibe_trading.data_sources.technical_indicators import (
@@ -564,4 +564,128 @@ async def get_comprehensive_technical_analysis(
         "volume": volume_data,
         "support_resistance": sr_data,
         "pivots": pivots_data,
+    }
+
+
+# =============================================================================
+# Harvested Alpha — AlphaZoo 23 因子摘要工具 (規格書 §2.2)
+# =============================================================================
+
+class GetAlphaFactorSummaryParams(BaseModel):
+    """獲取 Alpha 因子摘要參數."""
+    symbol: str = Field(description="交易對符號，例如 BTCUSDT")
+    interval: str = Field(default="30m", description="K線週期")
+
+
+async def get_alpha_factor_summary(
+    symbol: str,
+    interval: str = "30m",
+    storage: Optional[Any] = None,
+) -> dict:
+    """計算 AlphaZoo 23 因子摘要 (規格書 §2.2 AlphaFactorSummaryOutput).
+
+    Returns:
+        {momentum_score, volatility_garman_klass, mfi_14, vwap_distance_pct,
+         v_ret, price_zscore_20, fake_breakout_warning, diagnosis}
+    """
+    import numpy as np
+    import pandas as pd
+    from vibe_trading.backtest.alphas import get_all_alphas
+
+    # 取得 K 線 (storage 優先, 否則由 get_technical_indicators 路徑)
+    klines = []
+    if storage is not None:
+        from vibe_trading.data_sources.kline_storage import KlineQuery
+        klines = await storage.query_klines(
+            KlineQuery(symbol=symbol, interval=interval, limit=60))
+    if not klines:
+        return {"error": "No kline data available"}
+
+    data = pd.DataFrame({
+        "open_time": [k.open_time for k in klines],
+        "open": [k.open for k in klines],
+        "high": [k.high for k in klines],
+        "low": [k.low for k in klines],
+        "close": [k.close for k in klines],
+        "volume": [k.volume for k in klines],
+    })
+    data["open_time"] = pd.to_datetime(data["open_time"], unit="ms")
+    data.set_index("open_time", inplace=True)
+
+    # 計算全部 23 因子值
+    factor_values: Dict[str, Any] = {}
+    for alpha_cls in get_all_alphas():
+        try:
+            alpha = alpha_cls()
+            fv = alpha.compute(data)
+            if fv is not None and not fv.empty:
+                factor_values[alpha_cls.__name__] = float(fv.iloc[-1])
+        except Exception:
+            continue
+
+    close = data["close"]
+    volume = data["volume"]
+    high, low, opn = data["high"], data["low"], data["open"]
+
+    # V_RET 量價協方差
+    vol_ma20 = volume.rolling(20).mean().iloc[-1] if len(volume) >= 20 else volume.mean()
+    v_ret = (close.iloc[-1] - close.iloc[-2]) * (volume.iloc[-1] / (vol_ma20 or 1e-8)) \
+        if len(close) >= 2 else 0.0
+
+    # 價格 20 週期 Z-Score
+    mu20 = close.rolling(20).mean().iloc[-1] if len(close) >= 20 else close.mean()
+    std20 = close.rolling(20).std().iloc[-1] if len(close) >= 20 else close.std()
+    price_zscore = (close.iloc[-1] - mu20) / (std20 + 1e-8)
+
+    # VWAP 偏離
+    typical = (high + low + close) / 3
+    vwap = (typical * volume).sum() / (volume.sum() + 1e-8)
+    vwap_dist = (close.iloc[-1] - vwap) / vwap * 100.0
+
+    # MFI 14 (資金流量指標)
+    mfi_14 = 50.0
+    try:
+        typical_price = (high + low + close) / 3
+        mf = typical_price * volume
+        diff = typical_price.diff()
+        pos = mf.where(diff > 0).rolling(14).sum().iloc[-1]
+        neg = mf.where(diff < 0).rolling(14).sum().iloc[-1]
+        if neg and not np.isnan(neg) and neg > 0:
+            mfi_14 = 100 - 100 / (1 + (pos or 0) / neg)
+    except Exception:
+        pass
+
+    # Garman-Klass 波動率
+    gk = 0.5 * np.log(high / low) ** 2 - (2 * np.log(2) - 1) * np.log(close / opn) ** 2
+    gk_vol = float(np.sqrt(gk.replace([np.inf, -np.inf], np.nan).dropna().mean()))
+
+    # 動量綜合評分 (使用現有動量因子 + 標準化)
+    momentum_score = 0.0
+    mom_keys = ["Momentum12_1", "RateOfChange", "TrendStrength"]
+    mom_vals = [factor_values.get(k, 0.0) for k in mom_keys if k in factor_values]
+    if mom_vals:
+        arr = np.array(mom_vals)
+        momentum_score = float(np.tanh(np.nanmean(arr / (np.abs(arr).max() + 1e-8))))
+
+    # 縮量假突破警示 (VWAP 偏離 + 量縮)
+    vol_ratio = volume.iloc[-1] / (vol_ma20 + 1e-8)
+    fake_breakout = abs(vwap_dist) > 1.0 and vol_ratio < 0.8
+
+    diagnosis = (
+        f"動量 {momentum_score:+.2f} | GK 波動 {gk_vol:.4f} | MFI {mfi_14:.0f} | "
+        f"VWAP 偏離 {vwap_dist:+.2f}% | Z-Score {price_zscore:+.2f} | "
+        f"量比 {vol_ratio:.2f}" + (" | ⚠️ 縮量假突破" if fake_breakout else "")
+    )
+
+    return {
+        "momentum_score": round(momentum_score, 4),
+        "volatility_garman_klass": round(gk_vol, 6),
+        "mfi_14": round(mfi_14, 2),
+        "vwap_distance_pct": round(vwap_dist, 3),
+        "v_ret": round(v_ret, 6),
+        "price_zscore_20": round(price_zscore, 3),
+        "fake_breakout_warning": fake_breakout,
+        "diagnosis": diagnosis,
+        "factor_count": len(factor_values),
+        "factors": {k: round(v, 6) for k, v in factor_values.items()},
     }

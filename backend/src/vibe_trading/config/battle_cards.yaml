@@ -1,0 +1,85 @@
+battle_cards:
+  - id: "BC-01"
+    name: "4H 空頭壓制頂背馳"
+    conditions:
+      macro_regime: "4H_DOWNTREND"
+      rsi_divergence: "BEARISH_DIV"
+      price_action: "LOWER_HIGH_OR_PINBAR"
+    direction: "SHORT"
+    target_rr: 3.0
+    historical_win_rate: 0.675
+    historical_trades: 40
+
+  - id: "BC-02"
+    name: "縮量假突破反手做空"
+    conditions:
+      bb_breakout: "UPPER_BREAK"
+      volume_ratio_max: 0.80
+      candle_type: "DOJI_OR_SHOOTING_STAR"
+    direction: "SHORT"
+    target_rr: 2.5
+    historical_win_rate: 0.640
+    historical_trades: 28
+
+  - id: "BC-03"
+    name: "4H 多頭共振回踩均線"
+    conditions:
+      macro_regime: "4H_UPTREND"
+      pullback_to: "EMA20_OR_SMA50"
+      candle_type: "HAMMER_OR_LONG_LOWER_SHADOW"
+    direction: "BUY"
+    target_rr: 2.5
+    historical_win_rate: 0.660
+    historical_trades: 35
+
+  - id: "BC-04"
+    name: "恐慌超賣極限放量底"
+    conditions:
+      rsi_max: 20.0
+      volume_ratio_min: 2.50
+      candle_type: "PINBAR_REVERSAL"
+    direction: "BUY"
+    target_rr: 3.5
+    historical_win_rate: 0.700
+    historical_trades: 20
+
+  - id: "BC-05"
+    name: "資金費率極端多頭過熱做空"
+    conditions:
+      funding_annualized_min: 50.0
+      price_near_high: true
+    direction: "SHORT"
+    target_rr: 2.0
+    historical_win_rate: 0.610
+    historical_trades: 25
+
+  - id: "BC-06"
+    name: "空頭擠壓軋空反手做多"
+    conditions:
+      funding_annualized_max: -30.0
+      price_near_low: true
+    direction: "BUY"
+    target_rr: 2.8
+    historical_win_rate: 0.685
+    historical_trades: 18
+
+  - id: "BC-07"
+    name: "量價背離頂部滯漲"
+    conditions:
+      price_action: "HIGHER_HIGH"
+      volume_divergence: "BEARISH"
+    direction: "SHORT"
+    target_rr: 2.2
+    historical_win_rate: 0.590
+    historical_trades: 22
+
+  - id: "BC-08"
+    name: "突破放量順勢追多"
+    conditions:
+      bb_breakout: "UPPER_BREAK"
+      volume_ratio_min: 1.80
+      candle_type: "STRONG_BULLISH"
+    direction: "BUY"
+    target_rr: 2.0
+    historical_win_rate: 0.575
+    historical_trades: 30
