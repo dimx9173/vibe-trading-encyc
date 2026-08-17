@@ -263,12 +263,20 @@ class FileCache:
         total = self.hits + self.misses
         hit_rate = self.hits / total if total > 0 else 0
 
+        # 並行進程/測試可能刪除 cache 檔 (glob 後 stat 前) — 容錯跳過
         cache_files = list(self.cache_dir.glob("*.cache"))
-        total_size = sum(f.stat().st_size for f in cache_files)
+        total_size = 0
+        existing = 0
+        for f in cache_files:
+            try:
+                total_size += f.stat().st_size
+                existing += 1
+            except FileNotFoundError:
+                continue
 
         return {
             "cache_dir": str(self.cache_dir),
-            "file_count": len(cache_files),
+            "file_count": existing,
             "total_size_bytes": total_size,
             "total_size_mb": total_size / (1024 * 1024),
             "hits": self.hits,
