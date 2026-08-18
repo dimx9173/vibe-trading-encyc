@@ -24,8 +24,8 @@
   "config": {
     "symbol": "BTCUSDT",
     "interval": "30m",
-    "start": 1742,
-    "end": 1792,
+    "start": 120,
+    "end": 518,
     "skip_debate": true,
     "use_cache": true
   },
