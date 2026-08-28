@@ -9,6 +9,8 @@ tags: [development, contributing, changelog]
 本文档描述了 Vibe Trading 项目的开发计划和未来方向。
 
 > 注：本文件为早期版本路线图（v0.1/v0.2）。最新研发与技术演进请参考 [技术演进路线图](/research/evolution-roadmap)。
+>
+> ⚠️ 2026-08-28：当前唯一执行路线为 [印钞机优先收敛计划](/specs/money-printer-convergence-plan)（规则层主引擎、三币、168h×3 回测 → 14d paper → 500U 实盘）。本文件与演进路线图中与之冲突的条目以该计划为准。
 
 ## 当前版本：v0.1.x
 

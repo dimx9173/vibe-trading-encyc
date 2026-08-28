@@ -1,5 +1,7 @@
 # 主專案技術演進與架構升級路線圖（Roadmap 報告）
 
+> **⚠️ 2026-08-28 優先級聲明**：本路線圖中與「印鈔機優先」衝突的條目（多交易所/DEX 矩陣、MCP、exporter、L2 完整 LLM ablation、L3 Monte Carlo、L4 72h paper 等）已被 **《印鈔機優先收斂計劃》（`docs/specs/money-printer-convergence-plan.md`）** 取代或取消。執行順序與取捨以該計劃為唯一準繩。
+
 > **文檔狀態**：正式技術路線圖（Technical Evolution Roadmap）  
 > **更新日期**：2026-08-17  
 > **修訂記錄**：
@@ -99,17 +101,18 @@ graph LR
 
 ---
 
-### ✅ Phase 4：全鏈路 Crypto CEX/DEX 擴展與 MCP 生態（已完成）
-> **狀態**: 2026-08-15 完成
+### ✅ Phase 4：全鏈路 Crypto CEX/DEX 擴展與 MCP 生態（大部分已移除）
+> **狀態**: 2026-08-28 收斂印鈔機路線後，CEX/DEX 多所矩陣、SOR 路由、MCP Server 已物理刪除。僅保留 Binance 單所執行通道、動態標的宇宙與退出管理。
 
 - [x] **4.1 CEX 與 DEX 雙軌執行矩陣**：
-  - 交付 Binance, OKX, Bybit, Bitget, Hyperliquid, Jupiter 執行通道與 SOR 跨所智能路由。
+  - ~~交付 Binance, OKX, Bybit, Bitget, Hyperliquid, Jupiter 執行通道與 SOR 跨所智能路由。~~ **已移除（收斂印鈔機路線）**。
+  - 僅保留 Binance 單所執行器（Paper + Testnet + Live）。
 - [x] **4.2 動態標的宇宙與退出管理**：
-  - 交付 `factors/universe.py`（24h 交易量全量掃描）與 `execution/exit_ladder.py`（移動止損 + Moonbag 止盈）。
+  - 交付 `factors/universe.py`（24h 交易量全量掃描）與 `execution/exit_ladder.py`（移動止損 + Moonbag 止盈）。✅ 保留。
 - [x] **4.3 RunManifest 方法論指紋（`governance/manifest.py`）**：
-  - 生成 content-addressed hash 確保 Replay 回測的可重現性。
+  - 生成 content-addressed hash 確保 Replay 回測的可重現性。✅ 保留。
 - [x] **4.4 標準化 Crypto MCP Server（`mcp/server.py`）**：
-  - 開放 QuantLib / StackVM / Universe 計算工具與白名單安全防護。
+  - ~~開放 QuantLib / StackVM / Universe 計算工具與白名單安全防護。~~ **已移除（收斂印鈔機路線，2026-08-28）**。
 
 ---
 
@@ -194,5 +197,5 @@ graph LR
 | coordinator 整合 | 7 引擎接入 + context/PM 注入 | ✅ |
 | **L1 單元測試** | 規格書 7 檔全過 | ✅ |
 | **DoD** | mypy 0 / ruff clean / coverage 93% | ✅ |
-| **L2 消融** | 規則層: Baseline→B1 +9.42 (完整 LLM 版待後續) | ⏳ 部分 |
-| **L3/L4** | 蒙地卡羅 / 72h paper | ⏳ 待後續 |
+| **L2 消融** | ~~規則層: Baseline→B1 +9.42~~ **取消，由 168h×3 + 14d paper 取代** | ❌ 取消 |
+| **L3/L4** | ~~蒙地卡羅 / 72h paper~~ **取消，由 168h×3 + 14d paper 取代** | ❌ 取消 |

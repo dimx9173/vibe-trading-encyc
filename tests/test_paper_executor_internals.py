@@ -365,22 +365,6 @@ class TestCreateExecutor:
         assert isinstance(ex, BinanceOrderExecutor)
         assert ex._client.config.environment == BinanceEnvironment.TESTNET
 
-    def test_okx_live_missing(self):
-        from vibe_trading.execution.order_executor import create_executor
-        self._clear("okx_api_key")
-        with pytest.raises(ValueError):
-            create_executor(TradingMode.OKX_LIVE)
-
-    def test_okx_live_ok(self):
-        from vibe_trading.execution.order_executor import create_executor
-        ex = create_executor(TradingMode.OKX_LIVE, dry_run=True)
-        assert ex is not None
-
-    def test_okx_testnet_ok(self):
-        from vibe_trading.execution.order_executor import create_executor
-        ex = create_executor(TradingMode.OKX_TESTNET)
-        assert ex is not None
-
     def test_live_missing(self):
         from vibe_trading.execution.order_executor import create_executor
         self._clear("binance_api_key")

@@ -1,6 +1,6 @@
 """Tests for CLI commands (Wave B — coverage 85% plan).
 
-使用 typer.testing.CliRunner. 目標: 覆蓋輕量命令 (status/alpha/funding-arb/
+使用 typer.testing.CliRunner. 目標: 覆蓋輕量命令 (status/alpha/
 manifest-diff/hyp-create/hyp-list/universe-scan/goal) + 不需要真實網路的命令.
 重度命令 (start/analyze/prime/macro) 需 mock 依賴 — 以 import patch 測試.
 """
@@ -40,27 +40,6 @@ class TestAlphaCommands:
         result = runner.invoke(app, ["alpha", "list", "--category", "bogus"])
         # 未知類別 → 空表但仍 exit 0
         assert result.exit_code == 0
-
-
-class TestFundingArb:
-    def test_funding_arb_finds_opportunity(self):
-        result = runner.invoke(app, [
-            "research", "funding-arb",
-            "--binance", "0.0001", "--okx", "0.0003",
-            "--bybit", "0.0001", "--bitget", "0.00005",
-        ])
-        assert result.exit_code == 0
-        assert "FUNDING-ARB" in result.output
-        assert "年化" in result.output
-
-    def test_funding_arb_no_opportunity(self):
-        result = runner.invoke(app, [
-            "research", "funding-arb",
-            "--binance", "0.0001", "--okx", "0.0001",
-            "--bybit", "0.0001", "--bitget", "0.0001",
-        ])
-        assert result.exit_code == 0
-        assert "無符合閾值" in result.output
 
 
 class TestManifestDiff:
@@ -110,13 +89,6 @@ class TestUniverseScan:
         assert result.exit_code == 0
 
 
-class TestSorQuote:
-    def test_sor_quote_smoke(self):
-        result = runner.invoke(app, ["research", "sor-quote", "--symbol", "BTCUSDT"])
-        assert result.exit_code == 0
-        assert "SOR" in result.output
-
-
 class TestGoalCommands:
     def test_goal_create_and_list(self):
         result = runner.invoke(app, ["research", "goal-create", "測試目標"])
@@ -126,42 +98,6 @@ class TestGoalCommands:
     def test_goal_list(self):
         result = runner.invoke(app, ["research", "goal-list"])
         assert result.exit_code == 0
-
-
-class TestExportCommands:
-    def test_export_to_pine(self, tmp_path: Path):
-        plan = tmp_path / "plan.json"
-        plan.write_text(json.dumps({"symbol": "BTCUSDT", "direction": "LONG"}))
-        out = tmp_path / "strategy.pine"
-        result = runner.invoke(app, [
-            "export", "to-pine", str(plan), "--output", str(out),
-        ])
-        assert result.exit_code == 0
-        assert out.exists() and out.stat().st_size > 0
-
-    def test_export_to_pine_missing_file(self, tmp_path: Path):
-        result = runner.invoke(app, ["export", "to-pine", str(tmp_path / "nope.json")])
-        assert result.exit_code == 1
-
-    def test_export_to_pine_bad_json(self, tmp_path: Path):
-        bad = tmp_path / "bad.json"
-        bad.write_text("not json{{{")
-        result = runner.invoke(app, ["export", "to-pine", str(bad)])
-        assert result.exit_code == 1
-
-    def test_export_to_mql5(self, tmp_path: Path):
-        plan = tmp_path / "plan.json"
-        plan.write_text(json.dumps({"symbol": "ETHUSDT", "direction": "SHORT"}))
-        out = tmp_path / "strategy.mq5"
-        result = runner.invoke(app, [
-            "export", "to-mql5", str(plan), "--output", str(out),
-        ])
-        assert result.exit_code == 0
-        assert out.exists() and out.stat().st_size > 0
-
-    def test_export_to_mql5_missing_file(self, tmp_path: Path):
-        result = runner.invoke(app, ["export", "to-mql5", str(tmp_path / "nope.json")])
-        assert result.exit_code == 1
 
 
 class TestMacroCommand:
@@ -615,140 +551,3 @@ class TestAlphaBench:
         assert result.exit_code == 0
         clean = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
         assert "共測試 0 個因子" in clean
-
-
-class TestRunPrimeSystem:
-    @pytest.mark.asyncio
-    async def test_run_basic(self):
-        import vibe_trading.cli as cli_mod
-        from unittest.mock import patch as _p
-        agent = MagicMock()
-        agent.start = AsyncMock()
-        agent.close = AsyncMock()
-        with _p.object(cli_mod, "PrimeAgent", return_value=agent), \
-             _p.object(cli_mod, "PrimeAgentConfig", return_value=MagicMock()), \
-             _p.object(cli_mod, "PrimeConfig", return_value=MagicMock()), \
-             _p.object(cli_mod, "HarnessConfig", return_value=MagicMock()), \
-             _p.object(cli_mod, "configure", return_value=None):
-            await cli_mod.run_prime_system(
-                symbols=["BTCUSDT"], interval="30m",
-                mode=TradingMode.PAPER, execute_trades=False)
-        agent.start.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_run_save_logs(self):
-        import vibe_trading.cli as cli_mod
-        from unittest.mock import patch as _p
-        agent = MagicMock()
-        agent.start = AsyncMock()
-        with _p.object(cli_mod, "PrimeAgent", return_value=agent), \
-             _p.object(cli_mod, "PrimeAgentConfig", return_value=MagicMock()), \
-             _p.object(cli_mod, "PrimeConfig", return_value=MagicMock()), \
-             _p.object(cli_mod, "HarnessConfig", return_value=MagicMock()), \
-             _p.object(cli_mod, "configure", return_value=None) as cfg:
-            await cli_mod.run_prime_system(
-                symbols=["BTCUSDT"], interval="30m",
-                mode=TradingMode.PAPER, execute_trades=False,
-                save_logs=True)
-            assert cfg.call_count >= 1
-
-    @pytest.mark.asyncio
-    async def test_run_with_web(self):
-        import vibe_trading.cli as cli_mod
-        from unittest.mock import patch as _p
-        agent = MagicMock()
-        agent.start = AsyncMock()
-        with _p.object(cli_mod, "PrimeAgent", return_value=agent), \
-             _p.object(cli_mod, "PrimeAgentConfig", return_value=MagicMock()), \
-             _p.object(cli_mod, "PrimeConfig", return_value=MagicMock()), \
-             _p.object(cli_mod, "HarnessConfig", return_value=MagicMock()), \
-             _p.object(cli_mod, "configure", return_value=None), \
-             _p.object(cli_mod, "run_web_server", new=AsyncMock()):
-            await cli_mod.run_prime_system(
-                symbols=["BTCUSDT"], interval="30m",
-                mode=TradingMode.PAPER, execute_trades=False,
-                enable_web=True, web_port=8002)
-
-    @pytest.mark.asyncio
-    async def test_run_exception(self):
-        import vibe_trading.cli as cli_mod
-        from unittest.mock import patch as _p
-        agent = MagicMock()
-        agent.start = AsyncMock(side_effect=RuntimeError("boom"))
-        with _p.object(cli_mod, "PrimeAgent", return_value=agent), \
-             _p.object(cli_mod, "PrimeAgentConfig", return_value=MagicMock()), \
-             _p.object(cli_mod, "PrimeConfig", return_value=MagicMock()), \
-             _p.object(cli_mod, "HarnessConfig", return_value=MagicMock()), \
-             _p.object(cli_mod, "configure", return_value=None), \
-             _p.object(cli_mod, "logger", MagicMock()):
-            await cli_mod.run_prime_system(
-                symbols=["BTCUSDT"], interval="30m",
-                mode=TradingMode.PAPER, execute_trades=False)
-        # 錯誤被吞
-
-
-class TestPrimeCommand:
-    def test_prime_paper(self):
-        import vibe_trading.cli as cli_mod
-        from unittest.mock import patch as _p
-        with _p.object(cli_mod, "configure", return_value=None), \
-             _p.object(cli_mod, "run_prime_system", new=AsyncMock()):
-            result = runner.invoke(app, ["prime", "BTCUSDT"])
-        assert result.exit_code == 0
-
-    def test_prime_live_abort(self):
-        import vibe_trading.cli as cli_mod
-        from unittest.mock import patch as _p
-        with _p.object(cli_mod, "configure", return_value=None), \
-             _p.object(cli_mod, "typer", new=MagicMock()):
-            cli_mod.typer.confirm = MagicMock(return_value=False)
-            result = runner.invoke(app, ["prime", "BTCUSDT", "--mode", "live"])
-        assert result.exit_code != 0  # Abort
-
-    def test_prime_live_confirm(self):
-        import vibe_trading.cli as cli_mod
-        from unittest.mock import patch as _p
-        with _p.object(cli_mod, "configure", return_value=None), \
-             _p.object(cli_mod, "run_prime_system", new=AsyncMock()), \
-             _p.object(cli_mod, "typer", new=MagicMock()):
-            cli_mod.typer.confirm = MagicMock(return_value=True)
-            result = runner.invoke(app, ["prime", "BTCUSDT", "--mode", "live"])
-        assert result.exit_code == 0
-
-    def test_prime_live_execute_abort(self):
-        import vibe_trading.cli as cli_mod
-        from unittest.mock import patch as _p
-        with _p.object(cli_mod, "configure", return_value=None), \
-             _p.object(cli_mod, "typer", new=MagicMock()):
-            cli_mod.typer.confirm = MagicMock(return_value=False)
-            result = runner.invoke(app, ["prime", "BTCUSDT", "--mode", "live",
-                                         "--execute"])
-        assert result.exit_code != 0
-
-
-class TestExportMql5:
-    def test_missing_file(self, tmp_path):
-        result = runner.invoke(app, [
-            "export", "to-mql5", str(tmp_path / "nope.json"),
-        ])
-        assert result.exit_code == 1
-
-    def test_bad_json(self, tmp_path):
-        f = tmp_path / "bad.json"
-        f.write_text("{not json")
-        result = runner.invoke(app, ["export", "to-mql5", str(f)])
-        assert result.exit_code == 1
-
-    def test_success(self, tmp_path):
-        import json as _json
-        f = tmp_path / "plan.json"
-        f.write_text(_json.dumps({"entries": [{"symbol": "BTCUSDT"}]}))
-        out = tmp_path / "out.mq5"
-        exporter = MagicMock()
-        exporter.export = MagicMock(return_value="// strategy")
-        with patch("vibe_trading.exporters.MQL5Exporter",
-                   return_value=exporter):
-            result = runner.invoke(app, [
-                "export", "to-mql5", str(f), "--output", str(out),
-            ])
-        assert result.exit_code == 0

@@ -4,13 +4,19 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## Project Overview
 
-Vibe Trading is a multi-agent cryptocurrency trading system powered by Large Language Models (LLMs). The system uses a collaborative agent architecture with 12 specialized agents working across 4 phases to make trading decisions.
+Vibe Trading is a multi-agent cryptocurrency trading system powered by Large Language Models (LLMs). The system uses a collaborative agent architecture with 12 specialized agents working across 4 phases to make trading decisions, now supplemented by a rule-engine primary loop and LLM regime gate per the [印钞机优先收敛计划](docs/specs/money-printer-convergence-plan.md).
 
 **Core Architecture:**
 - **pi_agent_core**: Agent framework with dual-loop message processing engine
 - **pi_ai**: LLM abstraction layer supporting multiple providers (OpenAI, Anthropic, Google, custom endpoints)
 - **pi_logger**: Structured logging system with colorized console output and file logging
 - **vibe_trading**: Main trading application with agents, coordinators, data sources, and execution
+
+**Current Execution Model (post convergence):**
+- **Rule-Engine Primary Loop**: AlphaZoo → signal → Half-Kelly sizing → EvidenceGate/grounding → ExitLadder
+- **LLM Regime Gate**: Hourly macro judgment outputs RISK_ON/NEUTRAL/RISK_OFF; RISK_OFF disables new position entry
+- **12-Agent Debate Chain**: Retained for manual offline analysis only, NOT in automatic loops
+- **Single Exchange**: Binance only (OKX/Bybit/Bitget/Hyperliquid/Jupiter, SOR, MCP Server, exporters deleted 2026-08-28)
 
 **Decision Flow (4 Phases):**
 1. **Phase 1 - Analysts**: Technical, Fundamental, News, Sentiment analysts (parallel execution)
