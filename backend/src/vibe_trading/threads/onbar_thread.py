@@ -5,7 +5,8 @@ K-line triggered main trading thread using full coordinator.
 """
 import asyncio
 import logging
-from typing import Dict, Optional
+from types import SimpleNamespace
+from typing import Any, Dict, Optional
 from datetime import datetime
 
 from vibe_trading.coordinator.trading_coordinator import (
@@ -18,6 +19,7 @@ from vibe_trading.websocket_manager import get_websocket_manager
 from vibe_trading.data_sources.binance_client import BinanceClient, KlineInterval
 from vibe_trading.config.binance_config import BinanceConfig, BinanceEnvironment
 from vibe_trading.execution.order_executor import OrderExecutor
+from vibe_trading.rule_engine.loop import RuleEngineLoop
 from pi_logger import get_logger, info
 
 logger = logging.getLogger(__name__)
@@ -37,21 +39,27 @@ class OnBarThread:
         interval: str = "30m",
         thread_manager: Optional[ThreadManager] = None,
         executor: Optional[OrderExecutor] = None,
+        rule_engine_loop: Optional[RuleEngineLoop] = None,
     ):
         """
         Initialize On Bar thread
-        
+
         Args:
             symbol: Trading symbol
             interval: Time interval
             thread_manager: Thread manager instance
+            executor: 订单执行器
+            rule_engine_loop: Phase-1 规则回路实例; 注入后 coordinator 不再创建
         """
         self.symbol = symbol
         self.interval = interval
         self.thread_manager = thread_manager or get_thread_manager()
         self.executor = executor
-        
-        # Coordinator
+
+        # 规则回路 (Phase 1): 注入后走 on_bar, 12-agent chain 退出自动回路
+        self._rule_engine_loop = rule_engine_loop
+
+        # Coordinator (legacy 手动/测试路径)
         self._coordinator: Optional[TradingCoordinator] = None
         
         # State
@@ -69,6 +77,13 @@ class OnBarThread:
     
     async def initialize(self) -> None:
         """Initialize the thread"""
+        if self._rule_engine_loop is not None:
+            logger.info(
+                f"OnBarThread initialized with rule-engine loop for {self.symbol} "
+                f"(12-agent chain not created)"
+            )
+            return
+
         # Initialize coordinator with full agent team
         from vibe_trading.memory.hybrid_memory import create_hybrid_memory_from_settings
 
@@ -310,15 +325,24 @@ class OnBarThread:
                 interval=self.interval,
             )
 
-            # Execute full 5-phase decision flow with all 13 agents
-            positions = await self._get_positions()
-            account_balance = await self._get_account_balance()
-            decision = await self._coordinator.analyze_and_decide(
-                current_price=close_price,
-                account_balance=account_balance,
-                current_positions=positions,
-                bar_open_time_ms=int(kline.open_time),
-            )
+            # Phase 1: 规则回路直驱 (coordinator 不再注入本线程)
+            decision: Any
+            if self._rule_engine_loop is not None:
+                rule = await self._rule_engine_loop.on_bar(kline)
+                decision = SimpleNamespace(
+                    decision=rule.action.upper(),
+                    rationale=rule.reason,
+                )
+            else:
+                # Execute full 5-phase decision flow with all 13 agents
+                positions = await self._get_positions()
+                account_balance = await self._get_account_balance()
+                decision = await self._coordinator.analyze_and_decide(
+                    current_price=close_price,
+                    account_balance=account_balance,
+                    current_positions=positions,
+                    bar_open_time_ms=int(kline.open_time),
+                )
 
             self._decisions_made += 1
 

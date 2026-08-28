@@ -18,6 +18,11 @@ from vibe_trading.coordinator.thread_manager import get_thread_manager
 from vibe_trading.coordinator.shared_state import get_shared_state_manager
 from vibe_trading.coordinator.event_queue import get_event_queue
 from vibe_trading.coordinator.emergency_handler import EmergencyHandler
+from vibe_trading.config.settings import get_settings
+from vibe_trading.data_sources.kline_storage import KlineStorage
+from vibe_trading.data_sources.macro_storage import get_macro_storage
+from vibe_trading.rule_engine.config import RuleEngineConfig
+from vibe_trading.rule_engine.loop import RuleEngineLoop
 from vibe_trading.threads.macro_thread import MacroAnalysisThread
 from vibe_trading.threads.onbar_thread import OnBarThread
 from vibe_trading.triggers.trigger_registry import get_trigger_registry
@@ -50,19 +55,24 @@ class MultiThreadedTradingSystem:
     
     def __init__(
         self,
-        symbol: str = "BTCUSDT",
+        symbols: Optional[List[str]] = None,
         interval: str = "30m",
         executor: Optional[OrderExecutor] = None,
         mode: str = "paper",
+        symbol: Optional[str] = None,
     ):
         """
         Initialize multi-threaded trading system
-        
+
         Args:
-            symbol: Trading symbol
+            symbols: 交易对列表 (Phase 1: 每 symbol 一个 OnBarThread + RuleEngineLoop)
             interval: Time interval for On Bar thread
+            symbol: legacy 单标的参数 (backward-compat)
         """
-        self.symbol = symbol
+        if symbols is None:
+            symbols = [symbol] if symbol else list(get_settings().symbols)
+        self.symbols: List[str] = list(symbols)
+        self.symbol = self.symbols[0]
         self.interval = interval
         self.executor = executor
         self.mode = mode
@@ -76,6 +86,7 @@ class MultiThreadedTradingSystem:
         # Threads
         self.macro_thread: Optional[MacroAnalysisThread] = None
         self.onbar_thread: Optional[OnBarThread] = None
+        self.onbar_threads: List[OnBarThread] = []
         self.event_thread: Optional[asyncio.Task] = None
         
         # Emergency handler
@@ -99,21 +110,38 @@ class MultiThreadedTradingSystem:
         # Initialize shared state cleanup task
         await self.shared_state.start_cleanup_task(interval_seconds=60)
         
-        # Initialize macro thread
+        # Initialize macro thread (market-level regime judgment, 主 symbol)
         self.macro_thread = MacroAnalysisThread(
             symbol=self.symbol,
             interval_seconds=3600,  # 1 hour
         )
         await self.macro_thread.initialize()
-        
-        # Initialize On Bar thread
-        self.onbar_thread = OnBarThread(
-            symbol=self.symbol,
-            interval=self.interval,
-            thread_manager=self.thread_manager,
-            executor=self.executor,
-        )
-        await self.onbar_thread.initialize()
+
+        # Phase 1: 每 symbol 一条规则回路 (12-agent chain 不进自动回路)
+        storage = KlineStorage()
+        macro_storage = get_macro_storage()
+        rule_config = RuleEngineConfig.from_env()
+        rule_config.interval = self.interval
+        for sym in self.symbols:
+            loop = RuleEngineLoop(
+                symbol=sym,
+                interval=self.interval,
+                storage=storage,
+                executor=self.executor,
+                macro_storage=macro_storage,
+                config=rule_config,
+            )
+            onbar = OnBarThread(
+                symbol=sym,
+                interval=self.interval,
+                thread_manager=self.thread_manager,
+                executor=self.executor,
+                rule_engine_loop=loop,
+            )
+            await onbar.initialize()
+            self.onbar_threads.append(onbar)
+        if self.onbar_threads:
+            self.onbar_thread = self.onbar_threads[0]
         
         # Initialize Telegram notifier
         from vibe_trading.notifications.config import TelegramConfig
@@ -148,29 +176,26 @@ class MultiThreadedTradingSystem:
         success("System initialization complete")
     
     async def _register_default_triggers(self) -> None:
-        """Register default triggers"""
+        """Register default triggers (price triggers per symbol, risk triggers once)."""
         info("Registering default triggers...", tag="TRIGGERS")
-        
-        # Price triggers
-        price_drop = PriceDropTrigger(
-            threshold_pct=0.03,
-            symbol=self.symbol,
-        )
-        self.trigger_registry.register(price_drop)
-        
-        price_spike = PriceSpikeTrigger(
-            threshold_pct=0.03,
-            symbol=self.symbol,
-        )
-        self.trigger_registry.register(price_spike)
-        
+
+        for sym in self.symbols:
+            self.trigger_registry.register(PriceDropTrigger(
+                threshold_pct=0.03,
+                symbol=sym,
+            ))
+            self.trigger_registry.register(PriceSpikeTrigger(
+                threshold_pct=0.03,
+                symbol=sym,
+            ))
+
         # Risk triggers
         margin_trigger = MarginRatioTrigger(threshold_ratio=0.5)
         self.trigger_registry.register(margin_trigger)
-        
+
         drawdown_trigger = DrawdownTrigger(threshold_drawdown=0.2)
         self.trigger_registry.register(drawdown_trigger)
-        
+
         log.info(f"Registered {len(self.trigger_registry.get_all())} triggers")
     
     async def start(self) -> None:
@@ -187,11 +212,15 @@ class MultiThreadedTradingSystem:
             name="macro_thread",
             coroutine=self.macro_thread.start,
         )
-        
-        await self.thread_manager.register_thread(
-            name="onbar_thread",
-            coroutine=self.onbar_thread.start,
-        )
+
+        onbar_threads = list(self.onbar_threads)
+        if not onbar_threads and self.onbar_thread is not None:
+            onbar_threads = [self.onbar_thread]
+        for thread in onbar_threads:
+            await self.thread_manager.register_thread(
+                name=f"onbar_{thread.symbol}",
+                coroutine=thread.start,
+            )
         
         # Start macro thread
         await self.thread_manager.start_thread("macro_thread")
@@ -200,12 +229,14 @@ class MultiThreadedTradingSystem:
             self.macro_thread.start,
         )
         
-        # Start On Bar thread
-        await self.thread_manager.start_thread("onbar_thread")
-        await self.thread_manager.run_thread(
-            "onbar_thread",
-            self.onbar_thread.start,
-        )
+        # Start On Bar thread(s)
+        for thread in onbar_threads:
+            thread_name = f"onbar_{thread.symbol}"
+            await self.thread_manager.start_thread(thread_name)
+            await self.thread_manager.run_thread(
+                thread_name,
+                thread.start,
+            )
         
         # Start event thread
         self.event_thread = asyncio.create_task(self._run_event_thread())
@@ -438,9 +469,12 @@ class MultiThreadedTradingSystem:
         if self.macro_thread:
             await self.macro_thread.stop()
         
-        # Stop On Bar thread
-        if self.onbar_thread:
-            await self.onbar_thread.stop()
+        # Stop On Bar thread(s)
+        onbar_threads = list(self.onbar_threads)
+        if not onbar_threads and self.onbar_thread is not None:
+            onbar_threads = [self.onbar_thread]
+        for thread in onbar_threads:
+            await thread.stop()
         
         # Stop shared state cleanup
         await self.shared_state.stop_cleanup_task()

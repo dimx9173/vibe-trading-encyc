@@ -11,6 +11,7 @@ from vibe_trading.data_sources.technical_indicators import (
     TechnicalIndicators,
 )
 from vibe_trading.data_sources.kline_storage import KlineStorage, KlineQuery
+from vibe_trading.rule_engine.signal import momentum_tanh_score
 
 logger = logging.getLogger(__name__)
 
@@ -653,13 +654,12 @@ async def get_alpha_factor_summary(
     gk = 0.5 * np.log(high / low) ** 2 - (2 * np.log(2) - 1) * np.log(close / opn) ** 2
     gk_vol = float(np.sqrt(gk.replace([np.inf, -np.inf], np.nan).dropna().mean()))
 
-    # 動量綜合評分 (使用現有動量因子 + 標準化)
+    # 動量綜合評分 (使用現有動量因子 + 標準化, 复用 rule_engine.signal 的 tanh 归一化)
     momentum_score = 0.0
     mom_keys = ["Momentum12_1", "RateOfChange", "TrendStrength"]
     mom_vals = [factor_values.get(k, 0.0) for k in mom_keys if k in factor_values]
     if mom_vals:
-        arr = np.array(mom_vals)
-        momentum_score = float(np.tanh(np.nanmean(arr / (np.abs(arr).max() + 1e-8))))
+        momentum_score = momentum_tanh_score(mom_vals)
 
     # 縮量假突破警示 (VWAP 偏離 + 量縮)
     vol_ratio = volume.iloc[-1] / (vol_ma20 + 1e-8)

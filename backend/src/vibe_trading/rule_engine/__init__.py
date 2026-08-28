@@ -1,0 +1,1 @@
+"""Rule-engine primary loop (Phase 1: AlphaZoo factors → signal → sizing → grounding → ExitLadder)."""

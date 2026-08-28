@@ -46,7 +46,7 @@ class Settings:
 
     # 交易配置
     trading_mode: TradingMode = TradingMode.PAPER
-    symbols: List[str] = field(default_factory=lambda: ["BTCUSDT", "ETHUSDT"])
+    symbols: List[str] = field(default_factory=lambda: ["BTCUSDT", "ETHUSDT", "SOLUSDT"])
     interval: str = "30m"  # K线间隔
 
     # 风控配置
@@ -106,7 +106,7 @@ class Settings:
         return cls(
             debug=os.getenv("DEBUG", "false").lower() == "true",
             trading_mode=TradingMode(os.getenv("TRADING_MODE", "paper")),
-            symbols=os.getenv("SYMBOLS", "BTCUSDT,ETHUSDT").split(","),
+            symbols=os.getenv("SYMBOLS", "BTCUSDT,ETHUSDT,SOLUSDT").split(","),
             interval=os.getenv("INTERVAL", "30m"),
             max_position_size=float(os.getenv("MAX_POSITION_SIZE", "0.1")),
             max_total_position=float(os.getenv("MAX_TOTAL_POSITION", "0.3")),

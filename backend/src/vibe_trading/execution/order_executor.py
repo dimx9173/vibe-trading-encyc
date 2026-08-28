@@ -120,6 +120,7 @@ class PaperOrderExecutor(OrderExecutor):
         initial_balance: float = 10000.0,
         state_file: Optional[str] = None,
         reset: bool = False,
+        enable_exit_ladder: bool = True,
     ):
         self._positions: Dict[str, PaperPosition] = {}
         self._balance = initial_balance
@@ -133,6 +134,8 @@ class PaperOrderExecutor(OrderExecutor):
         self._liquidation_events: List[Dict] = []
         # Phase 4.2: 退出階梯
         self._exit_states: Dict[str, Any] = {}
+        # Phase 1 規則回路: 出場单一权威是 ExitLadderEngine, 关闭内嵌简单阶梯
+        self._enable_exit_ladder = enable_exit_ladder
         self._state_file = state_file
         if state_file and os.path.exists(state_file) and not reset:
             self._load_state()
@@ -213,11 +216,13 @@ class PaperOrderExecutor(OrderExecutor):
             self.check_liquidation(symbol, price)
         except Exception as e:
             logger.warning(f"Liquidation check failed: {e}")
-        # Phase 4.2: 退出階梯 (trailing/moonbag)
-        try:
-            self._run_exit_ladder(symbol, price)
-        except Exception as e:
-            logger.warning(f"Exit ladder failed: {e}")
+        # Phase 4.2: 退出階梯 (trailing/moonbag) — 规则回路 (enable_exit_ladder=False) 停用,
+        # 出场单一权威为 rule_engine 的 ExitLadderEngine
+        if self._enable_exit_ladder:
+            try:
+                self._run_exit_ladder(symbol, price)
+            except Exception as e:
+                logger.warning(f"Exit ladder failed: {e}")
         # Phase 5: 移動止損線觸發檢查 (TRAIL_STOP)
         try:
             self._check_trailing_stops(symbol, price)

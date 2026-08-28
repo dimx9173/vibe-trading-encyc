@@ -8,7 +8,7 @@ Vibe Trading - 主入口
 """
 import asyncio
 from enum import Enum
-from typing import List
+from typing import List, Optional
 
 from pathlib import Path
 
@@ -159,17 +159,12 @@ def start(
 
     console.print()
 
-    # 使用第一个symbol作为主symbol (可扩展为多symbol支持)
-    primary_symbol = symbols[0]
-
-    if len(symbols) > 1:
-        warning(f"多交易对模式: 使用 {primary_symbol} 作为主symbol，其他symbol暂不支持", tag="INFO")
-
+    # Phase 1: 三标的规则回路 — 不再截断 symbols[0]
     executor = create_execution_executor(trading_mode, execute, paper_state, reset_paper)
 
-    # 运行三线程系统
+    # 运行三线程系统 (每 symbol 一条规则回路)
     asyncio.run(run_multi_thread_system(
-        symbol=primary_symbol,
+        symbols=symbols,
         interval=interval,
         mode=trading_mode,
         execute_trades=execute,
@@ -207,21 +202,22 @@ def create_execution_executor(
 
 
 async def run_multi_thread_system(
-    symbol: str,
-    interval: str,
-    mode: TradingMode,
-    execute_trades: bool,
+    symbols: Optional[List[str]] = None,
+    interval: str = "30m",
+    mode: TradingMode = TradingMode.PAPER,
+    execute_trades: bool = False,
     executor=None,
     save_logs: bool = True,
     enable_web: bool = False,
     web_port: int = 8000,
     log_level: str = "INFO",
+    symbol: Optional[str] = None,
 ) -> None:
     """
-    运行三线程交易系统
+    运行三线程交易系统 (Phase 1: 多标的规则回路)
 
     Args:
-        symbol: 交易对符号
+        symbols: 交易对列表
         interval: K线间隔
         mode: 交易模式
         execute_trades: 是否真正执行交易
@@ -229,8 +225,14 @@ async def run_multi_thread_system(
         enable_web: 是否启动 Web 监控界面
         web_port: Web 服务器端口
         log_level: 日志级别 (DEBUG/INFO/WARNING/ERROR)
+        symbol: legacy 单标的参数 (backward-compat)
     """
-    info(f"启动三线程交易系统: {symbol} ({interval})", tag="START")
+    if symbols is None:
+        symbols = [symbol] if symbol else ["BTCUSDT"]
+    symbol_list: List[str] = list(symbols)
+    primary = symbol_list[0]
+
+    info(f"启动三线程交易系统: {', '.join(symbol_list)} ({interval})", tag="START")
     separator("=", 60)
 
     # 配置文件日志
@@ -245,7 +247,7 @@ async def run_multi_thread_system(
         
         # 生成日志文件名
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file_path = logs_dir / f"trading_{symbol}_{timestamp}.log"
+        log_file_path = logs_dir / f"trading_{primary}_{timestamp}.log"
         
         configure(log_level=log_level, json_output=False, log_file=str(log_file_path))
         info(f"日志将保存到: {log_file_path}", tag="LOG")
@@ -259,7 +261,7 @@ async def run_multi_thread_system(
     try:
         # 创建多线程系统
         system = MultiThreadedTradingSystem(
-            symbol=symbol,
+            symbols=symbol_list,
             interval=interval,
             executor=executor,
             mode=mode.value,
@@ -271,7 +273,7 @@ async def run_multi_thread_system(
         # 启动 Web 服务器（如果启用）
         if enable_web:
             info(f"启动 Web 监控界面: http://localhost:{web_port}", tag="WEB")
-            web_server_task = asyncio.create_task(run_web_server(web_port, symbol, interval))
+            web_server_task = asyncio.create_task(run_web_server(web_port, primary, interval))
 
         # 运行系统
         await system.run()

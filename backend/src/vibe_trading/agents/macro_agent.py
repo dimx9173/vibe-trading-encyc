@@ -3,7 +3,7 @@ Macro Analysis Agent
 
 Analyzes macro environment (trends, sentiment, major events).
 """
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 from datetime import datetime
 
 from pi_agent_core import Agent, AgentOptions
@@ -85,6 +85,14 @@ ANALYSIS PRINCIPLES:
 - Be objective and data-driven
 - Provide clear, actionable insights
 - Acknowledge uncertainty when present
+
+IMPORTANT OUTPUT FORMAT:
+The FIRST LINE of your response must be EXACTLY:
+
+REGIME: RISK_ON|NEUTRAL|RISK_OFF
+
+(RISK_ON = risk-on / bullish conditions; RISK_OFF = risk-off / bearish conditions with a strong downtrend; NEUTRAL = mixed or uncertain)
+Then provide the full analysis below (your detailed "Market Regime: BULL/BEAR/NEUTRAL" line still goes in the TREND ANALYSIS section).
 
 When providing your analysis, structure it clearly with:
 1. TREND ANALYSIS section
@@ -237,6 +245,8 @@ Additional Data:
         prompt += """
 Please provide your analysis in the following format:
 
+REGIME: [RISK_ON/NEUTRAL/RISK_OFF]  (first line, exactly this)
+
 TREND ANALYSIS:
 Direction: [UPTREND/DOWNTREND/SIDEWAYS]
 Strength: [STRONG/MODERATE/WEAK]
@@ -284,12 +294,19 @@ CONFIDENCE: [0.0-1.0]
             },
             "confidence": 0.5,
         }
-        
+
         current_section = None
-        
+        regime_locked = False
+
         for line in lines:
             line = line.strip()
-            
+
+            if line.upper().startswith("REGIME:"):
+                value = line.split(":", 1)[1].strip().upper()
+                if value in ("RISK_ON", "NEUTRAL", "RISK_OFF"):
+                    analysis["market_regime"] = value
+                    regime_locked = True
+
             # Detect sections
             if line.startswith("TREND ANALYSIS:"):
                 current_section = "trend"
@@ -306,7 +323,8 @@ CONFIDENCE: [0.0-1.0]
             elif line.startswith("Strength:"):
                 analysis["trend_strength"] = line.split(":", 1)[1].strip().upper()
             elif line.startswith("Market Regime:"):
-                analysis["market_regime"] = line.split(":", 1)[1].strip().upper()
+                if not regime_locked:
+                    analysis["market_regime"] = line.split(":", 1)[1].strip().upper()
             elif line.startswith("Overall:"):
                 analysis["overall_sentiment"] = line.split(":", 1)[1].strip().upper()
             elif line.startswith("Score:"):
