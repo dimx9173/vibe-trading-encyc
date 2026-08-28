@@ -2,6 +2,7 @@
 import pytest
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from vibe_trading.monitoring.usage_ledger import (
     UsageLedger,
@@ -142,20 +143,28 @@ class TestUsageLedger:
         assert abs(summary.total_cost_usd - 0.02) < 1e-9
 
     async def test_get_daily_summary(self, ledger):
-        """Daily summary should aggregate by date."""
-        # 使用相對真實時間 (而非固定日期): get_daily_summary 內部用 datetime.now()
-        # 做 cutoff, 固定日期在跨天後會使 yesterday 樣本落出 days=2 窗口 (flaky).
-        # ts3 設 now-30h: 必屬昨天, 且 30h < 48h 保證在 days=2 cutoff 內.
-        now = datetime.now(timezone.utc)
-        ts1 = now - timedelta(hours=2)  # Today
-        ts2 = now - timedelta(hours=6)  # Today
-        ts3 = now - timedelta(hours=30)  # Yesterday (30h < 48h cutoff, 穩定屬昨天)
+        """Daily summary should aggregate by date.
 
-        await ledger.record_usage("agent1", "model1", "BTCUSDT", 100, 50, 0.01, timestamp=ts1)
-        await ledger.record_usage("agent2", "model1", "ETHUSDT", 200, 100, 0.02, timestamp=ts2)
-        await ledger.record_usage("agent1", "model2", "BTCUSDT", 150, 75, 0.015, timestamp=ts3)
+        Time is frozen so the test is independent of when it runs. The previous
+        version used now-relative offsets; near UTC midnight (Beijing morning,
+        UTC hours 2-5) `now - 6h` crossed the UTC date boundary, so the three
+        samples landed on 3 distinct days and the assertion saw len(daily)==3
+        instead of 2 — a daily flake that blocked the pytest-all-green gate.
+        """
+        frozen = datetime(2026, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+        with patch("vibe_trading.monitoring.usage_ledger.datetime") as mock_dt:
+            mock_dt.now.return_value = frozen
+            mock_dt.timezone = timezone
 
-        daily = await ledger.get_daily_summary(days=2)
+            ts_today_a = frozen - timedelta(hours=2)
+            ts_today_b = frozen - timedelta(hours=6)
+            ts_yesterday = frozen - timedelta(days=1, hours=6)
+
+            await ledger.record_usage("agent1", "model1", "BTCUSDT", 100, 50, 0.01, timestamp=ts_today_a)
+            await ledger.record_usage("agent2", "model1", "ETHUSDT", 200, 100, 0.02, timestamp=ts_today_b)
+            await ledger.record_usage("agent1", "model2", "BTCUSDT", 150, 75, 0.015, timestamp=ts_yesterday)
+
+            daily = await ledger.get_daily_summary(days=2)
 
         assert len(daily) == 2
         # Most recent day first
