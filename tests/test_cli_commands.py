@@ -5,6 +5,7 @@ manifest-diff/hyp-create/hyp-list/universe-scan/goal) + 不需要真實網路的
 重度命令 (start/analyze/prime/macro) 需 mock 依賴 — 以 import patch 測試.
 """
 import json
+import re
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 import uvicorn  # noqa: F401 — 供 patch("uvicorn") 目標
@@ -612,7 +613,8 @@ class TestAlphaBench:
                 "alpha", "bench", "--periods", "50",
             ])
         assert result.exit_code == 0
-        assert "共測試 0 個因子" in result.output
+        clean = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+        assert "共測試 0 個因子" in clean
 
 
 class TestRunPrimeSystem:
