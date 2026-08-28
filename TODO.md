@@ -15,14 +15,14 @@
 - [x] 同步 `evolution-roadmap.md` 状态标记与 `AGENTS.md` 架构描述
 - **验收**：✅ `uv run pytest tests/ -x -q` 全绿；`ruff check` / `mypy` 无新增错误
 
-### 阶段 1：规则层主引擎 + LLM regime gate ⚠️ 8d40215 已实作，待审阅修复（见阶段 1.5）
+### 阶段 1：规则层主引擎 + LLM regime gate ✅ 已完成（8d40215 实作 + 475be6f 审阅修复，全量 1912 passed）
 - [x] 交易回路改规则层直驱：AlphaZoo → 信号 → Half-Kelly → EvidenceGate/grounding → ExitLadder
 - [x] 标的扩为 BTCUSDT / ETHUSDT / SOLUSDT（Binance，30m）
 - [x] LLM 降为每小时 macro → RISK_ON/NEUTRAL/RISK_OFF，RISK_OFF 禁开新仓
 - [x] 12-agent 辩论链退出自动回路（留码不跑）
-- **验收**：三币烟雾 replay 已 PASS（RISK_OFF 挡开仓，gate 432x）；测试 1906 passed；审阅发现 3 条 P0 待修（见下）
+- **验收**：三币烟雾 replay 已 PASS（RISK_OFF 挡开仓，gate 432x）；测试 1912 passed；8d40215 审阅发现 3 条 P0 / 5 条 P1 / 2 条 P2，全部于 475be6f 修复（见下）
 
-### 阶段 1.5：审阅修复（8d40215 review findings）— 当前任务，交给 dev agent 执行
+### 阶段 1.5：审阅修复 ✅ 已完成（475be6f，全量 1912 passed）
 
 ```
 开工：修复 Phase 1 commit 8d40215 的审阅发现。先读 docs/specs/phase1-rule-engine-regime-gate.md（规格）与被审 commit（git show 8d40215）。
@@ -66,6 +66,8 @@ P2（仓库卫生；git mutation 前先问用户）
 - 重跑 replay/replay_rule_engine.py BTC 段确认仍有正常 exit/reduce 决策产出
 - 完成后 commit message 用 conventional 前缀（fix: ...），并回报每条 P0/P1 的处置
 ```
+- **验收**：✅ 三测试文件 99 passed（含 P0-1/P0-3 新测试）/ 全量 tests/ 1912 passed / ruff・mypy 无新增错误 / replay BTC 段 432 bars 正常完成（决策分布与基线一致）
+- **处置**：P0-1 开仓即武装初始 stop；P0-2 旗标透传 start→executor；P0-3 regime 市场级读取；P1 五项；P2 全项（详见 475be6f commit message）
 
 ### 阶段 2：3×168h regime 回测（硬门槛 1）
 - [ ] `replay/fetch_bars.py` 补齐三币 6–12 个月 30m K 线
