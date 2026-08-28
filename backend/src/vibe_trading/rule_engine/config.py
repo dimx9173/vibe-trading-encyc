@@ -6,8 +6,7 @@ pattern as ``config/settings.py``), so stage-2 tuning only touches config.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
-from typing import List
+from dataclasses import dataclass
 
 
 def _env_float(name: str, default: float) -> float:
@@ -30,9 +29,6 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
-_DEFAULT_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
-
-
 @dataclass
 class RuleEngineConfig:
     """可调参数（阶段 2 回测不过时只改这里，不加新功能）."""
@@ -45,8 +41,7 @@ class RuleEngineConfig:
     macro_max_age_seconds: int = 7200      # macro state 最大年龄 (2h; macro 线程 1h 一跑)
     max_single_notional: float = 500.0     # 单笔名义价值上限 (5% of 10k)
 
-    interval: str = "30m"                  # 规则回路 K 线周期
-    symbols: List[str] = field(default_factory=lambda: list(_DEFAULT_SYMBOLS))
+    interval: str = "30m"                  # 规则回路 K 线周期 (multi_thread_main 设定覆盖)
 
     @classmethod
     def from_env(cls) -> "RuleEngineConfig":
@@ -60,5 +55,4 @@ class RuleEngineConfig:
             macro_max_age_seconds=_env_int("RULE_MACRO_MAX_AGE_SECONDS", cls.macro_max_age_seconds),
             max_single_notional=_env_float("RULE_MAX_SINGLE_NOTIONAL", cls.max_single_notional),
             interval=os.getenv("RULE_INTERVAL", cls.interval),
-            symbols=[s.strip() for s in os.getenv("RULE_SYMBOLS", ",".join(_DEFAULT_SYMBOLS)).split(",") if s.strip()],
         )

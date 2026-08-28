@@ -61,12 +61,13 @@ def _audit() -> MagicMock:
     return audit
 
 
-def _make_loop(executor=None, regime="BULL", factors=None, policy=None) -> RuleEngineLoop:
+def _make_loop(executor=None, regime="BULL", factors=None, policy=None,
+               symbol="BTCUSDT") -> RuleEngineLoop:
     storage = MagicMock()
     storage.store_kline = AsyncMock()
     storage.query_klines = AsyncMock(return_value=[])
     loop = RuleEngineLoop(
-        symbol="BTCUSDT",
+        symbol=symbol,
         interval="30m",
         storage=storage,
         executor=executor,
@@ -236,3 +237,44 @@ class TestRuleDecisionShape:
         assert payload["action"] == "open"
         assert payload["qty"] > 0
         assert payload["signal"]["direction"] == "LONG"
+
+
+class TestInitialStopProtection:
+    """P0-1: 开仓即武装初始 hard stop (1.5×ATR)，TP1 达成前有止损保护."""
+
+    @pytest.mark.asyncio
+    async def test_close_below_initial_stop_exits_full(self):
+        executor = PaperOrderExecutor(initial_balance=10000.0, enable_exit_ladder=False)
+        loop = _make_loop(executor, regime="BULL", factors=FACTORS_LONG, policy=LOOSE_POLICY)
+        t0 = int(time.time() * 1000)
+        d_open = await loop.on_bar(_kline(100.0, open_time=t0))
+        assert d_open.action == "open"
+        # FACTORS_LONG atr=1.0 → sl = 100 − 1.5×1.0 = 98.5；下一 bar 收盘 98.0 跌破 → 全平
+        d_exit = await loop.on_bar(_kline(98.0, open_time=t0 + 1800000))
+        assert d_exit.action == "exit"
+        assert (await executor.get_positions()) == []
+        assert "stop" in d_exit.reason
+
+    @pytest.mark.asyncio
+    async def test_close_above_initial_stop_not_hard_stopped(self):
+        executor = PaperOrderExecutor(initial_balance=10000.0, enable_exit_ladder=False)
+        loop = _make_loop(executor, regime="BULL", factors=FACTORS_LONG, policy=LOOSE_POLICY)
+        t0 = int(time.time() * 1000)
+        await loop.on_bar(_kline(100.0, open_time=t0))
+        # 98.6 > 98.5 → 非 hard stop 触发（可能 reduce/hold，但不得 exit-全平于 stop）
+        d = await loop.on_bar(_kline(98.6, open_time=t0 + 1800000))
+        assert d.action != "exit"
+
+
+class TestMarketWideRegime:
+    """P0-3: macro regime 是市场级判断 — ETH loop 读到主币 (BTC) 写入的同一 regime."""
+
+    @pytest.mark.asyncio
+    async def test_eth_loop_reads_btc_written_regime(self):
+        executor = PaperOrderExecutor(initial_balance=10000.0, enable_exit_ladder=False)
+        loop = _make_loop(executor, regime="BULL", factors=FACTORS_LONG,
+                          policy=LOOSE_POLICY, symbol="ETHUSDT")
+        d = await loop.on_bar(_kline(100.0))
+        assert d.symbol == "ETHUSDT"
+        assert d.regime == "RISK_ON"
+        assert d.action == "open"

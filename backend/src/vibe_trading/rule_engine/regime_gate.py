@@ -38,12 +38,13 @@ def _coerce_trend_strength(value: Any) -> float:
 def map_macro_to_regime(
     market_regime: str,
     trend_strength: Any,
-    sentiment: str,
 ) -> Regime:
     """旧值 BULL/BEAR/NEUTRAL 与新三态 RISK_ON/NEUTRAL/RISK_OFF 统一映射.
 
     BULL → RISK_ON; BEAR 且 trend_strength ≥ 0.6 → RISK_OFF;
     其余（BEAR 弱趋势 / NEUTRAL / 未知 / 空）→ NEUTRAL。
+    trend_strength 按 MacroState 实际型别存 STRONG/MODERATE/WEAK 字符串，
+    由 _coerce_trend_strength 映射为 0.8/0.5/0.2。
     """
     regime = (market_regime or "").strip().upper()
     if regime in ("RISK_ON", "BULL"):
@@ -68,9 +69,13 @@ async def current_regime(
     max_age_seconds: int = 7200,
     symbol: str = "BTCUSDT",
 ) -> Regime:
-    """读取 macro state 判三态；无 state / 过期 / 读失败 → NEUTRAL (fail-safe)."""
+    """读取最新 macro state 判三态（市场级判断，不分 symbol）。
+
+    macro 线程只写主 symbol（如 BTCUSDT），所有标的共享同一市场 regime；
+    故读取时不带 symbol 过滤。symbol 参数仅供日志。无 state / 过期 / 读失败 → NEUTRAL (fail-safe).
+    """
     try:
-        state = await macro_storage.get_latest_state(symbol)
+        state = await macro_storage.get_latest_state(None)
     except Exception as e:
         logger.warning(f"current_regime read failed ({symbol}): {e}", tag="RegimeGate")
         return Regime.NEUTRAL
@@ -85,5 +90,4 @@ async def current_regime(
     return map_macro_to_regime(
         getattr(state, "market_regime", ""),
         getattr(state, "trend_strength", ""),
-        getattr(state, "overall_sentiment", ""),
     )

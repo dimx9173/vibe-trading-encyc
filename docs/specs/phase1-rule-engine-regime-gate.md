@@ -68,8 +68,10 @@ class Regime(Enum):
     NEUTRAL = "NEUTRAL"
     RISK_OFF = "RISK_OFF"
 
-def map_macro_to_regime(market_regime: str, trend_strength: float,
-                        sentiment: str) -> Regime   # BULL/BEAR/NEUTRAL → 三态
+def map_macro_to_regime(market_regime: str,
+                        trend_strength: Any) -> Regime   # BULL/BEAR/NEUTRAL → 三态
+# trend_strength 存 STRONG/MODERATE/WEAK 字符串（MacroState 型别），
+# 由 _coerce_trend_strength 映射 0.8/0.5/0.2 再与 0.6 阈值比较
 
 async def current_regime(macro_storage: MacroStorage,
                          max_age_seconds: int = 7200) -> Regime
@@ -95,7 +97,7 @@ class RuleEngineLoop:
 
 1. `storage.store_kline(kline)`（store-before-decide，沿用 replay 防 look-ahead 纪律）
 2. `executor.update_price(symbol, kline.close)`（paper 模式完成该 bar 撮合）
-3. **出场评估**：若有持仓 → `ExitLadderEngine.evaluate_position(...)`（§5），需平则下 reduce_only 单，本 bar 结束
+3. **出场评估**：若有持仓 → `ExitLadderEngine.evaluate_position(...)`（§5），需平则下 reduce_only 单，本 bar 结束（no-pyramiding：持仓期间步 4–8 不执行）
 4. **regime gate**：`current_regime(...)` == `RISK_OFF` → 记日志 + `RuleDecision(blocked_by="RISK_OFF")`，结束
 5. **信号**：`AlphaZoo.calculate(recent_klines)` → `generate_signal`；FLAT → 结束
 6. **仓位**：`calculate_atr_position_size(equity, confidence=strength, entry, sl, tp, atr)`，NEUTRAL 时 `risk_multiplier × 0.5`；SL/TP 由 `1.5×ATR / 2.5×ATR` 结构价给出（与 ExitLadderEngine 的 R 倍数口径一致）
@@ -106,7 +108,7 @@ class RuleEngineLoop:
 
 ### 3.4 `rule_engine/config.py`
 
-`RuleEngineConfig`：entry_threshold=0.3、atr_period=14、sl_atr_mult=1.5、tp_atr_mult=2.5、neutral_risk_scale=0.5、macro_max_age_seconds=7200、max_single_notional=500.0。从 `config/settings.py` 读取，环境变量前缀 `RULE_`。
+`RuleEngineConfig`：entry_threshold=0.3、atr_period=14、sl_atr_mult=1.5、tp_atr_mult=2.5、neutral_risk_scale=0.5、macro_max_age_seconds=7200、max_single_notional=500.0、interval="30m"。从 `config/settings.py` 读取，环境变量前缀 `RULE_`。symbols 由 cli/settings 提供，RuleEngineConfig 不持有。
 
 ## 4. 既有文件改动清单（最小集）
 
@@ -131,6 +133,7 @@ class RuleEngineLoop:
 - `PaperOrderExecutor` 加 `enable_exit_ladder=False` 开关，规则回路创建的 executor 关闭内部简单 ladder；trailing stop 同理加 `enable_trailing_stop=False` 或确认其注册点仅由 LLM 回路设置（开发时先查 `_check_trailing_stops` 的注册来源再定，若只由 LLM 决策注册则无需开关）
 - `ExitLadderEngine` 的 per-position 状态（`LadderStage`、highest/lowest、stop）存内存 dict + 随 `RuleDecision` 落日志；paper 账户重启恢复时从 `paper_account.json` 持仓重建 `LadderStage.TP1` 初始态
 - Live 模式（BinanceOrderExecutor）无内嵌 ladder，天然无冲突
+- live 模式交易所端 STOP_MARKET 条件单属阶段 4 前置，本阶段不做
 
 ## 6. Macro 线程：输出收敛细节
 

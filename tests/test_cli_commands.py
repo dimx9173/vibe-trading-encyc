@@ -141,6 +141,23 @@ class TestStartCommand:
         ex = create_execution_executor(TradingMode.PAPER, execute=False)
         assert ex is not None
 
+    def test_rule_loop_executor_disables_internal_ladder(self):
+        """规则回路模式 (start 路径) executor 关闭内嵌 ExitLadder (spec §5 单一出场权威)."""
+        from vibe_trading.cli import TradingMode, create_execution_executor
+        from vibe_trading.execution.order_executor import PaperOrderExecutor
+        ex = create_execution_executor(TradingMode.PAPER, execute=False,
+                                       enable_exit_ladder=False)
+        assert isinstance(ex, PaperOrderExecutor)
+        assert ex._enable_exit_ladder is False
+
+    def test_executor_default_keeps_internal_ladder(self):
+        """create_execution_executor 默认 enable_exit_ladder=True (向后兼容)."""
+        from vibe_trading.cli import TradingMode, create_execution_executor
+        from vibe_trading.execution.order_executor import PaperOrderExecutor
+        ex = create_execution_executor(TradingMode.PAPER, execute=False)
+        assert isinstance(ex, PaperOrderExecutor)
+        assert ex._enable_exit_ladder is True
+
 
 class TestAnalyzeCommand:
     def test_analyze_smoke(self):

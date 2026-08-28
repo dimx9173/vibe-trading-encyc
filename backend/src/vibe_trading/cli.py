@@ -160,7 +160,12 @@ def start(
     console.print()
 
     # Phase 1: 三标的规则回路 — 不再截断 symbols[0]
-    executor = create_execution_executor(trading_mode, execute, paper_state, reset_paper)
+    # 规则回路模式: executor 关闭内嵌简单 ExitLadder (enable_exit_ladder=False),
+    # 出场单一权威为 RuleEngineLoop 内的 ExitLadderEngine (spec §5)
+    executor = create_execution_executor(
+        trading_mode, execute, paper_state, reset_paper,
+        enable_exit_ladder=False,
+    )
 
     # 运行三线程系统 (每 symbol 一条规则回路)
     asyncio.run(run_multi_thread_system(
@@ -181,6 +186,7 @@ def create_execution_executor(
     execute: bool,
     paper_state: str = "",
     reset_paper: bool = False,
+    enable_exit_ladder: bool = True,
 ):
     """Create the executor bound to Portfolio Manager tools."""
     if mode == TradingMode.PAPER:
@@ -193,6 +199,7 @@ def create_execution_executor(
             ExecutorTradingMode.PAPER,
             paper_state_file=state_file,
             reset_paper=reset_paper,
+            enable_exit_ladder=enable_exit_ladder,
         )
     if mode == TradingMode.TESTNET:
         return create_executor(ExecutorTradingMode.TESTNET, dry_run=False)

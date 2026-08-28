@@ -78,7 +78,7 @@ class OnBarThread:
     async def initialize(self) -> None:
         """Initialize the thread"""
         if self._rule_engine_loop is not None:
-            logger.info(
+            log.info(
                 f"OnBarThread initialized with rule-engine loop for {self.symbol} "
                 f"(12-agent chain not created)"
             )

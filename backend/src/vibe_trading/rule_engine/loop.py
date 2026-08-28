@@ -268,6 +268,7 @@ class RuleEngineLoop:
             executor.update_price(self.symbol, k.close)
 
         # 3. 出场评估 (单一权威: ExitLadderEngine)
+        # no-pyramiding: 持仓期间步 4–8 跳过 — _evaluate_exit 有持仓即返回（含 hold），本 bar 结束。
         exit_decision = await self._evaluate_exit(k)
         if exit_decision is not None:
             return exit_decision
@@ -346,9 +347,16 @@ class RuleEngineLoop:
             price=None, position_side=position_side, reduce_only=False,
         )
         await self._record_order(k, result)
+        # 开仓即武装初始 hard stop（1.5×ATR），消除 TP1 达成前的零止损窗口（P0-1）。
+        # state.entry = 成交价让 _evaluate_exit 命中既有 state（不再重建），stop 逐 bar 生效。
+        entry = float(getattr(result, "filled_price", None) or k.close)
+        self._ladder_states[self.symbol] = _LadderState(
+            stage=LadderStage.INITIAL, entry=entry,
+            highest=entry, lowest=entry, stop=sl,
+        )
         logger.info(
             f"[RuleLoop] {self.symbol} OPEN {side.value} {qty:.6f} @ {k.close:.2f} "
-            f"(regime={regime.value}, composite={signal.composite:+.3f})",
+            f"(regime={regime.value}, composite={signal.composite:+.3f}, stop={sl:.2f})",
             tag="RuleEngine",
         )
         return self._decision(
@@ -439,12 +447,12 @@ class RuleEngineLoop:
         else:
             order_side, position_side = OrderSide.BUY, PositionSide.SHORT
         result = await self.executor.place_order(
-            self.symbol, order_side, OrderType.MARKET, min(qty, abs(qty)),
+            self.symbol, order_side, OrderType.MARKET, qty,
             price=None, position_side=position_side, reduce_only=True,
         )
         await self._record_order(k, result)
         logger.info(
-            f"[RuleLoop] {self.symbol} EXIT {side} {min(qty, abs(qty)):.6f} @ {price:.2f}: {reason}",
+            f"[RuleLoop] {self.symbol} EXIT {side} {qty:.6f} @ {price:.2f}: {reason}",
             tag="RuleEngine",
         )
 

@@ -8,19 +8,64 @@
 
 ## 🚀 当前执行管线（按顺序，过一关才能进下一关）
 
-### 阶段 0：删除华而不实（删码）
-- [ ] 删除 `execution/` 内非 Binance executor（okx、bybit、bitget、hyperliquid、jupiter）+ `broker_connector`、`sor`、`funding_arb`
-- [ ] 删除 `mcp/`、`exporters/`、`prime/`
-- [ ] 删改对应测试（含 `tests/test_mcp_contract.py`），修复 import
-- [ ] 同步 `evolution-roadmap.md` 状态标记与 `AGENTS.md` 架构描述
-- **验收**：`uv run pytest tests/ -x -q` 全绿；`ruff check` / `mypy` 无新增错误
+### 阶段 0：删除华而不实（删码）✅ 已完成（a6c860b，全量 1855 passed）
+- [x] 删除 `execution/` 内非 Binance executor（okx、bybit、bitget、hyperliquid、jupiter）+ `broker_connector`、`sor`、`funding_arb`
+- [x] 删除 `mcp/`、`exporters/`、`prime/`
+- [x] 删改对应测试（含 `tests/test_mcp_contract.py`），修复 import
+- [x] 同步 `evolution-roadmap.md` 状态标记与 `AGENTS.md` 架构描述
+- **验收**：✅ `uv run pytest tests/ -x -q` 全绿；`ruff check` / `mypy` 无新增错误
 
-### 阶段 1：规则层主引擎 + LLM regime gate
-- [ ] 交易回路改规则层直驱：AlphaZoo → 信号 → Half-Kelly → EvidenceGate/grounding → ExitLadder
-- [ ] 标的扩为 BTCUSDT / ETHUSDT / SOLUSDT（Binance，30m）
-- [ ] LLM 降为每小时 macro → RISK_ON/NEUTRAL/RISK_OFF，RISK_OFF 禁开新仓
-- [ ] 12-agent 辩论链退出自动回路（留码不跑）
-- **验收**：三币烟雾 replay 确认 RISK_OFF 挡开仓；pytest 全绿
+### 阶段 1：规则层主引擎 + LLM regime gate ⚠️ 8d40215 已实作，待审阅修复（见阶段 1.5）
+- [x] 交易回路改规则层直驱：AlphaZoo → 信号 → Half-Kelly → EvidenceGate/grounding → ExitLadder
+- [x] 标的扩为 BTCUSDT / ETHUSDT / SOLUSDT（Binance，30m）
+- [x] LLM 降为每小时 macro → RISK_ON/NEUTRAL/RISK_OFF，RISK_OFF 禁开新仓
+- [x] 12-agent 辩论链退出自动回路（留码不跑）
+- **验收**：三币烟雾 replay 已 PASS（RISK_OFF 挡开仓，gate 432x）；测试 1906 passed；审阅发现 3 条 P0 待修（见下）
+
+### 阶段 1.5：审阅修复（8d40215 review findings）— 当前任务，交给 dev agent 执行
+
+```
+开工：修复 Phase 1 commit 8d40215 的审阅发现。先读 docs/specs/phase1-rule-engine-regime-gate.md（规格）与被审 commit（git show 8d40215）。
+
+P0-1 新仓 TP1 前零止损保护（最严重）
+- 现状：backend/src/vibe_trading/rule_engine/loop.py on_bar 步 6 算出的 sl（1.5×ATR，:307）仅用于 sizing/grounding，从不写入 _LadderState.stop；_evaluate_exit（:386-399）的 hard stop 只在 state.stop is not None 时生效，而 ExitLadderEngine.evaluate_position 在 INITIAL 阶段不回 stop → 开仓到 TP1（+1.5R）之间无任何止损
+- 修法：开仓成功后（:344-357）建立 self._ladder_states[symbol] = _LadderState(stage=INITIAL, entry=成交价, highest=成交价, lowest=成交价, stop=sl)；先读 _LadderState 定义确认字段与预设
+- 验证：新测试——开仓后下一 bar 收盘跌破 sl → 断言 action="exit" 全平
+- 规格同步：在 §5 加一行注明「live 模式交易所端 STOP_MARKET 条件单属阶段 4 前置，本阶段不做」
+
+P0-2 enable_exit_ladder=False 未接进真实启动路径（双重出场权威）
+- 现状：开关在 execution/order_executor.py:123，但 cli.py create_execution_executor（:192 附近）与 main/multi_thread_main.py 不传 → vibe-trade start 实跑时 executor 内嵌简单 ladder 与 ExitLadderEngine 双发，违规格 §5
+- 修法：沿 cli.py start → create_execution_executor → MultiThreadedTradingSystem 把旗标传到 PaperOrderExecutor（规则回路模式恒 False）
+- 验证：测试断言 startup 组装后 executor._enable_exit_ladder is False
+
+P0-3 regime 逐币读取但 macro 只写主币（ETH/SOL 永久半仓）
+- 现状：loop.py:276 current_regime(..., symbol=self.symbol)，macro_thread 只分析 symbols[0] → ETH/SOL 永无 state → fail-safe NEUTRAL 永久半仓
+- 修法：macro regime 是市场级判断，current_regime 忽略 symbol 读最新 state；symbol 参数保留仅供日志
+- 验证：测试——macro state 以 BTCUSDT 写入，ETH 的 loop 读到相同 regime
+
+P1（一批做完）
+1. loop.py:442,447 死码 min(qty, abs(qty)) → qty
+2. regime_gate.py map_macro_to_regime 未用的 sentiment 参数删除（同步呼叫点/测试）；核 trend_strength 字串映射 STRONG=0.8 是否符合 MacroState 实际型别，码与规格 §3.2 对齐一边
+3. onbar_thread.py 新码的标准 logging logger.info → 改用同档既有 pi_logger（AGENTS.md 硬性规范）
+4. 持仓期间步 4–8 跳过（no-pyramiding）不动码：更新规格 §3.3 步 3 文字 + loop.py 加注释
+5. RuleEngineConfig 规格外的 interval/symbols 字段：未使用则删，有使用则补进规格 §3.4
+
+P2（仓库卫生；git mutation 前先问用户）
+- replay/data/rule_*.db.audit 与 rule_*_decisions.jsonl 是 replay 产物 → git rm --cached + .gitignore 加 replay/data/rule_*
+- 动量因子键大小写双拼写（signal.MOMENTUM_KEYS vs technical_tools）核实后统一
+
+硬性约束
+- 不改 trading_coordinator.py / evidence_gate.py / backtest/engine.py / 旧 Kelly 路径
+- 日志一律 pi_logger get_logger（tag 参数），禁标准 logging
+- 最小改动，不做本清单外的事
+
+验收
+- uv run pytest tests/test_rule_engine_loop.py tests/test_regime_gate.py tests/test_rule_engine_signal.py -q 全绿（含 P0-1 新测试）
+- uv run pytest tests/ -x -q 全绿无回归
+- uv run ruff check backend/src/ 与 uv run mypy backend/src/ 无新增错误
+- 重跑 replay/replay_rule_engine.py BTC 段确认仍有正常 exit/reduce 决策产出
+- 完成后 commit message 用 conventional 前缀（fix: ...），并回报每条 P0/P1 的处置
+```
 
 ### 阶段 2：3×168h regime 回测（硬门槛 1）
 - [ ] `replay/fetch_bars.py` 补齐三币 6–12 个月 30m K 线

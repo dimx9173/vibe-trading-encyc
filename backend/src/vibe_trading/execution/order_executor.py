@@ -985,6 +985,7 @@ def create_executor(
     dry_run: bool = False,
     paper_state_file: Optional[str] = None,
     reset_paper: bool = False,
+    enable_exit_ladder: bool = True,
 ) -> OrderExecutor:
     """创建订单执行器
 
@@ -993,6 +994,8 @@ def create_executor(
         dry_run: 是否为dry-run模式 (仅打印订单不执行，仅适用于LIVE模式)
         paper_state_file: paper 模式帳戶狀態檔路徑（跨重啟保留 balance/positions）
         reset_paper: 為 True 時忽略 state 檔，從初始餘額重新開始
+        enable_exit_ladder: paper 執行器是否啟用内嵌简单 ExitLadder；
+            规则回路 (RuleEngineLoop/ExitLadderEngine 单一出场权威) 驱动时传 False (spec §5)
     """
     settings = get_settings()
 
@@ -1001,6 +1004,7 @@ def create_executor(
         return PaperOrderExecutor(
             state_file=paper_state_file,
             reset=reset_paper,
+            enable_exit_ladder=enable_exit_ladder,
         )
     elif mode == TradingMode.TESTNET:
         if not settings.binance_testnet_api_key or not settings.binance_testnet_api_secret:

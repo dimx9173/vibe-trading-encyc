@@ -172,28 +172,36 @@ class MacroStorage:
             logger.error(f"Error saving macro state: {e}", exc_info=True)
             return False
     
-    async def get_latest_state(self, symbol: str) -> Optional[MacroState]:
+    async def get_latest_state(self, symbol: Optional[str] = None) -> Optional[MacroState]:
         """
-        Get latest macro state for a symbol
-        
+        Get latest macro state, optionally filtered by symbol
+
         Args:
-            symbol: Trading symbol
-            
+            symbol: Trading symbol; None → latest state across all symbols
+                    (macro regime is a market-level judgment)
+
         Returns:
             MacroState or None if not found
         """
         try:
             async with self._session_factory() as session:
-                stmt = text("""
-                    SELECT * FROM macro_states
-                    WHERE symbol = :symbol
-                    ORDER BY timestamp DESC
-                    LIMIT 1
-                """)
-                
-                result = await session.execute(stmt, {"symbol": symbol})
+                if symbol is None:
+                    stmt = text("""
+                        SELECT * FROM macro_states
+                        ORDER BY timestamp DESC
+                        LIMIT 1
+                    """)
+                    result = await session.execute(stmt)
+                else:
+                    stmt = text("""
+                        SELECT * FROM macro_states
+                        WHERE symbol = :symbol
+                        ORDER BY timestamp DESC
+                        LIMIT 1
+                    """)
+                    result = await session.execute(stmt, {"symbol": symbol})
                 row = result.fetchone()
-                
+
                 if row:
                     return self._row_to_state(row)
                 return None

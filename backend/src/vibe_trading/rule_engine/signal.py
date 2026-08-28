@@ -10,8 +10,7 @@ from typing import Dict, List, Literal, Optional, Sequence
 
 import numpy as np
 
-# 動量综合分使用的 AlphaZoo 因子子集 (对位 technical_tools.get_alpha_factor_summary
-# 的 Momentum12_1 / RateOfChange / TrendStrength)。
+# 動量综合分使用的 AlphaZoo 因子子集 (见 data_sources/alphas/zoo.py:80-84)。
 MOMENTUM_KEYS: Sequence[str] = ("momentum_12_1", "rate_of_change", "trend_strength")
 
 DEFAULT_ENTRY_THRESHOLD = 0.3
