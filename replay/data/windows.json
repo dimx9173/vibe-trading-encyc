@@ -1,0 +1,79 @@
+{
+  "segments": [
+    {
+      "name": "uptrend",
+      "start_ts": 1787020200000,
+      "end_ts": 1787623200000,
+      "btc_ret_pct": 26.37,
+      "btc_max_dd_pct": 4.1
+    },
+    {
+      "name": "range",
+      "start_ts": 1777246200000,
+      "end_ts": 1777849200000,
+      "btc_ret_pct": -0.0,
+      "btc_max_dd_pct": 5.24
+    },
+    {
+      "name": "downtrend",
+      "start_ts": 1780081200000,
+      "end_ts": 1780684200000,
+      "btc_ret_pct": -19.01,
+      "btc_max_dd_pct": 19.97
+    }
+  ],
+  "coins": {
+    "BTCUSDT": {
+      "uptrend": {
+        "start": 9127,
+        "end": 9463
+      },
+      "range": {
+        "start": 3697,
+        "end": 4033
+      },
+      "downtrend": {
+        "start": 5272,
+        "end": 5608
+      }
+    },
+    "ETHUSDT": {
+      "uptrend": {
+        "start": 9127,
+        "end": 9463
+      },
+      "range": {
+        "start": 3697,
+        "end": 4033
+      },
+      "downtrend": {
+        "start": 5272,
+        "end": 5608
+      }
+    },
+    "SOLUSDT": {
+      "uptrend": {
+        "start": 9127,
+        "end": 9463
+      },
+      "range": {
+        "start": 3697,
+        "end": 4033
+      },
+      "downtrend": {
+        "start": 5272,
+        "end": 5608
+      }
+    }
+  },
+  "files": {
+    "BTCUSDT": "/home/brian/project/vibe-trading/replay/data/bars_btc_180d.json",
+    "ETHUSDT": "/home/brian/project/vibe-trading/replay/data/bars_eth_180d.json",
+    "SOLUSDT": "/home/brian/project/vibe-trading/replay/data/bars_sol_180d.json"
+  },
+  "params": {
+    "window_bars": 336,
+    "warmup_bars": 400,
+    "separation_bars": 340
+  }
+}
