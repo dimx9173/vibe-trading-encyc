@@ -62,7 +62,7 @@ def _audit() -> MagicMock:
 
 
 def _make_loop(executor=None, regime="BULL", factors=None, policy=None,
-               symbol="BTCUSDT") -> RuleEngineLoop:
+               symbol="BTCUSDT", config=None) -> RuleEngineLoop:
     storage = MagicMock()
     storage.store_kline = AsyncMock()
     storage.query_klines = AsyncMock(return_value=[])
@@ -72,7 +72,7 @@ def _make_loop(executor=None, regime="BULL", factors=None, policy=None,
         storage=storage,
         executor=executor,
         macro_storage=_macro_storage(regime),
-        config=RuleEngineConfig(),
+        config=config or RuleEngineConfig(),
         audit_storage=_audit(),
     )
     if factors is not None:
@@ -101,6 +101,36 @@ class TestRiskOffBlocksNewEntries:
         assert decision.regime == "RISK_OFF"
 
 
+class TestExitLadderDerivedFromConfig:
+    @pytest.mark.asyncio
+    async def test_ladder_tp_scales_with_rule_config(self):
+        executor = PaperOrderExecutor(initial_balance=10000.0, enable_exit_ladder=False)
+        cfg = RuleEngineConfig(sl_atr_mult=2.0, tp_atr_mult=4.0, entry_threshold=0.0)
+        loop = _make_loop(executor, regime="BULL", factors=FACTORS_LONG,
+                          policy=LOOSE_POLICY, config=cfg)
+        assert loop._ladder.config.r_atr_multiple == pytest.approx(2.0)
+        assert loop._ladder.config.tp1_r_multiple == pytest.approx(0.6 * 4.0 / 2.0)
+        assert loop._ladder.config.tp2_r_multiple == pytest.approx(4.0 / 2.0)
+
+    @pytest.mark.asyncio
+    async def test_wide_tp_defers_ladder_stage(self):
+        executor = PaperOrderExecutor(initial_balance=10000.0, enable_exit_ladder=False)
+        executor.update_price("BTCUSDT", 100.0)
+        await executor.place_order(
+            "BTCUSDT", OrderSide.BUY, OrderType.MARKET, 2.0,
+            position_side=PositionSide.LONG,
+        )
+        # tp_atr_mult=8 → TP1 @ 0.6×8=4.8 (price 104.8); atr=1.0 (FACTORS_LONG).
+        # 旧固定阶梯 TP1=2.25 → close 103.0 (gain 3.0) 已触发 reduce; 修复后应仍 hold.
+        cfg = RuleEngineConfig(sl_atr_mult=1.0, tp_atr_mult=8.0, entry_threshold=0.0)
+        loop = _make_loop(executor, regime="BULL", factors=FACTORS_LONG,
+                          policy=LOOSE_POLICY, config=cfg)
+        d = await loop.on_bar(_kline(103.0))
+        assert d.action == "hold"
+        positions = await executor.get_positions()
+        assert len(positions) == 1
+
+
 class TestRiskOffDoesNotBlockExits:
     @pytest.mark.asyncio
     async def test_exit_proceeds_under_risk_off(self):
@@ -112,7 +142,8 @@ class TestRiskOffDoesNotBlockExits:
         )
         loop = _make_loop(executor, regime="RISK_OFF", factors=FACTORS_LONG, policy=LOOSE_POLICY)
 
-        # RISK_OFF 下 TP1 (close ≥ entry + 1.5R=2.25) → reduce 30%
+        # RISK_OFF 下 TP1 (default config sl=1.5/tp=2.5 → TP1 = 0.6×2.5×ATR = 1.5, close 101.5) → reduce 30%
+        # 注: 102.25 > TP2 (2.5×ATR = 102.5) 下沿, 仍处 TP1 阶段
         d1 = await loop.on_bar(_kline(102.25))
         assert d1.action == "reduce"
         assert d1.qty == pytest.approx(0.6, rel=0.01)

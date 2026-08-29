@@ -33,7 +33,7 @@ from vibe_trading.data_sources.binance_client import (
 )
 from vibe_trading.data_sources.kline_storage import Kline, KlineQuery, KlineStorage
 from vibe_trading.data_sources.macro_storage import MacroStorage, get_macro_storage
-from vibe_trading.execution.exit_ladder import ExitLadderEngine, LadderStage
+from vibe_trading.execution.exit_ladder import ExitLadderConfig, ExitLadderEngine, LadderStage
 from vibe_trading.execution.grounding_gate import validate_trading_plan_prices
 from vibe_trading.execution.order_audit import ExecutionAuditStorage
 from vibe_trading.execution.order_executor import OrderExecutor, PaperOrderExecutor
@@ -96,7 +96,15 @@ class RuleEngineLoop:
         self.executor = executor
         self.macro_storage = macro_storage or get_macro_storage()
         self._audit = audit_storage
-        self._ladder = ExitLadderEngine()
+        # 出场阶梯与 RuleEngineConfig 对齐（阶段2 修复: tp_atr_mult 此前未生效）:
+        # R = sl_atr_mult×ATR（风险单位 = 硬止损距离）; TP1 = 0.6×tp_atr_mult×ATR;
+        # TP2 = tp_atr_mult×ATR（完整目标）; stage 30/40/30 拆分不变.
+        ladder_cfg = ExitLadderConfig(
+            r_atr_multiple=self.config.sl_atr_mult,
+            tp1_r_multiple=0.6 * self.config.tp_atr_mult / self.config.sl_atr_mult,
+            tp2_r_multiple=self.config.tp_atr_mult / self.config.sl_atr_mult,
+        )
+        self._ladder = ExitLadderEngine(ladder_cfg)
         self._ladder_states: Dict[str, _LadderState] = {}
         # 风控门策略与 RuleEngineConfig 对齐（阶段2 修复）:
         # - max_single_order_notional = 仓位上限 (同 sizing 口径, 否则全部订单被默认 100U 拒绝)

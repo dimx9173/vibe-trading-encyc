@@ -81,6 +81,7 @@ class LadderStage(str, Enum):
 @dataclass
 class ExitLadderConfig:
     """三級階梯配置 (規格書 §2.1)."""
+    r_atr_multiple: float = 1.5          # R = 1.5 × ATR (風險單位 = 初始止損距離)
     tp1_r_multiple: float = 1.5          # TP1 @ 1.5R
     tp2_r_multiple: float = 2.5          # TP2 @ 2.5R
     tp1_close_ratio: float = 0.30        # TP1 平 30%
@@ -95,7 +96,7 @@ class ExitLadderConfig:
 class ExitLadderEngine:
     """三級階梯止盈 + 動能枯竭 (規格書 §2.1).
 
-    R = 1.5 × ATR; 價格達 entry ± 1.5R → 平 30% + 保本;
+    R = r_atr_multiple × ATR (預設 1.5 × ATR); 價格達 entry ± 1.5R → 平 30% + 保本;
     達 entry ± 2.5R → 平 40% + 止損移至 ±1.5R; 剩 30% trailing.
     動能枯竭 (浮盈>1R + 放量滯漲) → 平 50% 浮盈倉.
     """

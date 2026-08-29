@@ -72,9 +72,9 @@
 
 下一轮 `replay/sweep_phase2.py` 前先修，候选（按预期收益排序）：
 
-1. **修出场接线**（bug 修复，非新功能）：把 rule `sl_atr_mult / tp_atr_mult` 注入 `ExitLadderConfig`（`tp1_r_multiple`/`tp2_r_multiple`/`trailing_atr_multiple` 由配置推导），使 TP 轴真实生效 —— TP 拉宽让趋势段盈利奔跑
-2. **range 离场门**（调因子）：以 trend_strength **幅度**（非方向）作为入场前置门 —— 弱趋势（横盘）不开新仓；direction 仍由 momentum 复合决定。直接消除 range 段的噪声交易
-3. **SL=3×ATR 落库**：已证实的宽止损收益（uptrend 0.48→1.16+）作为默认值
+1. **✅ 已修：出场接线**（bug 修复，非新功能）：`Loop` 现从 `RuleEngineConfig` 推导 `ExitLadderConfig`（`R = sl_atr_mult×ATR`，`TP1 = 0.6×tp_atr_mult×ATR`，`TP2 = tp_atr_mult×ATR`），并给 `ExitLadderConfig` 增加独立 `r_atr_multiple` 字段（默认 1.5，独立使用行为不变）。TP 轴真实生效 —— sweep 的 tp 参数第一次真正改变出场价位
+2. **❌ 已否决：range 离场门（trend_strength 幅度）**：实测三窗口 `trend_strength` 分布完全重叠（median 0.42–0.50、p75 0.66–0.72 无段间差异），无法区分横盘与趋势，作为入场门只会等比例砍掉趋势段好交易
+3. **SL=3×ATR 倾向**：首轮证据明确（uptrend PF 0.48→1.16+），待 TP 轴修复后的第二轮 sweep 确认
 
 重跑窗口：仍用同一 20 组合网格（tp 轴修复后真实生效）。
 
