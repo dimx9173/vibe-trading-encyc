@@ -76,9 +76,18 @@ async def _inject_regime(macro_storage: MacroStorage, symbol: str, regime: str) 
 
 
 async def _account_snapshot(executor) -> dict:
+    """账戸快照 (tearsheet 用). equity = 现金 + 锁仓保证金 + 未实现盈亏.
+
+    注意: place_order 开仓时 balance 已扣除保证金 (balance -= notional/leverage),
+    仅用 available (=balance+unrealized) 会因开仓假性下陷 (PnL 高估前科, 收敛计划 §4).
+    equity 重建 = balance + Σ(notional/leverage) + unrealized, 保证金不计入亏损.
+    """
     balances = await executor.get_balance()
     usdt = balances.get("USDT", 0.0)
-    balance = float(usdt.get("available", usdt.get("balance", 0.0))) if isinstance(usdt, dict) else float(usdt)
+    balance = float(usdt.get("balance", 0.0)) if isinstance(usdt, dict) else float(usdt)
+    available = float(usdt.get("available", balance)) if isinstance(usdt, dict) else balance
+    unrealized = float(usdt.get("unrealized_pnl", 0.0)) if isinstance(usdt, dict) else 0.0
+    realized = float(usdt.get("realized_pnl", 0.0)) if isinstance(usdt, dict) else 0.0
     positions = await executor.get_positions()
     pos_list = [
         {
@@ -86,10 +95,21 @@ async def _account_snapshot(executor) -> dict:
             "position_side": str(getattr(p.position_side, "value", p.position_side)),
             "position_amount": p.position_amount,
             "entry_price": p.entry_price,
+            "leverage": p.leverage,
         }
         for p in positions
     ]
-    return {"balance": balance, "positions": pos_list}
+    locked_margin = sum(float(p.notional) / float(p.leverage) for p in positions
+                        if p.leverage > 1 and float(p.notional) > 0)
+    equity = balance + locked_margin + unrealized
+    return {
+        "balance": balance,
+        "available": available,
+        "unrealized": unrealized,
+        "realized": realized,
+        "equity": equity,
+        "positions": pos_list,
+    }
 
 
 async def main() -> None:

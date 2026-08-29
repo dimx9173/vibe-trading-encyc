@@ -10,8 +10,10 @@ from typing import Dict, List, Literal, Optional, Sequence
 
 import numpy as np
 
-# 動量综合分使用的 AlphaZoo 因子子集 (见 data_sources/alphas/zoo.py:80-84)。
-MOMENTUM_KEYS: Sequence[str] = ("momentum_12_1", "rate_of_change", "trend_strength")
+# 动量综合分使用 AlphaZoo 有号动量因子 (见 data_sources/alphas/zoo.py)。
+# 注意: 不含 trend_strength —— 该因子恒正 (0~1, 趋势力度非方向), 混入会
+# 永久拉正 composite 造成 LONG 偏差 (阶段2 回测发现: 下跌段 LONG 270/SHORT 6)。
+MOMENTUM_KEYS: Sequence[str] = ("momentum_12_1", "rate_of_change")
 
 DEFAULT_ENTRY_THRESHOLD = 0.3
 

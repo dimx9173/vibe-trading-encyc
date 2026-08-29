@@ -216,8 +216,11 @@ class TestFlatAndRiskGate:
     @pytest.mark.asyncio
     async def test_risk_gate_rejects_oversized_order(self):
         executor = PaperOrderExecutor(initial_balance=10000.0, enable_exit_ladder=False)
-        # 默认 RiskPolicy: max_single_order_notional=100 → 500 notional 被拒
-        loop = _make_loop(executor, regime="BULL", factors=FACTORS_LONG)
+        # 显式严格策略: max_single_order_notional=100 (默认对齐策略允许 config 上限 500,
+        # 无法触发拒绝; 用严格策略保持拒单路径测试确定性)
+        strict = RiskPolicy(max_single_order_notional=100.0, max_total_exposure=300.0,
+                            max_margin_fraction=0.5, min_confidence=0.0)
+        loop = _make_loop(executor, regime="BULL", factors=FACTORS_LONG, policy=strict)
         d = await loop.on_bar(_kline(100.0))
         assert d.blocked_by == "risk_gate"
         assert (await executor.get_positions()) == []

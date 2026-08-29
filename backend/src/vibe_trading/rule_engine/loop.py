@@ -38,7 +38,7 @@ from vibe_trading.execution.grounding_gate import validate_trading_plan_prices
 from vibe_trading.execution.order_audit import ExecutionAuditStorage
 from vibe_trading.execution.order_executor import OrderExecutor, PaperOrderExecutor
 from vibe_trading.execution.position_sizing import calculate_atr_position_size
-from vibe_trading.execution.pre_trade_risk import PreTradeRiskGate, PreTradeRiskResult
+from vibe_trading.execution.pre_trade_risk import PreTradeRiskGate, PreTradeRiskResult, RiskPolicy
 from vibe_trading.rule_engine.config import RuleEngineConfig
 from vibe_trading.rule_engine.regime_gate import Regime, current_regime
 from vibe_trading.rule_engine.signal import RuleSignal, generate_signal
@@ -87,6 +87,7 @@ class RuleEngineLoop:
         macro_storage: Optional[MacroStorage] = None,
         config: Optional[RuleEngineConfig] = None,
         audit_storage: Optional[ExecutionAuditStorage] = None,
+        risk_policy: Optional[RiskPolicy] = None,
     ):
         self.symbol = symbol
         self.interval = interval
@@ -97,9 +98,21 @@ class RuleEngineLoop:
         self._audit = audit_storage
         self._ladder = ExitLadderEngine()
         self._ladder_states: Dict[str, _LadderState] = {}
-        self._risk_gate: Optional[PreTradeRiskGate] = (
-            PreTradeRiskGate(executor) if executor is not None else None
-        )
+        # 风控门策略与 RuleEngineConfig 对齐（阶段2 修复）:
+        # - max_single_order_notional = 仓位上限 (同 sizing 口径, 否则全部订单被默认 100U 拒绝)
+        # - min_confidence = 0 (信号已由 entry_threshold ±0.3 把关; strength 即信号幅度)
+        # - max_total_exposure = 3 标的同时持仓
+        # 可经 risk_policy 显式覆写 (测试/回测注入). 默认对齐 = 策略参数, 非新增功能.
+        self._risk_gate: Optional[PreTradeRiskGate] = None
+        if executor is not None:
+            policy = risk_policy or RiskPolicy(
+                max_single_order_notional=self.config.max_single_notional,
+                max_total_exposure=self.config.max_single_notional * 3,
+                max_margin_fraction=0.5,
+                position_mode="hedge",
+                min_confidence=0.0,
+            )
+            self._risk_gate = PreTradeRiskGate(executor, policy)
         self._interval_ms = self._parse_interval_ms(interval)
 
     @staticmethod
