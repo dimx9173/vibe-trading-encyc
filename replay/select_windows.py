@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List
@@ -31,16 +32,26 @@ MIN_SEPARATION_BARS = 340    # windows must not overlap / be adjacent
 REPLAY_DIR = Path(__file__).resolve().parent / "data"
 
 
+def _env_int(name: str, default: int | None) -> int | None:
+    val = os.getenv(name)
+    if val is None or val == "":
+        return default
+    try:
+        return int(val)
+    except ValueError:
+        return default
+
+
 def _load_bars(path: Path) -> List[list]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _rolling_returns(bars: List[list]) -> List[float]:
-    """return[i] = close[i+WINDOW_BARS-1]/close[i] - 1 over the window starting at bar i."""
+def _rolling_returns(bars: List[list], window_bars: int = WINDOW_BARS) -> List[float]:
+    """return[i] = close[i+window_bars-1]/close[i] - 1 over the window starting at bar i."""
     closes = [float(b[4]) for b in bars]
     out: List[float] = []
-    for i in range(0, len(bars) - WINDOW_BARS + 1):
-        out.append(closes[i + WINDOW_BARS - 1] / closes[i] - 1.0)
+    for i in range(0, len(bars) - window_bars + 1):
+        out.append(closes[i + window_bars - 1] / closes[i] - 1.0)
     return out
 
 
@@ -49,17 +60,48 @@ def main() -> None:
     ap.add_argument("--btc", default=str(REPLAY_DIR / "bars_btc_180d.json"))
     ap.add_argument("--coins", nargs="+", default=["BTCUSDT", "ETHUSDT", "SOLUSDT"])
     ap.add_argument("--out", default=str(REPLAY_DIR / "windows.json"))
+    ap.add_argument("--window-days", type=int, default=None)
+    ap.add_argument("--window-bars", type=int, default=None)
+    ap.add_argument("--warmup-bars", type=int, default=None)
+    ap.add_argument("--separation-bars", type=int, default=None)
     args = ap.parse_args()
+
+    if args.window_bars is not None:
+        window_bars = args.window_bars
+        window_days: int | None = args.window_days
+    elif args.window_days is not None:
+        window_bars = args.window_days * 48
+        window_days = args.window_days
+    else:
+        env_bars = _env_int("REPLAY_WINDOW_BARS", None)
+        env_days = _env_int("REPLAY_WINDOW_DAYS", None)
+        if env_bars is not None:
+            window_bars = env_bars
+            window_days = None
+        elif env_days is not None:
+            window_bars = env_days * 48
+            window_days = env_days
+        else:
+            window_bars = WINDOW_BARS
+            window_days = None
+
+    warmup_bars = args.warmup_bars if args.warmup_bars is not None else _env_int("REPLAY_WARMUP_BARS", WARMUP_BARS)
+    assert warmup_bars is not None
+    sep_env = _env_int("REPLAY_SEPARATION_BARS", None)
+    if args.separation_bars is not None:
+        separation_bars = args.separation_bars
+    elif sep_env is not None:
+        separation_bars = sep_env
+    else:
+        separation_bars = window_bars + 4
 
     btc_bars = _load_bars(Path(args.btc))
     n = len(btc_bars)
-    # bars[:REPLAY_START_OFFSET] is the fetch warmup buffer; windows must leave
-    # >= WARMUP_BARS of data before window start to warm indicators.
     replay_offset = 1000  # >= alignment with fetch_bars --warmup-bars 1000
-    lo = replay_offset + WARMUP_BARS
-    hi = n - WINDOW_BARS  # window start must satisfy start+WINDOW_BARS <= n
+    lo = replay_offset + warmup_bars
+    hi = n - window_bars  # window start must satisfy start+window_bars <= n
 
-    rets = _rolling_returns(btc_bars)
+    rets = _rolling_returns(btc_bars, window_bars)
 
     def window_return(start: int) -> float:
         return rets[start]
@@ -68,7 +110,7 @@ def main() -> None:
         return int(btc_bars[start][0])
 
     def window_end_ts(start: int) -> int:
-        return int(btc_bars[start + WINDOW_BARS - 1][0])
+        return int(btc_bars[start + window_bars - 1][0])
 
     def pick(target: str) -> int:
         candidates = list(range(lo, hi))
@@ -85,16 +127,16 @@ def main() -> None:
     for seg in order:
         cand = pick(seg)
         # enforce separation from already picked windows
-        while any(abs(cand - p) < MIN_SEPARATION_BARS for p in picks.values()):
+        while any(abs(cand - p) < separation_bars for p in picks.values()):
             shifted = False
             for i in range(cand + 1, hi):
-                if all(abs(i - p) >= MIN_SEPARATION_BARS for p in picks.values()):
+                if all(abs(i - p) >= separation_bars for p in picks.values()):
                     cand = i
                     shifted = True
                     break
             if not shifted:
                 for i in range(cand - 1, lo - 1, -1):
-                    if all(abs(i - p) >= MIN_SEPARATION_BARS for p in picks.values()):
+                    if all(abs(i - p) >= separation_bars for p in picks.values()):
                         cand = i
                         shifted = True
                         break
@@ -107,7 +149,7 @@ def main() -> None:
         start = picks[seg]
         ret_pct = window_return(start) * 100.0
         # BTC MaxDD inside the window (peak-to-trough on closes, % of peak)
-        closes = [float(b[4]) for b in btc_bars[start:start + WINDOW_BARS]]
+        closes = [float(b[4]) for b in btc_bars[start:start + window_bars]]
         peak = closes[0]
         max_dd = 0.0
         for c in closes:
@@ -140,9 +182,10 @@ def main() -> None:
         "coins": coins,
         "files": files,
         "params": {
-            "window_bars": WINDOW_BARS,
-            "warmup_bars": WARMUP_BARS,
-            "separation_bars": MIN_SEPARATION_BARS,
+            "window_days": window_days,
+            "window_bars": window_bars,
+            "warmup_bars": warmup_bars,
+            "separation_bars": separation_bars,
         },
     }
     Path(args.out).write_text(json.dumps(out, indent=2), encoding="utf-8")
