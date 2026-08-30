@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 沿 30m 主回路 / 每2hr 一次 LLM / 每次 24hr 48×30m 节奏，实现 3×168h 每段 PF≥1.2 + 总MaxDD≤5% 全过，之后 3/5/7天可配窗口 Walk-Forward 验证（G1-G5 证据链）。
+**Goal:** 沿 30m 主回路 / 每2hr 一次 LLM / 每次 24hr 48×30m 节奏，实现 3×168h（7d）每段 PF≥1.2 + 总MaxDD≤5% 全过（預設僅 7d 進 G2 門檻，3/5d 能力保留作特殊需求可選加跑；見 spec §5）。
 
 **Architecture:** C 管线可配窗口（`replay/select_windows.py` + `sweep_phase2.py`）前置；B 双模态（AlphaZoo 均值回归 + 自适应 bb×迟滞 + MR SL/TP 分模态）与 LLM 离散 CHOPPY/TRENDING/UNCERTAIN（仅减仓）在 `regime_gate + signal + loop` 单一切换点汇合；验证含 `fee_bps=8`、per-coin 隔离、横盘熔断、Walk-Forward。
 

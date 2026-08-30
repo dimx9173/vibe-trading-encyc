@@ -1,24 +1,24 @@
 # 永动印钞机 — 架构设计（Approach A：Minimal Dual-Mode + Configurable Windows + LLM 1+指标）
 
-> **状态**：已按 brainstorming（Architectural）分节确认 6 节，待 writing-plans 转执行计划。批准前不写代码。
-> **目标**：沿用 30m 主回路 / 每2hr 一次 LLM / 每次 24hr 48×30m 节奏，实现「严格永动」— 3×168h 每段 PF≥1.2 + 总MaxDD≤5% 全过，之後以 3/5/7天可配窗口泛化验证。
+> **状态**：已按 brainstorming（Architectural）分节确认 6 节，按 writing-plans (8 tasks, G1-G5) 执行中；预设门槛 7d（336 bars×3），3/5d 仅特殊需求时手动加跑（见本文件 §5）。提醒：本文件为 hard gate（切换 AlphaZoo/出场/判定需回測重算，非调阈值可套用）。
+> **目标**：沿用 30m 主回路 / 每2hr 一次 LLM / 每次 24hr 48×30m 节奏，实现「严格永动」— 3×168h（7d）每段 PF≥1.2 + 总MaxDD≤5% 全过；預設僅 7d 門檻，3/5天可配能力保留作特殊需求的可選加跑（`REPLAY_WINDOW_DAYS/--window-days`）。
 > **约束**：Q2 已授权新因子/新指标/LLM，不必死守 40 组合；Q3 定 B+C（双模态 + 管线前置）；Q4 定 30m/2hr/24hr；末轮定 1+指标（LLM 选项1 Regime 扩展 + AlphaZoo 均值回归接线）。
 
 ## §1 目标 / 非目标 / 不变式
 
 **目标**：
-- **C 管线**：`select_windows.py` 支持 `--window-days/--window-bars` + `REPLAY_WINDOW_DAYS` env，产物 `windows_{3,5,7}d.json` 与 `sweep_{d}d/` 隔离；`sweep_phase2.py / run_phase2.py / tearsheet_rule.py` 支持 `--windows` 透传，默认 `windows.json` (336 bars/168h) 兼容。
+- **C 管线**：`select_windows.py` 支持 `--window-days/--window-bars` + `REPLAY_WINDOW_DAYS` env，能力 `3/5/7天可配` 保留，**預設僅 7d（`windows.json` 336 bars×3）進 G2 門檻**；`sweep_phase2.py / run_phase2.py / tearsheet_rule.py` 支持 `--windows` 透传，默认 `windows.json` 兼容。
 - **B 双模态**：在 `AlphaZoo 23因子` 内接线均值回归（`rsi_zscore + bollinger_band_width + price_to_ma`）作第二模态；以 `bollinger_band_width` 窄阈 `T_bb` 切换 `动量 / 均值回归 / FLAT`，TP 按模态降档。
-- **LLM 1+指标**：沿用 `macro_thread 7200s / macro_lookback 24hr / macro_max_age 14400s`，LLM 输出扩为 `RISK_ON|NEUTRAL|RISK_OFF + RANGE_SCORE 0..1 + REGIME_DETAIL TRENDING_UP|TRENDING_DOWN|CHOPPY|UNCERTAIN`，落库 `MacroState`，`regime_gate.current_regime_with_score()` 供 `loop.py` 作 `qty *= lerp` 与 `entry_threshold` 动态，`RISK_OFF` 仍硬 veto。
-- **门槛**：Q7 `每段 PF≥1.2 + 总MaxDD≤5%（10k/30k）`，先 3×168h 至少一组全过，再 3/5/7天可配窗口泛化。
+- **LLM 1+指标**：沿用 `macro_thread 7200s / macro_lookback 24hr / macro_max_age 14400s`，LLM 離散 `CHOPPY/TRENDING/UNCERTAIN → DISCRETE_QTY/THR`（仅减仓，永不加仓）+ `RISK_ON|NEUTRAL|RISK_OFF` 硬 veto，落库 `MacroState.regime_detail`。
+- **门槛**：Q7 `每段 PF≥1.2 + 总MaxDD≤5%（10k/30k）`，**預設僅 7d（`windows.json`）全过即 G2；3/5d 僅特殊需求時手動加跑**，之後 Walk-Forward 90d→30d×3 確認泛化。
 
 **非目标**：不新增交易所/数据源（仍 Binance 单所）、不改 `store-before-decide`、不改 `ExitLadderEngine` 核心阶梯（仅参数）、不引全新外部因子库（仅 AlphaZoo 已有 23 个 + LLM 输出）。
 
 **不变式**：`reduce_only` 绕过 `PreTradeRiskGate` 与 regime gate；`RISK_OFF` 仅挡开仓不挡平仓；`staleness` 无/过期 → `NEUTRAL`；`tearsheet equity = cash+locked+unrealized`。
 
-## §2 管线参数化（Plan C 前置）
+## §2 管线参数化（Plan C 前置，預設僅 7d 門檻，3/5d 能力保留作可選）
 
-**动机**：`select_windows.py` 写死 `WINDOW_BARS=336`，`sweep/run_phase2` 写死 `windows.json` 与段顺序，无法 3/5/7天随便配。
+**动机**：`select_windows.py` 写死 `WINDOW_BARS=336`，`sweep/run_phase2` 写死 `windows.json` 与段顺序，无法 3/5/7天随便配；能力保留，但 G2 預設僅 7d。
 
 **改动**：
 - `replay/select_windows.py`：新增 `--window-days/--window-bars/--warmup-bars/--separation-bars` + `REPLAY_WINDOW_DAYS/BARS/WARMUP/SEPARATION` env；`WINDOW_BARS = window_bars ?: window_days×48 ?: env ?: 336`，`MIN_SEPARATION = separation ?: WINDOW_BARS+4`，`params` 增 `window_days`。
@@ -29,7 +29,7 @@
 
 **兼容**：无参调用仍产出与现 `windows.json` 字节一致的 336 窗口；无 `--windows` 时仍读 `DATA_DIR/windows.json`；`windows_{days}d.json` 隔离不覆盖 7d。
 
-**验证**：`for d in 3 5 7; do select_windows --window-days $d --out windows_${d}d.json; sweep --windows windows_${d}d.json --max-combos 20; tearsheet --windows windows_${d}d.json --json; done`；`sweep --max-combos 2` 回归仍 9 档。
+**验证（預設僅 7d）**：`python replay/select_windows.py --window-days 7 --out replay/data/windows.json`（默認）；`uv run python replay/sweep_phase2.py --windows replay/data/windows.json --max-combos 20 --fee-bps 8 && uv run python replay/tearsheet_rule.py --windows replay/data/windows.json --json | jq .gate_pass`；`uv run python replay/walk_forward.py --windows replay/data/windows.json`（90d→30d×3）；`3/5d` 僅特殊需求時手動 `for d in 3 5; do select_windows --window-days $d --out windows_${d}d.json; done`。
 
 ## §3 双模态信号（AlphaZoo 23 因子内）— Trader Review 修订
 
@@ -70,11 +70,11 @@
 - `rule_engine/regime_gate.py`：新增 `current_regime_with_score(max_age=14400) -> (Regime, detail)`（`detail` 離散 3 檔），stale→`(NEUTRAL, UNCERTAIN)`，保留 `current_regime()` 兼容。
 - `rule_engine/loop.py`：Step4 `RISK_OFF` 仍硬 veto；Step5 `adjusted_threshold = base * {1.4 if CHOPPY else 1.2 if UNCERTAIN else 1.0}`；Step6 `qty *= {0.3 if CHOPPY else 0.5 if UNCERTAIN else 1.0}`（僅減倉）；回测 `replay_rule_engine --inject-detail/--replay-macro-db` 重放真 2hr 节奏；新增 `llm_latency_ms > 8000` 告警（`switchboard` 代理监控）。
 
-## §5 验证 — Trader Review 修订
+## §5 验证 — Trader Review 修订（預設僅 7d）
 
 - 单窗口门槛 `每段 PF≥1.2 + 总MaxDD≤5%` 与 `tearsheet` 现 gate 一致；**新增 `fee_bps=8`（Binance taker 4bps + 滑點 3-5bps，往返 8-10bps）進 `replay_rule_engine` → `tearsheet` gate**，現 PF 1.14 未扣費為虛值，扣費後真實 PF 需重算。
-- 流程 `§2 windows_{3,5,7}d → §3 扫 T_bb/T_rsi×{FLAT/MR} → 择优正交 §3+§4 → tearsheet --json --windows`；**新增 Walk-Forward 3 次滾動**（`前 90d 掃參 → 後 30d 驗證` ×3，原地 `windows.json` sweep 易對 `T_bb/T_rsi` 過擬合）。
-- 防过拟合 3/5/7 各自独立，`7d` 过门槛再以 `3d/5d` hold-out；**新增單幣隔離**（`gate_pass` 現 `all(seg pf≥1.2)` 跨幣綁定，實盤應幣種隔離倉位，`tearsheet` 增 `per-coin PF` 分解表）。
+- **預設流程（僅 7d）**：`§2 windows.json (336×3) → §3 扫 T_bb/T_rsi×{FLAT/MR} 18 組合 → 择优正交 §3+§4 → tearsheet --windows windows.json --json` 判定 G2；**Walk-Forward 90d→30d×3 確認泛化**（`walk_forward.py`）；**3/5d 僅特殊需求時手動加跑**（`select_windows --window-days 3/5`），不進預設門檻。
+- **新增單幣隔離**（`gate_pass` 現 `all(seg pf≥1.2)` 跨幣綁定，實盤應幣種隔離倉位，`tearsheet` 增 `per-coin PF` 分解表）。
 
 ## §5.1 保命规则（新增，P2）
 
