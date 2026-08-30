@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass, asdict
 import json
 
-from sqlalchemy import select, update, delete, and_, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
 from vibe_trading.config.settings import get_settings
@@ -22,25 +22,26 @@ class MacroState:
     """Macro analysis state"""
     symbol: str
     timestamp: int
-    
+
     # Trend Analysis
     trend_direction: str  # UPTREND/DOWNTREND/SIDEWAYS
     trend_strength: str   # STRONG/MODERATE/WEAK
     market_regime: str    # BULL/BEAR/NEUTRAL
-    
+
     # Sentiment Analysis
     overall_sentiment: str  # POSITIVE/NEGATIVE/NEUTRAL
     sentiment_score: float  # -100 to 100
-    
+
     # Major Events
     major_events: List[Dict]
-    
+
     # Agent Recommendation
     agent_recommendation: Dict
-    
+
     # Metadata
     confidence: float  # 0 to 1
     analysis_duration: float  # seconds
+    regime_detail: str = "UNCERTAIN"
     
     def to_dict(self) -> Dict:
         """Convert to dictionary"""
@@ -80,7 +81,6 @@ class MacroStorage:
     
     def _create_tables(self, conn) -> None:
         """Create macro_states table"""
-        # Create table using SQL
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS macro_states (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,6 +89,7 @@ class MacroStorage:
                 trend_direction VARCHAR(20),
                 trend_strength VARCHAR(20),
                 market_regime VARCHAR(20),
+                regime_detail TEXT,
                 overall_sentiment VARCHAR(20),
                 sentiment_score REAL,
                 major_events TEXT,
@@ -99,14 +100,16 @@ class MacroStorage:
                 UNIQUE(symbol, timestamp)
             )
         """))
-        
-        # Create indexes
+        try:
+            conn.execute(text("ALTER TABLE macro_states ADD COLUMN regime_detail TEXT"))
+        except Exception:
+            pass
         conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_macro_states_symbol_timestamp 
+            CREATE INDEX IF NOT EXISTS idx_macro_states_symbol_timestamp
             ON macro_states(symbol, timestamp)
         """))
         conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_macro_states_timestamp 
+            CREATE INDEX IF NOT EXISTS idx_macro_states_timestamp
             ON macro_states(timestamp)
         """))
     
@@ -116,58 +119,56 @@ class MacroStorage:
             await self._engine.dispose()
     
     async def save_state(self, state: MacroState) -> bool:
-        """
-        Save macro state to database
-        
-        Args:
-            state: Macro state to save
-            
-        Returns:
-            True if saved successfully
-        """
         try:
             async with self._session_factory() as session:
-                # Insert or update
+                detail = getattr(state, "regime_detail", "UNCERTAIN") or "UNCERTAIN"
+                detail = str(detail).strip().upper()
+                if detail not in ("CHOPPY", "TRENDING", "UNCERTAIN"):
+                    detail = "UNCERTAIN"
                 stmt = text("""
                     INSERT OR REPLACE INTO macro_states (
                         symbol, timestamp,
-                        trend_direction, trend_strength, market_regime,
+                        trend_direction, trend_strength, market_regime, regime_detail,
                         overall_sentiment, sentiment_score,
                         major_events, agent_recommendation,
                         confidence, analysis_duration,
                         created_at
                     ) VALUES (
                         :symbol, :timestamp,
-                        :trend_direction, :trend_strength, :market_regime,
+                        :trend_direction, :trend_strength, :market_regime, :regime_detail,
                         :overall_sentiment, :sentiment_score,
                         :major_events, :agent_recommendation,
                         :confidence, :analysis_duration,
                         :created_at
                     )
                 """)
-                
-                await session.execute(
-                    stmt,
-                    {
-                        "symbol": state.symbol,
-                        "timestamp": state.timestamp,
-                        "trend_direction": state.trend_direction,
-                        "trend_strength": state.trend_strength,
-                        "market_regime": state.market_regime,
-                        "overall_sentiment": state.overall_sentiment,
-                        "sentiment_score": state.sentiment_score,
-                        "major_events": json.dumps(state.major_events),
-                        "agent_recommendation": json.dumps(state.agent_recommendation),
-                        "confidence": state.confidence,
-                        "analysis_duration": state.analysis_duration,
-                        "created_at": int(datetime.now().timestamp() * 1000),
-                    }
-                )
-                
+                params = {
+                    "symbol": state.symbol,
+                    "timestamp": state.timestamp,
+                    "trend_direction": state.trend_direction,
+                    "trend_strength": state.trend_strength,
+                    "market_regime": state.market_regime,
+                    "regime_detail": detail,
+                    "overall_sentiment": state.overall_sentiment,
+                    "sentiment_score": state.sentiment_score,
+                    "major_events": json.dumps(state.major_events),
+                    "agent_recommendation": json.dumps(state.agent_recommendation),
+                    "confidence": state.confidence,
+                    "analysis_duration": state.analysis_duration,
+                    "created_at": int(datetime.now().timestamp() * 1000),
+                }
+                try:
+                    await session.execute(stmt, params)
+                except Exception as e:
+                    if "no column named regime_detail" in str(e).lower() or "has no column named regime_detail" in str(e).lower():
+                        async with self._engine.begin() as conn2:
+                            await conn2.execute(text("ALTER TABLE macro_states ADD COLUMN regime_detail TEXT"))
+                        await session.execute(stmt, params)
+                    else:
+                        raise
                 await session.commit()
                 logger.debug(f"Macro state saved: {state.symbol} @ {state.timestamp}")
                 return True
-                
         except Exception as e:
             logger.error(f"Error saving macro state: {e}", exc_info=True)
             return False
@@ -441,7 +442,51 @@ class MacroStorage:
             return {}
     
     def _row_to_state(self, row) -> MacroState:
-        """Convert database row to MacroState"""
+        try:
+            m = row._mapping  # type: ignore[attr-defined]
+            regime_detail = m.get("regime_detail")  # type: ignore[attr-defined]
+            if regime_detail is None:
+                regime_detail = "UNCERTAIN"
+            else:
+                regime_detail = str(regime_detail).strip().upper()
+                if regime_detail not in ("CHOPPY", "TRENDING", "UNCERTAIN"):
+                    regime_detail = "UNCERTAIN"
+            return MacroState(
+                symbol=m["symbol"],
+                timestamp=m["timestamp"],
+                trend_direction=m["trend_direction"],
+                trend_strength=m["trend_strength"],
+                market_regime=m["market_regime"],
+                overall_sentiment=m["overall_sentiment"],
+                sentiment_score=m["sentiment_score"],
+                major_events=json.loads(m["major_events"]) if m["major_events"] else [],
+                agent_recommendation=json.loads(m["agent_recommendation"]) if m["agent_recommendation"] else {},
+                confidence=m["confidence"],
+                analysis_duration=m["analysis_duration"],
+                regime_detail=regime_detail,
+            )
+        except Exception:
+            pass
+        n = len(row)
+        if n >= 14:
+            rd = row[6]
+            rd = str(rd).strip().upper() if rd else "UNCERTAIN"
+            if rd not in ("CHOPPY", "TRENDING", "UNCERTAIN"):
+                rd = "UNCERTAIN"
+            return MacroState(
+                symbol=row[1],
+                timestamp=row[2],
+                trend_direction=row[3],
+                trend_strength=row[4],
+                market_regime=row[5],
+                regime_detail=rd,
+                overall_sentiment=row[7],
+                sentiment_score=row[8],
+                major_events=json.loads(row[9]) if row[9] else [],
+                agent_recommendation=json.loads(row[10]) if row[10] else {},
+                confidence=row[11],
+                analysis_duration=row[12],
+            )
         return MacroState(
             symbol=row[1],
             timestamp=row[2],
@@ -454,6 +499,7 @@ class MacroStorage:
             agent_recommendation=json.loads(row[9]) if row[9] else {},
             confidence=row[10],
             analysis_duration=row[11],
+            regime_detail="UNCERTAIN",
         )
 
 

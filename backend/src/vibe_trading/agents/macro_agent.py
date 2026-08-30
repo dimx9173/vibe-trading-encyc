@@ -88,11 +88,14 @@ ANALYSIS PRINCIPLES:
 - Acknowledge uncertainty when present
 
 IMPORTANT OUTPUT FORMAT:
-The FIRST LINE of your response must be EXACTLY:
+The FIRST TWO LINES of your response must be EXACTLY:
 
 REGIME: RISK_ON|NEUTRAL|RISK_OFF
+REGIME_DETAIL: CHOPPY|TRENDING|UNCERTAIN
 
-(RISK_ON = risk-on / bullish conditions; RISK_OFF = risk-off / bearish conditions with a strong downtrend; NEUTRAL = mixed or uncertain)
+(RISK_ON = risk-on / bullish; RISK_OFF = risk-off / strong downtrend; NEUTRAL = mixed)
+(REGIME_DETAIL discrete 3档: CHOPPY=震荡/低波动挤压, TRENDING=趋势延续, UNCERTAIN=不确定)
+Constraint: CHOPPY→qty↓ threshold↑ (only de-risk, never add qty), TRENDING→maintain.
 Then provide the full analysis below (your detailed "Market Regime: BULL/BEAR/NEUTRAL" line still goes in the TREND ANALYSIS section).
 
 When providing your analysis, structure it clearly with:
@@ -263,6 +266,7 @@ Additional Data:
 Please provide your analysis in the following format:
 
 REGIME: [RISK_ON/NEUTRAL/RISK_OFF]  (first line, exactly this)
+REGIME_DETAIL: [CHOPPY|TRENDING|UNCERTAIN]  (second line, exactly this)
 
 TREND ANALYSIS:
 Direction: [UPTREND/DOWNTREND/SIDEWAYS]
@@ -282,6 +286,8 @@ Stance: [LONG/NEUTRAL/SHORT]
 Rationale: [brief explanation]
 
 CONFIDENCE: [0.0-1.0]
+
+DISCRETE CONSTRAINT: CHOPPY→qty↓ threshold↑ (only de-risk), TRENDING→maintain.
 """
 
         return prompt
@@ -302,6 +308,7 @@ CONFIDENCE: [0.0-1.0]
             "trend_direction": "SIDEWAYS",
             "trend_strength": "MODERATE",
             "market_regime": "NEUTRAL",
+            "regime_detail": "UNCERTAIN",
             "overall_sentiment": "NEUTRAL",
             "sentiment_score": 0.0,
             "major_events": [],
@@ -317,6 +324,11 @@ CONFIDENCE: [0.0-1.0]
 
         for line in lines:
             line = line.strip()
+
+            if line.upper().startswith("REGIME_DETAIL:"):
+                v = line.split(":", 1)[1].strip().upper()
+                analysis["regime_detail"] = v if v in ("CHOPPY", "TRENDING", "UNCERTAIN") else "UNCERTAIN"
+                continue
 
             if line.upper().startswith("REGIME:"):
                 value = line.split(":", 1)[1].strip().upper()
@@ -381,12 +393,16 @@ CONFIDENCE: [0.0-1.0]
         Returns:
             MacroState instance
         """
+        rd = str(analysis.get("regime_detail", "UNCERTAIN") or "UNCERTAIN").strip().upper()
+        if rd not in ("CHOPPY", "TRENDING", "UNCERTAIN"):
+            rd = "UNCERTAIN"
         return MacroState(
             symbol=symbol,
             timestamp=int(datetime.now().timestamp() * 1000),
             trend_direction=analysis.get("trend_direction", "SIDEWAYS"),
             trend_strength=analysis.get("trend_strength", "MODERATE"),
             market_regime=analysis.get("market_regime", "NEUTRAL"),
+            regime_detail=rd,
             overall_sentiment=analysis.get("overall_sentiment", "NEUTRAL"),
             sentiment_score=analysis.get("sentiment_score", 0.0),
             major_events=analysis.get("major_events", []),

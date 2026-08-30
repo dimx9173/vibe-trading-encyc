@@ -1,13 +1,14 @@
-"""Three-state regime gate (spec phase1-rule-engine-regime-gate.md §3.2).
+"""Three-state regime gate + discrete CHOPPY/TRENDING/UNCERTAIN (spec §4).
 
-``RISK_OFF`` blocks new entries only — exits always proceed. Missing/stale
-macro state fails safe to ``NEUTRAL`` (never ``RISK_ON``).
+Primary stays RISK_ON/NEUTRAL/RISK_OFF. Discrete detail only de-risks:
+qty *= DISCRETE_QTY[detail], threshold *= DISCRETE_THR[detail] (Task 5).
+Stale -> (NEUTRAL, UNCERTAIN). Missing detail -> UNCERTAIN.
 """
 from __future__ import annotations
 
 import time
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pi_logger import get_logger
 
@@ -22,7 +23,21 @@ class Regime(str, Enum):
     RISK_OFF = "RISK_OFF"
 
 
+Detail = Literal["CHOPPY", "TRENDING", "UNCERTAIN"]
+
+DISCRETE_QTY: dict[str, float] = {"CHOPPY": 0.3, "TRENDING": 1.0, "UNCERTAIN": 0.5}
+DISCRETE_THR: dict[str, float] = {"CHOPPY": 1.4, "TRENDING": 1.0, "UNCERTAIN": 1.2}
+
+_VALID_DETAIL = {"CHOPPY", "TRENDING", "UNCERTAIN"}
+
 _TREND_STRENGTH_SCORE: dict = {"STRONG": 0.8, "MODERATE": 0.5, "WEAK": 0.2}
+
+
+def _normalize_detail(value: Any) -> Detail:
+    s = str(value or "").strip().upper()
+    if s in _VALID_DETAIL:
+        return s  # type: ignore[return-value]
+    return "UNCERTAIN"
 
 
 def _coerce_trend_strength(value: Any) -> float:
@@ -64,30 +79,31 @@ def _fresh(state: Any, max_age_seconds: int) -> bool:
     return now_ms - timestamp <= max_age_seconds * 1000
 
 
+async def current_regime_with_score(
+    macro_storage: MacroStorage,
+    max_age_seconds: int = 14400,
+    symbol: str = "BTCUSDT",
+) -> tuple[Regime, Detail]:
+    """Discrete 3档: (Regime, detail) where detail in CHOPPY/TRENDING/UNCERTAIN."""
+    try:
+        state = await macro_storage.get_latest_state(None)
+    except Exception as e:
+        logger.warning(f"current_regime_with_score read failed ({symbol}): {e}", tag="RegimeGate")
+        return Regime.NEUTRAL, "UNCERTAIN"
+    if state is None:
+        return Regime.NEUTRAL, "UNCERTAIN"
+    if not _fresh(state, max_age_seconds):
+        logger.info(f"macro state stale for {symbol} (age>={max_age_seconds}s) -> NEUTRAL/UNCERTAIN", tag="RegimeGate")
+        return Regime.NEUTRAL, "UNCERTAIN"
+    regime = map_macro_to_regime(getattr(state, "market_regime", ""), getattr(state, "trend_strength", ""))
+    detail = _normalize_detail(getattr(state, "regime_detail", None))
+    return regime, detail
+
+
 async def current_regime(
     macro_storage: MacroStorage,
     max_age_seconds: int = 7200,
     symbol: str = "BTCUSDT",
 ) -> Regime:
-    """读取最新 macro state 判三态（市场级判断，不分 symbol）。
-
-    macro 线程只写主 symbol（如 BTCUSDT），所有标的共享同一市场 regime；
-    故读取时不带 symbol 过滤。symbol 参数仅供日志。无 state / 过期 / 读失败 → NEUTRAL (fail-safe).
-    """
-    try:
-        state = await macro_storage.get_latest_state(None)
-    except Exception as e:
-        logger.warning(f"current_regime read failed ({symbol}): {e}", tag="RegimeGate")
-        return Regime.NEUTRAL
-    if state is None:
-        return Regime.NEUTRAL
-    if not _fresh(state, max_age_seconds):
-        logger.info(
-            f"macro state stale for {symbol} "
-            f"(age>={max_age_seconds}s) → NEUTRAL", tag="RegimeGate"
-        )
-        return Regime.NEUTRAL
-    return map_macro_to_regime(
-        getattr(state, "market_regime", ""),
-        getattr(state, "trend_strength", ""),
-    )
+    regime, _ = await current_regime_with_score(macro_storage, max_age_seconds=max_age_seconds, symbol=symbol)
+    return regime
