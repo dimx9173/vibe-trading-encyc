@@ -241,7 +241,7 @@ message = message_broker.receive("coordinator")
 
 ## 数据流动
 
-### 完整决策流程的上下文传递
+> **註（收斂計畫 Q9）**：下圖以 12-agent 辯論流水線（含 Phase 2 研究員辯論）作為上下文傳遞範例；該辯論鏈代碼與測試保留，但僅留作離線手動對照，不進入自動交易回路。線上決策由規則層主引擎驅動，LLM 僅做每小時 RISK_ON/NEUTRAL/RISK_OFF regime gate。
 
 ```mermaid
 graph TD

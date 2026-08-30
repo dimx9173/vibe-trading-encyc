@@ -4,6 +4,8 @@
 > Repo: `~/project/vibe-trading` (branch: local/brian)
 > 基於實際 code 分析（2026-08-04），官方文件見 `docs/guide/architecture.md`
 
+> ⚠️ **收斂計畫更新（2026-08-28，權威文件 `docs/specs/money-printer-convergence-plan.md`）**：本文件原始分析基準為 2026-08-04。收斂後系統改為 **Binance 單交易所**（BTCUSDT / ETHUSDT / SOLUSDT，30m），主執行回路是**規則層**（AlphaZoo 因子 → 信號 → Half-Kelly 倉位 → EvidenceGate/grounding → ExitLadder 出場）；LLM 僅保留每小時一次 macro regime 判定（RISK_ON / NEUTRAL / RISK_OFF，RISK_OFF 禁開新倉）。下方描述的 12-agent 辯論鏈（Phase 1–5 LLM 流水線）**代碼與測試保留，但僅留作離線手動對照，不進入任何自動交易回路**（見收斂計畫 Q9、Q2/Q6）。已物理刪除的模組：OKX/Bybit/Bitget/Hyperliquid/Jupiter executor、broker_connector、SOR、MCP server、Pine/MQL5 exporter、prime 模式（見 Q10）。
+
 ---
 
 ## 1. 系統總覽
@@ -24,6 +26,8 @@ VBT 是 **AI 驅動的多 Agent 協作量化交易系統**，用 12 個專業 Ag
 │  Phase4 交易員 → Phase5 PM → 決策輸出                    │
 └─────────────────────────────────────────────────────────┘
 ```
+
+> 上圖 TradingCoordinator 內的 Phase1–5 LLM 流水線（含辯論）保留作離線手動對照，不進入自動交易回路（收斂計畫 Q9）；線上決策由規則層主引擎驅動，LLM 僅做每小時 RISK_ON/NEUTRAL/RISK_OFF regime gate（Q6）。
 
 **核心檔案**：
 - 入口: `backend/src/vibe_trading/cli.py`
@@ -64,7 +68,7 @@ CLI (`cli.py`) 流程：
 
 ### OnBar Thread（`threads/onbar_thread.py`）
 - 觸發：新 K 線到達（WebSocket 訂閱 `btcusdt@kline_30m`）
-- 任務：`_process_kline` → 完整 5 階段決策流程（13 agents）
+- 任務：`_process_kline` → 觸發線上決策（**規則層主引擎**：AlphaZoo→信號→Half-Kelly→EvidenceGate→ExitLadder，受每小時 LLM RISK_ON/NEUTRAL/RISK_OFF regime gate 約束，RISK_OFF 禁開新倉）。12-agent LLM 5 階段流水線（13 agents）代碼保留，僅作離線手動對照，不進自動回路（收斂計畫 Q9）
 - `_execute_trade`：目前是 placeholder（只 log），實際下單由 coordinator/executor 處理
 
 ### Event Thread（`threads/event` → `coordinator/event_queue.py`）
@@ -74,6 +78,8 @@ CLI (`cli.py`) 流程：
 ---
 
 ## 4. 決策流程（TradingCoordinator.analyze_and_decide）
+
+> **註（收斂計畫 Q9）**：以下 Phase 1–5 為保留的 12-agent LLM 辯論流水線代碼說明，僅供離線手動對照，**不進入自動交易回路**；線上決策由規則層主引擎產出。
 
 `coordinator/trading_coordinator.py`，每根 K 線執行一次完整決策：
 
@@ -133,6 +139,8 @@ CLI (`cli.py`) 流程：
 ---
 
 ## 5. Agent 生態（13 Agents）
+
+> **註（收斂計畫 Q9）**：下表 12-agent 辯論鏈（除 Macro 背景 Agent 外）代碼與測試保留，但僅留作離線手動對照，不進入自動交易回路；MacroAnalysisAgent 現承擔每小時 LLM RISK_ON/NEUTRAL/RISK_OFF regime gate（Q6）。
 
 ### 角色定義（`config/agent_config.py` AgentRole & `macro_agent.py`）
 | 團隊 | Agent | Role | 運行線程 |
@@ -227,8 +235,8 @@ OrderExecutor (ABC)
 | binance_client.py | Binance API 客戶端 |
 | kline_storage.py | K 線儲存 |
 | technical_indicators.py | 20+ 技術指標 |
-| vendor_router.py | 多數據源路由（Binance/CoinGecko 備援） |
-| providers/ | Binance/OKX provider 抽象 |
+| vendor_router.py | ~~多數據源路由（Binance/CoinGecko 備援）~~（現 Binance-only，多交易所路由已移除；收斂計畫 Q3/Q10） |
+| providers/ | ~~Binance/OKX provider 抽象~~（OKX provider 已物理刪除，現 Binance-only；收斂計畫 Q10） |
 | rate_limiter.py | API 限流 |
 | fundamental_storage / news_storage / sentiment_storage / macro_storage | 各類數據儲存 |
 | cache.py | 快取 |

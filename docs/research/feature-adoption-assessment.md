@@ -30,7 +30,7 @@
 | 5 優化器 (risk_parity/turnover_aware) | HKUDS | 再平衡權重優化 | S, 獨立 |
 | quantlib 進階 (GARCH/Markov regime/PBO/過擬合診斷/purged CV) | HKUDS | 我們 quantlib 已建基礎, 加這 5 模組補完 | M, 分批 |
 | Swarm DAG preset 格式 | HKUDS | 把 13 agent 組成主題桌面 (資金費率桌/風控委員會) | M, 與我們辯論循環互補 |
-| quantlib_call MCP 鏡像模式 | HKUDS | 我們 MCP server 只鏡像 agent tools; 加 quantlib 計算 tool | S |
+| quantlib_call MCP 鏡像模式 | HKUDS | 我們 MCP server（2026-08-28 收斂計畫已物理刪除）原只鏡影 agent tools; 加 quantlib 計算 tool | S |
 | financial_rigor_tool (Benford/十進制驗證) | HKUDS | 分析師數值謊言偵測 | S, 小 |
 
 ## 三、明確不採納 (誠實原因)

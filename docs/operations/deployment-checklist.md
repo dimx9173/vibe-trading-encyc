@@ -50,7 +50,7 @@
 ## 建議切換流程（人工執行）
 
 1. **驗證**：跑 `/code-review`（fa372f5..HEAD）確認無遺漏
-2. **演練**：以 `TRADING_MODE=paper` + Binance **testnet** 跑 1-2 天，確認 OKX/Binance 執行路徑
+2. **演練**：以 `TRADING_MODE=paper` + Binance **testnet** 跑 1-2 天，確認 Binance 執行路徑（單所）
 3. **小額實盤**：`TRADING_MODE=live` + 極小 `MAX_POSITION_SIZE` + 單一 SYMBOL，觀察 24h
 4. **證據門控**（可選）：先手動執行 `EvidenceGate.evaluate_paper_performance()` 確認 14 天 Paper 績效達標（Sharpe ≥ 0.8、MaxDD ≤ 20%），再切 live
 5. **監控**：確認 Telegram 告警收得到、usage 面板正常

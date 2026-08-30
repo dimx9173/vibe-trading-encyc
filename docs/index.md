@@ -24,7 +24,7 @@ features:
   - title: 🤖 12 Agent 协作
     details: 技术、基本面、新闻、情绪分析师 + 看涨/看跌研究员 + 风控团队 + 交易员 + 投资组合经理，4阶段协作决策
   - title: 🎭 智能辩论系统
-    details: 看涨/看跌研究员多轮辩论，论点自动提取和量化裁决，确保决策的全面性和客观性
+    details: 看涨/看跌研究员多轮辩论，论点自动提取和量化裁决，确保决策的全面性和客观性（註：辯論鏈僅留作離線手動對照，不進入自動交易回路；見收斂計畫 Q9）
   - title: 🧠 BM25 记忆系统
     details: 从历史交易经验中学习，持续优化策略，通过BM25算法快速检索相关决策案例
   - title: 📊 Binance 深度集成
@@ -59,7 +59,7 @@ Vibe Trading 不是简单的交易机器人，而是一个**面向量化交易�
 ### 核心功能指南
 - [Web监控](/guide/monitoring)：配置实时 Agent Arena 监控界面
 - [外部数据层](/guide/external-data-layer)：核心+插件架构、智能路由与证据门控
-- [交易所连接器](/guide/broker-connector)：Binance 与 OKX 双交易所多 Broker 路由
+- [交易所连接器](/guide/broker-connector)：Binance 单交易所执行（仅 Binance；原 OKX/多 Broker 路由已弃用，见收敛计划）
 - [记忆系统升级](/guide/memory-upgrade)：FTS5 全文检索 + BM25 混合记忆与 5 级上下文压缩
 - [P3 研究脊梁](/guide/research-backbone)：假设注册表、策略导出与 Swarm Presets
 - [Telegram 告警通知](/guide/telegram-notifications)：三级优先级告警与 Inline Keyboard 确认机制

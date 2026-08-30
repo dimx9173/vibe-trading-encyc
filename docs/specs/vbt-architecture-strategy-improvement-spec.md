@@ -3,7 +3,7 @@
 ## 版本資訊
 - **版本**: 1.0.0
 - **日期**: 2026-08-17
-- **狀態**: ✅ 已實施 (Implemented) — L1-L3 驗證完成, L4 (72h Paper) 待後續實盤
+- **狀態**: ✅ 已實施 (Implemented) — L1-L3 驗證完成；L4 (72h Paper) 已於 2026-08-28「印鈔機優先收斂計畫」取消（由 3×168h 回測 + 14d paper 取代），不再待實盤
 - **關聯改善計劃**: [docs/research/vbt-architecture-strategy-improvement-plan.md](file:///Users/carlos/pywork/vibe-trading-encyc/docs/research/vbt-architecture-strategy-improvement-plan.md) (v1.7)
 - **關聯演進路線**: [docs/research/evolution-roadmap.md](file:///Users/carlos/pywork/vibe-trading-encyc/docs/research/evolution-roadmap.md) (Phase 5)
 - **理論基礎庫**: `Brian_Notes/wiki/Theory`（凱利公式、纏論動力學、市場體制、風險地圖）

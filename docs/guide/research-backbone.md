@@ -6,7 +6,6 @@ P3 研究脊梁提供了完整的研究管理和策略开发框架：
 
 - **P3.1 Hypothesis Registry** - 假设管理和验证
 - **P3.2 Memory Upgrade** - FTS5 搜索和上下文压缩
-- **P3.3 Strategy Export** - Pine Script 和 MQL5 导出
 - **P3.4 Swarm Presets** - 管道编排预设
 
 ---
@@ -114,68 +113,6 @@ compressed = await compressor.compress(
     evidence_list,
     target_tokens=1000,
     compression_level="auto"  # auto, light, medium, heavy
-)
-```
-
----
-
-## P3.3 Strategy Export
-
-### 导出到 Pine Script
-
-```python
-from vibe_trading.exporters.strategy_exporter import PineScriptExporter
-
-exporter = PineScriptExporter()
-
-# 从交易计划导出
-pine_code = exporter.export(trading_plan)
-
-# 保存到文件
-with open("strategy.pine", "w") as f:
-    f.write(pine_code)
-```
-
-### 导出到 MQL5
-
-```python
-from vibe_trading.exporters.strategy_exporter import MQL5Exporter
-
-exporter = MQL5Exporter()
-
-mql5_code = exporter.export(trading_plan)
-
-with open("strategy.mq5", "w") as f:
-    f.write(mql5_code)
-```
-
-### 使用策略模板
-
-```python
-from vibe_trading.exporters.templates import get_template_library
-
-library = get_template_library()
-
-# 获取预定义模板
-templates = library.get_all_templates()
-
-# 获取特定模板
-trend_template = library.get_template("trend_following")
-
-# 导出模板到 Pine Script
-pine_code = library.export_template("trend_following", "pine")
-
-# 创建自定义模板
-custom_template = library.create_custom_template(
-    name="我的策略",
-    description="自定义交易策略",
-    indicators=["rsi", "macd", "bollinger"],
-    entry_conditions=["RSI < 30", "MACD > 0"],
-    exit_conditions=["RSI > 70"],
-    risk_management={
-        "stop_loss_pct": 2.0,
-        "take_profit_pct": 4.0
-    }
 )
 ```
 
@@ -325,17 +262,7 @@ await registry.validate(hypothesis.id)
 await goal_manager.link_hypothesis(goal.id, hypothesis.id)
 ```
 
-### 3. 导出策略
-
-```python
-# 使用模板导出
-pine_code = library.export_template("momentum", "pine")
-
-# 或从假设导出
-pine_code = exporter.export(hypothesis.to_trading_plan())
-```
-
-### 4. 应用预设
+### 3. 应用预设
 
 ```python
 # 应用 Investment Committee 预设
@@ -482,12 +409,6 @@ assert "stages" in data
 - `get_all(status)` - 获取所有目标
 - `delete(goal_id)` - 删除目标
 
-### StrategyExporter
-
-- `PineScriptExporter.export(plan)` - 导出到 Pine Script
-- `MQL5Exporter.export(plan)` - 导出到 MQL5
-- `export_strategy(plan, format, config)` - 通用导出函数
-
 ### TemplateLibrary
 
 - `get_all_templates()` - 获取所有模板
@@ -515,13 +436,6 @@ assert "stages" in data
 4. **证据追踪** - 记录所有回测和实盘结果
 5. **定期清理** - 归档已完成或无效的假设
 
-### 策略导出
-
-1. **测试导出** - 在导出前验证交易计划格式
-2. **版本控制** - 为导出的策略文件使用版本控制
-3. **文档化** - 记录导出参数和配置
-4. **回测验证** - 在实盘前进行充分回测
-
 ### 预设使用
 
 1. **选择合适预设** - 根据策略复杂度选择预设
@@ -537,7 +451,7 @@ assert "stages" in data
 
 - ✅ P3.1 Hypothesis Registry
 - ✅ P3.2 Memory Upgrade
-- ✅ P3.3 Strategy Export
+- ✅ ~~P3.3 策略导出器~~（策略导出功能已移除）
 - ✅ P3.4 Swarm Presets
 - ✅ 完整单元测试（48 个测试）
 - ✅ 使用文档

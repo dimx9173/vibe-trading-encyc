@@ -12,8 +12,8 @@ tags: [user-guide, documentation]
 
 ### 设计目标
 
-- **统一接口**：所有交易所通过相同的接口访问
-- **可扩展性**：轻松添加新的交易所支持
+- **统一接口**：交易所数据通过相同的接口访问
+- **可扩展性**：~~轻松添加新的交易所支持~~
 - **向后兼容**：保留现有工具函数，无缝迁移
 - **类型安全**：使用标准化的数据模型
 
@@ -24,19 +24,13 @@ graph TD
     A[应用层] --> B[工具函数]
     B --> C[Provider 工厂]
     C --> D[Binance Provider]
-    C --> E[OKX Provider #TODO]
-    C --> F[Bybit Provider #TODO]
   
     D --> G[Binance API]
-    E --> H[OKX API]
-    F --> I[Bybit API]
   
     style A fill:#e3f2fd
     style B fill:#fff3e0
     style C fill:#f3e5f5
     style D fill:#e8f5e9
-    style E fill:#fff9c4
-    style F fill:#fce4ec
 ```
 
 ## 核心 API
@@ -327,22 +321,6 @@ print(result)
 
 ## 高级用法
 
-### 多交易所对比
-
-```python
-async def compare_exchanges():
-    """对比不同交易所的价格"""
-    exchanges = ["binance"]  # 未来可添加 "okx", "bybit"
-  
-    for exchange in exchanges:
-        provider = await ProviderFactory.get_provider(exchange)
-        try:
-            price = await provider.get_current_price("BTCUSDT")
-            print(f"{exchange}: ${price}")
-        except Exception as e:
-            print(f"{exchange}: 错误 - {e}")
-```
-
 ### 自定义配置
 
 ```python
@@ -424,5 +402,4 @@ print(prices)
 
 ## 下一步
 
-- 查看 [配置说明](/guide/configuration) 了解多交易所配置
 - 学习 [自定义Agent](/guide/custom-agent) 添加新功能

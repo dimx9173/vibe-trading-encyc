@@ -6,7 +6,7 @@ tags: [user-guide, documentation]
 
 # 协作流程
 
-本文档详细介绍 Vibe Trading 系统中 Agent 的协作流程和工作机制。
+> **註（收斂計畫 Q9）**：本文描述的 12-agent 辯論鏈（Phase 2 研究員多輪辯論）代碼與測試保留，但僅留作離線手動對照，不進入自動交易回路；線上決策由規則層主引擎驅動，LLM 僅做每小時 RISK_ON/NEUTRAL/RISK_OFF regime gate。
 
 ## 4阶段协作流程
 

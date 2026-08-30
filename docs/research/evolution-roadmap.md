@@ -13,7 +13,7 @@
 
 ## 1. 執行總覽與演進階段圖（Executive Summary）
 
-主專案（`vibe-trading-encyc`）已建立起業界領先的 **13-Agent 多角色認知對抗（4階段決策）** 與 **無未來函數的 Agent Replay 回測體系**。
+主專案（`vibe-trading-encyc`）已建立起業界領先的 **13-Agent 多角色認知對抗（4階段決策）** 與 **無未來函數的 Agent Replay 回測體系**。（註：辯論鏈僅留作離線手動對照，不進入自動交易回路；見收斂計畫 Q9）
 
 目前整體技術演進分為 **已完成的基建模組（Phase 1 ~ Phase 4）** 與 **已完成的策略與決策實戰升級（Phase 5，L1-L3 驗證完成）
 
@@ -21,7 +21,7 @@
 graph LR
     P1["Phase 1: 決策防護基建 ✅<br>(QuantLib + Grounding Gate)"] --> P2["Phase 2: 微觀因子與運算元 ✅<br>(6大微結構特徵 + StackVM)"]
     P2 --> P3["Phase 3: 因子挖掘與假說庫 ✅<br>(演化式搜尋 + Hypothesis)"]
-    P3 --> P4["Phase 4: 全鏈路 Crypto 矩陣 ✅<br>(CEX/DEX + RunManifest + MCP)"]
+    P3 --> P4["Phase 4: 全鏈路 Crypto（Binance 單所）✅<br>(RunManifest + 退出管理；CEX/DEX 多所/SOR/MCP 已移除)"]
     P4 --> P5["Phase 5: 雙向對稱決策與量化倉位 🚧<br>(合約全動作 + 纏論賣點 + Half-Kelly + Tearsheet)"]
 ```
 
@@ -61,6 +61,8 @@ graph LR
 │          - L3 跨體制壓力測試 (下跌 62% 做空 / 橫盤 100% HOLD)                   ✅       │
 │          - L4 72h Paper 實盤監控 (跳過, 待後續實盤)                            ⏳       │
 └────────────────────────────────────────────────────────────────────────────────────────┘
+
+> **註**：Phase 4 中 OKX/Bybit/Bitget/Hyperliquid/Jupiter 多所執行通道、SOR 路由與 Crypto MCP Server 已於 2026-08-28 收斂印鈔機路線中物理刪除，僅保留 Binance 單所執行通道（見《印鈔機優先收斂計劃》）。
 ```
 
 ---
@@ -168,7 +170,7 @@ graph LR
 | **Phase 1** | `M1-QuantGuard` | • `quantlib` 數學庫 (VaR/CVaR/GARCH/Kelly/TWR/XIRR/L2 衝擊) ✅<br>• Grounding 價格防幻覺硬閘門 ✅ | **✅ 已完成** (2026-08-15) |
 | **Phase 2** | `M2-FactorVM` | • 6 微觀結構特徵庫 (pressure 用真實 taker_buy) ✅<br>• StackVM 符號運算元 (12 ops) ✅<br>• 永續回測保真度 (8h 資金費率 + 分級維持保證金) ✅ | **✅ 已完成** (2026-08-15) |
 | **Phase 3** | `M3-AlphaEvolution` | • Alpha Mining Agent (演化式搜尋, **非 RL**) ✅<br>• 張量因子預篩打分器 ✅<br>• P3 假說庫自動沈澱閉環 ✅ | **✅ 已完成** (2026-08-15) |
-| **Phase 4** | `M4-CryptoNexus` | • Binance/OKX/Bybit/Bitget/Hyperliquid/Jupiter 執行器 ✅<br>• 動態標的宇宙 + 退出階梯 ✅<br>• RunManifest 方法論指紋 + Crypto MCP Server ✅ | **✅ 已完成** (2026-08-15) |
+| **Phase 4** | `M4-CryptoNexus` | • ~~Binance/OKX/Bybit/Bitget/Hyperliquid/Jupiter 執行器~~ Binance 單所執行器 ✅（多所通道與 SOR 路由已移除，收斂印鈔機路線）<br>• 動態標的宇宙 + 退出階梯 ✅<br>• RunManifest 方法論指紋 ✅；~~Crypto MCP Server~~ 已移除（收斂印鈔機路線） | **✅ 已完成** (2026-08-15) |
 | **Phase 5** | `M5-DualAlpha` | ✅ L1-L3 完成 (short 25.6% / fallback 0% / PnL +0.19%) |
 
 ---
@@ -176,7 +178,7 @@ graph LR
 ## 5. 結論
 
 透過本升級路線圖的推進：
-1. 主專案已奠定 **`QuantLib` + `Grounding Gate` + `StackVM` + `CEX/DEX 多所矩陣`**（Phase 1~4）的強大底層基建；
+1. 主專案已奠定 **`QuantLib` + `Grounding Gate` + `StackVM`**（Phase 1~4）的強大底層基建（註：原 `CEX/DEX 多所矩陣` 已於 2026-08-28 收斂印鈔機路線移除，僅保留 Binance 單所）；
 2. 當前正聚焦於 **Phase 5 雙向對稱決策與量化倉位實戰**，透過纏論三類賣點徹底釋放做空盈利空間，並以「AI 定性 + Python Half-Kelly 定量 + Reasoning Effort 深度推理 + Tearsheet 專業淚表」全面升級策略與決策能力，打造可真正實戰盈利的加密貨幣多智能體量化系統。
 
 ---

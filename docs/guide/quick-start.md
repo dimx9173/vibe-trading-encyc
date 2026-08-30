@@ -76,6 +76,10 @@ flowchart TB
     style Output fill:#f3e5f5
 ```
 
+::: warning 注意
+本图 Phase 1–4（12 个 Agent 协作/辩论链）仅留作离线手动对照，不进入自动交易回路；线上主回路为规则层（AlphaZoo → 信号 → Half-Kelly → EvidenceGate → ExitLadder）+ 每小时 LLM regime gate。（註：辯論鏈僅留作離線手動對照，不進入自動交易回路；見收斂計畫 Q9）
+:::
+
 ::: tip 提示
 Vibe Trading 支持两种运行模式：Paper Trading（模拟交易）和 Live Trading（实盘交易）。建议新手先使用 Paper Trading 模式熟悉系统。
 :::
@@ -208,13 +212,6 @@ make web
 
 然后在浏览器中访问 `http://localhost:3000` 查看实时监控界面。后端 API 和 WebSocket 默认运行在 `http://localhost:8000`。
 
-### 使用 Prime Agent 模式
-
-Prime Agent 模式是推荐的生产模式，它包含更完善的三线程架构和监控：
-
-```bash
-PYTHONPATH=backend/src uv run -- vibe-trade prime BTCUSDT --interval 5m
-```
 
 ## 故障排除
 

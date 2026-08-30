@@ -7,6 +7,8 @@
 - **預估工期**: 14 天（4 個階段）→ 實際 Phase 1-4 於 2026-08-14 完成
 - **架構原則**: 核心技術指標 + 可選新聞插件 + 證據門控
 
+> ⚠️ **收斂計畫註記（2026-08-28）**：本文原始設計含「多交易所聚合」（見下方清算數據插件、aggregator.py、多交易所聚合器條目）；收斂計畫已將系統限為 **Binance 單交易所**，多交易所聚合相關條目現已不適用（僅 Binance）。
+
 ---
 
 ## 1. 專案概述
@@ -591,7 +593,7 @@ Week 7:   評估績效，決定 Live 配置
 
 ### 6.2 性能驗收
 
-- [x] 單一 API 調用 < 500ms (P95) — 已實測（`scripts/measure_api_latency.py`：Binance 245ms / OKX 349ms / alternative.me 101ms P95，2026-08-14）
+- [x] 單一 API 調用 < 500ms (P95) — 已實測（`scripts/measure_api_latency.py`：Binance 245ms / OKX 349ms / alternative.me 101ms P95，2026-08-14）（註：OKX 為歷史延遲基準；2026-08-28 收斂印鈔機路線後系統僅支援 Binance 單所，OKX 已不再支援）
 - [x] 智能路由決策 < 10ms — 已實測（`tests/test_performance_benchmarks.py`，priority 計算）
 - [x] 緩存命中 < 1ms — 已實測（LRU get/set ~3µs）
 - [x] 多源聚合 < 1s (3 個源) — 已實測（`scripts/measure_api_latency.py`：3 源並行聚合 P95 330ms，2026-08-14）

@@ -6,7 +6,7 @@ tags: [user-guide, documentation]
 
 # 系统架构
 
-本文档详细介绍 Vibe Trading 的系统架构、技术选型和实现细节。
+> **收斂計畫更新（2026-08-28）**：Vibe Trading 現為 **Binance 單交易所**（BTCUSDT / ETHUSDT / SOLUSDT，30m），主執行回路是**規則層**（AlphaZoo 因子 → 信號 → Half-Kelly 倉位 → EvidenceGate/grounding → ExitLadder 出場）；LLM 僅保留每小時一次 macro regime 判定（RISK_ON / NEUTRAL / RISK_OFF，RISK_OFF 禁開新倉）。12-agent 辯論鏈代碼與測試保留，但**僅留作離線手動對照，不進入自動交易回路**（見收斂計畫 Q9）。
 
 ## 整体架构
 
@@ -169,7 +169,7 @@ class TradingCoordinator:
 - 评估新闻情绪
 - 监控社交媒体情绪
 
-#### Researcher Team（研究员团队）
+> **註（收斂計畫 Q9）**：辯論鏈代碼保留，但僅留作離線手動對照，不進入自動交易回路。
 
 **BullResearcherAgent（看涨研究员）**
 - 从乐观视角论证投资机会
@@ -325,6 +325,8 @@ sequenceDiagram
     Coord->>Mem: 存储决策经验
     Mem-->>Coord: 历史经验检索
 ```
+
+> **註（收斂計畫 Q9）**：上圖 Phase 2 辯論鏈為離線手動對照用途，不進入自動交易回路；線上決策由規則層主引擎驅動。
 
 ## 性能优化
 

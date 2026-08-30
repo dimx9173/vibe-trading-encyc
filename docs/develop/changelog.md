@@ -8,6 +8,8 @@ tags: [development, contributing, changelog]
 
 本文档记录了 Vibe Trading 项目的所有重要变更。
 
+> **歷史紀錄保留**：本文件中列出的 OKX 實盤（`OkxOrderExecutor` + `BrokerConnector`）、Pine/MQL5 策略導出（`exporters/`）、多交易所等功能，已於 2026-08-28「印鈔機優先收斂計劃」中**物理刪除**；此處僅保留為歷史變更紀錄。
+
 ## [未发布]
 
 ### 新增
@@ -15,7 +17,7 @@ tags: [development, contributing, changelog]
 - 初始版本发布
 - 12 Agent 协作架构
 - 4 阶段决策流程
-- 智能辩论系统
+- 智能辩论系统（註：辯論鏈僅留作離線手動對照，不進入自動交易回路；見收斂計畫 Q9）
 - BM25 记忆系统
 - Paper Trading 模式
 - Web 监控界面
@@ -30,9 +32,9 @@ tags: [development, contributing, changelog]
 - **P2.3 Shadow Account**：行为偏差画像（处置效应/过度交易/追涨/锚定）+ 反事实回测报告（fa372f5）
 - **P3.1 Hypothesis Registry**：SQLite hypotheses + research_goals + GoalManager（fa372f5）
 - **P3.2 跨会话记忆升级**：FTS5 全文检索 + 5 级上下文压缩 + BM25/FTS5 混合后端 + skill CRUD（fa372f5）
-- **P3.3 策略导出**：`exporters/` NL→Pine v6 / MQL5（fa372f5）
+- ~~**P3.3 策略导出**：`exporters/` NL→Pine v6 / MQL5（fa372f5）~~ **已移除（收敛印钞机路线，2026-08-28 物理删除）**
 - **P3.4 Swarm 预设**：可配置编排（investment_committee 等）（fa372f5）
-- **P4.1 OKX 实盘**：`OkxOrderExecutor` + `BrokerConnector` 抽象层（fa372f5）
+- ~~**P4.1 OKX 实盘**：`OkxOrderExecutor` + `BrokerConnector` 抽象层（fa372f5）~~ **已移除（收敛印钞机路线，2026-08-28 物理删除）**
 - **外部数据层 2.0**：UnifiedDataSource / LRUCache / CircuitBreaker / HealthMonitor / SmartRouter + 插件架构（fa372f5）
 - **ResearchDatabase 压力测试**：500 笔 save/query/update/delete 循环 + 效能断言（cd2ede7）
 - **P3 使用指南**：`docs/guide/research-backbone.md`（cd2ede7）

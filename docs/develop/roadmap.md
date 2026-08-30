@@ -8,9 +8,9 @@ tags: [development, contributing, changelog]
 
 本文档描述了 Vibe Trading 项目的开发计划和未来方向。
 
-> 注：本文件为早期版本路线图（v0.1/v0.2）。最新研发与技术演进请参考 [技术演进路线图](/research/evolution-roadmap)。
+> **⚠️ 本文档已过时（deprecated）**：唯一执行路线为 [印钞机优先收敛计划](/specs/money-printer-convergence-plan)（规则层主引擎、三币、168h×3 回测 → 14d paper → 500U 实盘）。本路线图不再作为开发依据，与之冲突的条目以该计划为准。
 >
-> ⚠️ 2026-08-28：当前唯一执行路线为 [印钞机优先收敛计划](/specs/money-printer-convergence-plan)（规则层主引擎、三币、168h×3 回测 → 14d paper → 500U 实盘）。本文件与演进路线图中与之冲突的条目以该计划为准。
+> 注：本文件为早期版本路线图（v0.1/v0.2）。最新研发与技术演进请参考 [技术演进路线图](/research/evolution-roadmap)。
 
 ## 当前版本：v0.1.x
 
@@ -18,7 +18,7 @@ tags: [development, contributing, changelog]
 
 - [x] 12 Agent 协作架构
 - [x] 4 阶段决策流程
-- [x] 智能辩论系统
+- [x] 智能辩论系统（註：辯論鏈僅留作離線手動對照，不進入自動交易回路；見收斂計畫 Q9）
 - [x] BM25 记忆系统（已升级：FTS5 + 压缩，见 P3.2）
 - [x] Paper Trading 模式
 - [x] Web 监控系统
@@ -26,8 +26,8 @@ tags: [development, contributing, changelog]
 - [x] Alpha Zoo 因子库（23 因子 + IC/IR bench）
 - [x] 回测引擎套件（MC/WF/Bootstrap）
 - [x] Hypothesis Registry + Research Goal
-- [x] 策略导出（NL→Pine/MQL5）
-- [x] OKX 实盘 + Broker Connector
+- [x] ~~策略导出（NL→Pine/MQL5）~~ **已移除（收敛印钞机路线）**
+- [x] ~~OKX 实盘 + Broker Connector~~ **已移除（收敛印钞机路线）**
 
 ## 下一版本：v0.2.0
 
@@ -44,10 +44,10 @@ tags: [development, contributing, changelog]
 
 #### 新功能
 
-- [x] 支持更多交易所（OKX 实盘 + Broker Connector；Binance US/Bybit 未做）
+- [x] ~~支持更多交易所（OKX 实盘 + Broker Connector；Binance US/Bybit 未做）~~ **已移除（收敛印钞机路线）**
 - [x] 多交易对并行分析（`multi_thread_main.py` + `thread_manager.py`）
 - [x] 自定义技术指标（`data_sources/indicators/technical.py` + Alpha Zoo）
-- [x] 策略模板系统（`exporters/` NL→Pine/MQL5）
+- [x] ~~策略模板系统（`exporters/` NL→Pine/MQL5）~~ **已移除（收敛印钞机路线）**
 - [ ] 风险规则配置界面（風控邏輯已有，UI 未做）
 
 #### 用户体验
@@ -89,10 +89,10 @@ tags: [development, contributing, changelog]
 
 ### 技术目标
 
-1. **多市场支持**：扩展到股票、期货、外汇等其他金融市场
+1. ~~**多市场支持**：扩展到股票、期货、外汇等其他金融市场~~（已取消：收敛印钞机路线仅 Binance 单所）
 2. **AI 增强**：集成最新的 AI 技术和模型
 3. **实时处理**：支持微秒级的高频交易
-4. **全球化**：支持全球主要交易所和语言
+4. ~~**全球化**：支持全球主要交易所和语言~~（已取消：收敛印钞机路线仅 Binance 单所）
 
 ### 社区目标
 

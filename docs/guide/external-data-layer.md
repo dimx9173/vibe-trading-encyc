@@ -232,7 +232,6 @@ class LiquidationPlugin(ABC):
 
 **可用實現**：
 - `BinanceLiquidationWS` - Binance WebSocket 即時推送
-- `MultiExchangeAggregator` - 多交易所聚合
 
 ---
 
@@ -630,35 +629,6 @@ results = await db.search_hypotheses("比特幣動量策略 RSI MACD")
 
 ---
 
-### P3.3 Strategy Export
-
-策略導出到 Pine Script 和 MQL5。
-
-```python
-from vibe_trading.exporters.strategy_exporter import PineScriptExporter, MQL5Exporter
-
-# 導出到 Pine Script
-pine_exporter = PineScriptExporter()
-pine_code = pine_exporter.export(trading_plan)
-
-# 導出到 MQL5
-mql5_exporter = MQL5Exporter()
-mql5_code = mql5_exporter.export(trading_plan)
-```
-
-**功能**：
-- ✅ Pine Script 導出器（TradingView）
-- ✅ MQL5 導出器（MetaTrader 5）
-- ✅ 策略模板系統（4 個預設模板）
-
-**預設模板**：
-1. **Trend Following** - 趨勢跟隨策略
-2. **Mean Reversion** - 均值回歸策略
-3. **Breakout** - 突破策略
-4. **Momentum** - 動能策略
-
----
-
 ### P3.4 Swarm Presets
 
 管道編排預設系統。
@@ -707,8 +677,6 @@ full = presets["full"]
 - `research/database.py` - 數據庫
 - `research/registry.py` - 假設註冊表
 - `research/goal_manager.py` - 目標管理器
-- `exporters/strategy_exporter.py` - 策略導出器
-- `exporters/templates.py` - 策略模板
 - `coordinator/presets/models.py` - 預設數據模型（Pydantic）
 - `coordinator/presets/loader.py` - 預設載入器
 - `coordinator/presets/orchestrator.py` - 管道編排器
@@ -720,10 +688,9 @@ full = presets["full"]
 ### 單元測試
 - `tests/test_data_sources.py` - 27 個測試
 - `tests/test_research.py` - 22 個測試
-- `tests/test_strategy_exporter.py` - 16 個測試
 - `tests/test_presets.py` - 19 個測試
 
-**總計**: 74 個測試，全部通過 ✅
+**總計**: 68 個測試，全部通過 ✅
 
 ---
 
