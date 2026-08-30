@@ -10,7 +10,7 @@
 
 - 自动交易回路改为规则层直驱：`AlphaZoo 因子 → 信号 → Half-Kelly 仓位 → Grounding Gate → ExitLadder 出场`
 - 标的扩为 `["BTCUSDT", "ETHUSDT", "SOLUSDT"]`，30m bar
-- LLM 仅保留每小时一次 macro regime 判定，输出收敛为 `RISK_ON / NEUTRAL / RISK_OFF`；`RISK_OFF` 禁开新仓，既有持仓出场不受影响
+- LLM 仅保留每2小時（7200s，24hr 30m 48 bars，4hr/14400s staleness 容忍一次失敗，RULE_MACRO_\* 可调）一次 macro regime 判定，输出收敛为 `RISK_ON / NEUTRAL / RISK_OFF`；`RISK_OFF` 禁开新仓，既有持仓出场不受影响
 - 12-agent 辩论链退出所有自动回路，保留 `vibe-trade analyze` 与 `backtest-agent run` 手动入口（Q9：代码保留）
 
 **非目标**（本阶段不做）：
@@ -78,7 +78,7 @@ async def current_regime(macro_storage: MacroStorage,
 ```
 
 - 映射规则（初版，阶段 2 可凭事后标注修正）：`BULL → RISK_ON`；`BEAR 且 trend_strength ≥ 0.6 → RISK_OFF`；其余（含 BEAR 弱趋势、NEUTRAL）→ `NEUTRAL`。
-- **fail-safe**：无 macro state 或超过 `max_age_seconds`（默认 2h，macro 线程 1h 一跑）→ 返回 `NEUTRAL`，不返回 RISK_ON。
+- **fail-safe**：无 macro state 或超过 `max_age_seconds`（默认 4hr/14400s staleness，macro 线程每2小時/7200s 一跑，輸入 24hr 48×30m，容忍一次失敗）→ 返回 `NEUTRAL`，不返回 RISK_ON。
 - `RISK_OFF` 语义只有一条：**禁开新仓**；出场评估照常进行。
 - `NEUTRAL`  semantics：允许开仓但 sizing 的 `risk_multiplier` 打 0.5 折（半仓），对应收敛计划"NEUTRAL 降档"意图——若计划无此意，开发时以本行为准并在 PR 描述中标注。
 
@@ -174,7 +174,7 @@ class RuleEngineLoop:
 ## 9. 验收清单（对照收敛计划 §3）
 
 - [ ] `vibe-trade start BTCUSDT ETHUSDT SOLUSDT` 三标的 30m 规则回路运行，不再触发任何 LLM agent（日志佐证）
-- [ ] 每小时 macro 判定产出三态 regime 并落 `macro_states`
+- [ ] 每2小時（7200s 调度，24hr 48×30m 輸入，4hr/14400s staleness）macro 判定产出三态 regime 并落 `macro_states`
 - [ ] RISK_OFF 注入 replay：零新开仓、既有持仓正常出场
 - [ ] `vibe-trade analyze` 手动 12-agent 链路仍可用
 - [ ] `uv run pytest tests/ -x -q` 全绿；`ruff check backend/src/` 与 `mypy backend/src/` 无新增错误

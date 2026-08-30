@@ -18,7 +18,7 @@
 ### 阶段 1：规则层主引擎 + LLM regime gate ✅ 已完成（8d40215 实作 + 475be6f 审阅修复，全量 1912 passed）
 - [x] 交易回路改规则层直驱：AlphaZoo → 信号 → Half-Kelly → EvidenceGate/grounding → ExitLadder
 - [x] 标的扩为 BTCUSDT / ETHUSDT / SOLUSDT（Binance，30m）
-- [x] LLM 降为每小时 macro → RISK_ON/NEUTRAL/RISK_OFF，RISK_OFF 禁开新仓
+- [x] LLM 降为每小时→每2小時（7200s，24hr 48×30m 輸入，4hr/14400s staleness）macro（註：歷史為「每小時」，自 2026-08-30 起已為每2小時/7200s，見收斂計畫 Q6） → RISK_ON/NEUTRAL/RISK_OFF，RISK_OFF 禁开新仓
 - [x] 12-agent 辩论链退出自动回路（留码不跑）
 - **验收**：三币烟雾 replay 已 PASS（RISK_OFF 挡开仓，gate 432x）；测试 1912 passed；8d40215 审阅发现 3 条 P0 / 5 条 P1 / 2 条 P2，全部于 475be6f 修复（见下）
 

@@ -10,7 +10,7 @@ summary: |
 
 # Vibe-Trading × pi-Platform-Skills — Architecture Conformance Review
 
-> ⚠️ **歷史設計評審（2026-08-05）**：本評審早於 2026-08-28「印鈚機優先收斂計畫」。收斂後系統改為 Binance 單交易所、規則層主引擎 + LLM 每小時 regime gate；原 `prime` 監控模式與 MCP server 已於階段 0 物理刪除。下方關於 Prime mode「partially built」等描述現已不適用（功能已移除，非部分建置）。
+> ⚠️ **歷史設計評審（2026-08-05）**：本評審早於 2026-08-28「印鈚機優先收斂計畫」。收斂後系統改為 Binance 單交易所、規則層主引擎 + LLM 每小時→每2小時（7200s，24hr 48×30m 48 bars，4hr/14400s staleness 容忍一次失敗）regime gate（註：歷史記為「每小時」，自 2026-08-30 起已為每2小時/7200s，見收斂計畫 Q6）；原 `prime` 監控模式與 MCP server 已於階段 0 物理刪除。下方關於 Prime mode「partially built」等描述現已不適用（功能已移除，非部分建置）。
 
 **Scope:** Design-level (architecture) review only. Not a code/implementation verification.
 **Method:** Follows `verify-agent-platform` SKILL.md rules — capabilities reconstructed from

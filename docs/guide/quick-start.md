@@ -17,7 +17,7 @@ flowchart TB
     end
 
     subgraph Threads["🔄 三线程架构"]
-        Macro[Macro Thread<br/>宏观数据分析<br/>每小时运行]
+        Macro[Macro Thread<br/>宏观数据分析<br/>每2小時運行（7200s）]
         OnBar[On Bar Thread<br/>K线触发分析<br/>实时响应]
         Event[Event Thread<br/>事件驱动<br/>紧急响应]
     end
@@ -77,7 +77,7 @@ flowchart TB
 ```
 
 ::: warning 注意
-本图 Phase 1–4（12 个 Agent 协作/辩论链）仅留作离线手动对照，不进入自动交易回路；线上主回路为规则层（AlphaZoo → 信号 → Half-Kelly → EvidenceGate → ExitLadder）+ 每小时 LLM regime gate。（註：辯論鏈僅留作離線手動對照，不進入自動交易回路；見收斂計畫 Q9）
+本图 Phase 1–4（12 个 Agent 协作/辩论链）仅留作离线手动对照，不进入自动交易回路；线上主回路为规则层（AlphaZoo → 信号 → Half-Kelly → EvidenceGate → ExitLadder）+ 每2小時（7200s）LLM regime gate（24hr 48×30m 輸入，4hr/14400s staleness，RULE_MACRO_\* 可调）。（註：辯論鏈僅留作離線手動對照，不進入自動交易回路；見收斂計畫 Q9）
 :::
 
 ::: tip 提示

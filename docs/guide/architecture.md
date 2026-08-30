@@ -6,7 +6,7 @@ tags: [user-guide, documentation]
 
 # 系统架构
 
-> **收斂計畫更新（2026-08-28）**：Vibe Trading 現為 **Binance 單交易所**（BTCUSDT / ETHUSDT / SOLUSDT，30m），主執行回路是**規則層**（AlphaZoo 因子 → 信號 → Half-Kelly 倉位 → EvidenceGate/grounding → ExitLadder 出場）；LLM 僅保留每小時一次 macro regime 判定（RISK_ON / NEUTRAL / RISK_OFF，RISK_OFF 禁開新倉）。12-agent 辯論鏈代碼與測試保留，但**僅留作離線手動對照，不進入自動交易回路**（見收斂計畫 Q9）。
+> **收斂計畫更新（2026-08-28）**：Vibe Trading 現為 **Binance 單交易所**（BTCUSDT / ETHUSDT / SOLUSDT，30m），主執行回路是**規則層**（AlphaZoo 因子 → 信號 → Half-Kelly 倉位 → EvidenceGate/grounding → ExitLadder 出場）；LLM 僅保留每2小時（7200s）一次 macro regime 判定（24hr 30m 48 bars 輸入，4hr/14400s staleness）（RISK_ON / NEUTRAL / RISK_OFF，RISK_OFF 禁開新倉）。12-agent 辯論鏈代碼與測試保留，但**僅留作離線手動對照，不進入自動交易回路**（見收斂計畫 Q9）。
 
 ## 整体架构
 
@@ -24,7 +24,7 @@ graph TB
     end
 
     subgraph Threads["🔄 线程层"]
-        Macro[Macro Thread<br/>宏观线程<br/>每小时运行]
+        Macro[Macro Thread<br/>宏观线程<br/>每2小時運行（7200s）]
         OnBar[OnBar Thread<br/>K线线程<br/>实时触发]
         Event[Event Thread<br/>事件线程<br/>紧急响应]
     end
@@ -118,7 +118,7 @@ class TradingCoordinator:
 系统采用三线程架构，并行处理不同类型的任务。
 
 #### Macro Thread（宏观线程）
-- **执行频率**：每小时一次
+- **执行频率**：每2小時一次（7200s；容忍一次失敗至 4hr/14400s，輸入 24hr 30m 48 bars）
 - **主要任务**：
   - 分析市场趋势
   - 评估整体情绪

@@ -6,7 +6,7 @@
 > - ⛔ 已棄用　- 📜 歷史紀錄（保留供追溯）　- ⚠️ 部分過時（含收斂計畫前條目，見註記）
 
 ## 當前架構一句話
-系統自 2026-08-28「印鈔機優先收斂計畫」起，**僅跑 Binance 單交易所**（BTCUSDT/ETHUSDT/SOLUSDT, 30m），主執行回路為**規則層**（AlphaZoo→信號→Half-Kelly→EvidenceGate→ExitLadder），LLM 僅做每小時 `RISK_ON/NEUTRAL/RISK_OFF` regime gate。12-agent 辯論鏈**留碼不跑**（僅離線對照，見收斂計畫 Q9）。
+系統自 2026-08-28「印鈔機優先收斂計畫」起，**僅跑 Binance 單交易所**（BTCUSDT/ETHUSDT/SOLUSDT, 30m），主執行回路為**規則層**（AlphaZoo→信號→Half-Kelly→EvidenceGate→ExitLadder），LLM 僅做每2小時（7200s，24hr 30m K線投喂 48 bars，4hr/14400s staleness）`RISK_ON/NEUTRAL/RISK_OFF` regime gate。12-agent 辯論鏈**留碼不跑**（僅離線對照，見收斂計畫 Q9）。
 
 ---
 
