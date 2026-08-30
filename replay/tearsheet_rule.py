@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List
@@ -51,17 +52,20 @@ def _max_drawdown_pct(equity: List[float]) -> float:
     return max_dd * 100.0
 
 
-def _metrics(recs: List[dict]) -> dict:
+def _metrics(recs: List[dict], fee_bps: int = 0) -> dict:
     """Per coin: equity curve + realized deltas from cumulative realized."""
     realized_prev = 0.0
     deltas: List[float] = []
     equity: List[float] = []
     opens = 0
     closes = 0
+    fee_mult = 1.0 - float(fee_bps) / 10000.0 if fee_bps else 1.0
     for r in recs:
         acct = r.get("account", {})
         realized = float(acct.get("realized", 0.0))
-        deltas.append(realized - realized_prev)
+        raw = realized - realized_prev
+        d = raw * fee_mult if (raw > 0 and fee_bps) else raw
+        deltas.append(d)
         realized_prev = realized
         equity.append(float(acct.get("equity", INITIAL)))
         act = r.get("action", "")
@@ -69,11 +73,18 @@ def _metrics(recs: List[dict]) -> dict:
             opens += 1
         elif act in ("exit", "reduce"):
             closes += 1
+    if fee_bps:
+        cum = 0.0
+        fee_equity: List[float] = []
+        for d in deltas:
+            cum += d
+            fee_equity.append(INITIAL + cum)
+        equity = fee_equity
     return {"equity": equity, "deltas": deltas, "opens": opens, "closes": closes}
 
 
-def _segment_stats(recs_by_coin: Dict[str, List[dict]]) -> dict:
-    coins = {c: _metrics(v) for c, v in recs_by_coin.items() if v}
+def _segment_stats(recs_by_coin: Dict[str, List[dict]], fee_bps: int = 0) -> dict:
+    coins = {c: _metrics(v, fee_bps=fee_bps) for c, v in recs_by_coin.items() if v}
     n = max((len(m["equity"]) for m in coins.values()), default=0)
     seg_equity: List[float] = [
         sum((coins[c]["equity"][i] if i < len(coins[c]["equity"]) else INITIAL)
@@ -103,7 +114,34 @@ def _segment_stats(recs_by_coin: Dict[str, List[dict]]) -> dict:
         "max_dd_pct": _max_drawdown_pct(seg_equity),
         "coins_max_dd_pct": {c: _max_drawdown_pct(coins[c]["equity"]) for c in coins},
         "equity": seg_equity,
+        "coins": coins,
     }
+
+
+def _per_coin_pf(data_dir: Path, windows: dict, fee_bps: int) -> Dict[str, dict]:
+    coins = list(windows["files"].keys())
+    segment_order = [s["name"] for s in windows["segments"]]
+    out: Dict[str, dict] = {}
+    for coin in coins:
+        recs: List[dict] = []
+        for seg in segment_order:
+            recs.extend(_load(seg, coin, data_dir))
+        m = _metrics(recs, fee_bps=fee_bps)
+        deltas = m["deltas"]
+        gross_profit = sum(d for d in deltas if d > 0)
+        gross_loss = abs(sum(d for d in deltas if d < 0))
+        pf = gross_profit / gross_loss if gross_loss > 1e-9 else (float("inf") if gross_profit > 1e-9 else 0.0)
+        wins = [d for d in deltas if d > 0]
+        losses = [d for d in deltas if d < 0]
+        traded = len(wins) + len(losses)
+        out[coin] = {
+            "pf": pf,
+            "pf_inf": pf == float("inf"),
+            "trades": traded,
+            "max_dd_pct": _max_drawdown_pct(m["equity"]),
+            "win_rate": len(wins) / traded if traded else 0.0,
+        }
+    return out
 
 
 def main() -> None:
@@ -111,6 +149,7 @@ def main() -> None:
     ap.add_argument("--data-dir", default=str(Path(__file__).resolve().parent / "data"))
     ap.add_argument("--windows", default=None)
     ap.add_argument("--json", action="store_true", help="machine-readable summary (sweep 用)")
+    ap.add_argument("--fee-bps", type=int, default=int(os.getenv("REPLAY_FEE_BPS", "8")))
     args = ap.parse_args()
     data_dir = Path(args.data_dir)
     windows_path = Path(args.windows) if args.windows else data_dir / "windows.json"
@@ -118,6 +157,7 @@ def main() -> None:
     coins = list(windows["files"].keys())
     seg_meta = {s["name"]: s for s in windows["segments"]}
     segment_order = [s["name"] for s in windows["segments"]]
+    fee_bps = int(args.fee_bps)
 
     stats: Dict[str, dict] = {}
     combined_pnl: List[float] = []
@@ -126,13 +166,15 @@ def main() -> None:
         if meta is None:
             continue
         recs_by_coin = {c: _load(seg, c, data_dir) for c in coins}
-        st = _segment_stats(recs_by_coin)
+        st = _segment_stats(recs_by_coin, fee_bps=fee_bps)
         stats[seg] = st
         base = len(coins) * INITIAL
         combined_pnl.extend(e - base for e in st["equity"])
 
     total_equity = [len(coins) * INITIAL + p for p in combined_pnl]
     total_max_dd = _max_drawdown_pct(total_equity) if total_equity else 0.0
+
+    per_coin = _per_coin_pf(data_dir, windows, fee_bps)
 
     if args.json:
         out = {
@@ -147,7 +189,18 @@ def main() -> None:
                 }
                 for seg, st in stats.items()
             },
+            "per_coin": {
+                coin: {
+                    "pf": round(v["pf"], 4) if v["pf"] != float("inf") else None,
+                    "pf_inf": v["pf_inf"],
+                    "trades": v["trades"],
+                    "max_dd_pct": round(v["max_dd_pct"], 4),
+                    "win_rate": round(v["win_rate"], 4),
+                }
+                for coin, v in per_coin.items()
+            },
             "total_max_dd_pct": round(total_max_dd, 4),
+            "fee_bps": fee_bps,
             "gate_pass": all(
                 (st["pf"] >= 1.2 or st["pf"] == float("inf")) and st["trades"] > 0
                 and not any(v > 5.0 for v in st["coins_max_dd_pct"].values())
@@ -166,7 +219,7 @@ def main() -> None:
         except Exception:
             window_days = window_bars
     print("=" * 88)
-    print(f"Window: {window_days}d ({window_bars} bars)")
+    print(f"Window: {window_days}d ({window_bars} bars) fee {fee_bps}bps")
     print(f"{'segment':10s} {'window':34s} {'BTCret%':>8s} {'opens':>5s} {'closes':>6s} "
           f"{'ret%':>7s} {'PF':>6s} {'win%':>6s} {'payoff':>7s} {'MaxDD%':>7s} {'coin-MaxDD%(BTC/ETH/SOL)':>22s}")
     print("-" * 88)
@@ -194,6 +247,9 @@ def main() -> None:
     print(f"total MaxDD (combined 30k portfolio): {total_max_dd:.2f}%  "
           f"[gate <= 5%]  {'PASS' if total_max_dd <= 5.0 else 'FAIL'}")
     print(f"per-segment PF >= 1.2 (with trades):  {'PASS' if pf_ok else 'FAIL'}")
+    if per_coin:
+        pc_line = "per-coin PF: " + ", ".join(f"{c}={v['pf']:.2f}" if v["pf"] != float("inf") else f"{c}=inf" for c, v in per_coin.items())
+        print(pc_line)
     print("=" * 88)
     ok = pf_ok and total_max_dd <= 5.0
     print(f"PHASE-2 GATE: {'PASS ✅' if ok else 'FAIL ❌'} "
