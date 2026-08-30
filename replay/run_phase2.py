@@ -11,7 +11,9 @@ Outputs per (segment, coin): replay/data/s2_{seg}_{coin}_decisions.jsonl (+ .db/
 """
 from __future__ import annotations
 
+import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -21,9 +23,13 @@ DATA_DIR = REPLAY_DIR / "data"
 
 
 def main() -> None:
-    windows = json.loads((DATA_DIR / "windows.json").read_text(encoding="utf-8"))
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--windows", default=os.getenv("REPLAY_WINDOWS", str(DATA_DIR / "windows.json")))
+    args = ap.parse_args()
+    windows_path = Path(args.windows)
+    windows = json.loads(windows_path.read_text(encoding="utf-8"))
     segments = [s["name"] for s in windows["segments"]]
-    coins = windows["files"]  # {coin: bars_path}
+    coins = windows["files"]
     runs = []
     for seg in segments:
         for coin, bars_path in coins.items():

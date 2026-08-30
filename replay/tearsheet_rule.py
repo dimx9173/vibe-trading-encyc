@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List
 
-SEGMENT_ORDER = ["range", "downtrend", "uptrend"]  # chronological by start date
+SEGMENT_ORDER = ["range", "downtrend", "uptrend"]
 INITIAL = 10_000.0
 
 
@@ -117,10 +117,11 @@ def main() -> None:
     windows = json.loads(windows_path.read_text(encoding="utf-8"))
     coins = list(windows["files"].keys())
     seg_meta = {s["name"]: s for s in windows["segments"]}
+    segment_order = [s["name"] for s in windows["segments"]]
 
     stats: Dict[str, dict] = {}
     combined_pnl: List[float] = []
-    for seg in SEGMENT_ORDER:
+    for seg in segment_order:
         meta = seg_meta.get(seg)
         if meta is None:
             continue
@@ -156,12 +157,21 @@ def main() -> None:
         print(json.dumps(out))
         return
 
+    params = windows.get("params", {})
+    window_days = params.get("window_days")
+    window_bars = params.get("window_bars", 336)
+    if window_days is None and window_bars:
+        try:
+            window_days = int(window_bars) // 48
+        except Exception:
+            window_days = window_bars
     print("=" * 88)
+    print(f"Window: {window_days}d ({window_bars} bars)")
     print(f"{'segment':10s} {'window':34s} {'BTCret%':>8s} {'opens':>5s} {'closes':>6s} "
           f"{'ret%':>7s} {'PF':>6s} {'win%':>6s} {'payoff':>7s} {'MaxDD%':>7s} {'coin-MaxDD%(BTC/ETH/SOL)':>22s}")
     print("-" * 88)
     pf_ok = True
-    for seg in SEGMENT_ORDER:
+    for seg in segment_order:
         if seg not in stats:
             continue
         st = stats[seg]
