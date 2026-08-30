@@ -21,6 +21,8 @@ from datetime import datetime
 from types import SimpleNamespace
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
+import logging
+
 from pi_logger import get_logger
 
 from vibe_trading.data_sources.alphas.zoo import AlphaZoo
@@ -40,7 +42,12 @@ from vibe_trading.execution.order_executor import OrderExecutor, PaperOrderExecu
 from vibe_trading.execution.position_sizing import calculate_atr_position_size
 from vibe_trading.execution.pre_trade_risk import PreTradeRiskGate, PreTradeRiskResult, RiskPolicy
 from vibe_trading.rule_engine.config import RuleEngineConfig
-from vibe_trading.rule_engine.regime_gate import Regime, current_regime
+from vibe_trading.rule_engine.regime_gate import (
+    DISCRETE_QTY,
+    DISCRETE_THR,
+    Regime,
+    current_regime_with_score,
+)
 from vibe_trading.rule_engine.signal import RuleSignal, generate_signal
 
 logger = get_logger(__name__)
@@ -106,6 +113,7 @@ class RuleEngineLoop:
         )
         self._ladder = ExitLadderEngine(ladder_cfg)
         self._ladder_states: Dict[str, _LadderState] = {}
+        self._bb_history: list[float] = []
         # 风控门策略与 RuleEngineConfig 对齐（阶段2 修复）:
         # - max_single_order_notional = 仓位上限 (同 sizing 口径, 否则全部订单被默认 100U 拒绝)
         # - min_confidence = 0 (信号已由 entry_threshold ±0.3 把关; strength 即信号幅度)
@@ -190,13 +198,41 @@ class RuleEngineLoop:
         return atr
 
     def _structure_prices(
-        self, direction: Literal["LONG", "SHORT", "FLAT"], entry: float, atr: float
+        self, direction: Literal["LONG", "SHORT", "FLAT"], entry: float, atr: float,
+        detail: str | None = None,
     ) -> Tuple[float, float]:
-        sl_dist = self.config.sl_atr_mult * atr
-        tp_dist = self.config.tp_atr_mult * atr
+        if detail == "CHOPPY":
+            sl_mult = self.config.mr_sl_atr
+            tp_mult = self.config.mr_tp_atr
+        else:
+            sl_mult = self.config.sl_atr_mult
+            tp_mult = self.config.tp_atr_mult
+        sl_dist = sl_mult * atr
+        tp_dist = tp_mult * atr
         if direction == "SHORT":
             return entry + sl_dist, entry - tp_dist
         return entry - sl_dist, entry + tp_dist
+
+    def _rebuild_ladder(self, detail: str) -> None:
+        if detail == "CHOPPY":
+            sl = self.config.mr_sl_atr
+            tp = self.config.mr_tp_atr
+            cfg = ExitLadderConfig(
+                r_atr_multiple=sl,
+                tp1_r_multiple=0.6 * tp / sl if sl else 1.5,
+                tp2_r_multiple=tp / sl if sl else 2.5,
+                tp1_close_ratio=0.5,
+                tp2_close_ratio=0.3,
+                trailing_close_ratio=0.2,
+                trailing_atr_multiple=self.config.mr_trailing,
+            )
+        else:
+            cfg = ExitLadderConfig(
+                r_atr_multiple=self.config.sl_atr_mult,
+                tp1_r_multiple=0.6 * self.config.tp_atr_mult / self.config.sl_atr_mult if self.config.sl_atr_mult else 1.5,
+                tp2_r_multiple=self.config.tp_atr_mult / self.config.sl_atr_mult if self.config.sl_atr_mult else 2.5,
+            )
+        self._ladder = ExitLadderEngine(cfg)
 
     @staticmethod
     def _order_sides(direction: str) -> Tuple[OrderSide, PositionSide]:
@@ -294,10 +330,19 @@ class RuleEngineLoop:
         if exit_decision is not None:
             return exit_decision
 
-        # 4. regime gate
-        regime = await current_regime(
-            self.macro_storage, self.config.macro_max_age_seconds, symbol=self.symbol
+        # 4. regime gate (discrete detail)
+        regime, detail = await current_regime_with_score(
+            self.macro_storage, max_age_seconds=self.config.macro_max_age_seconds, symbol=self.symbol
         )
+        # warning: stale llm latency >8000ms
+        try:
+            macro_state = await self.macro_storage.get_latest_state(None)
+            lat = getattr(macro_state, "llm_latency_ms", None) if macro_state else None
+            if lat is not None and float(lat) > 8000:
+                logger.warning(f"llm_latency_ms {lat} > 8000 for {self.symbol}", tag="RuleEngine")
+                logging.getLogger("vibe_trading.rule_engine.loop").warning(f"llm_latency_ms {lat} > 8000 for {self.symbol}")
+        except Exception:
+            pass
         if regime == Regime.RISK_OFF:
             logger.info(
                 f"[RuleLoop] {self.symbol} bar {k.open_time}: RISK_OFF blocks new entries",
@@ -308,25 +353,41 @@ class RuleEngineLoop:
                 reason="RISK_OFF blocks new entries",
             )
 
-        # 5. 信号
+        # 5. 信号 (discrete threshold + bb_history + mr_enabled)
         factors = await self._recent_factors()
-        signal = generate_signal(factors, threshold=self.config.entry_threshold)
+        bb_w = factors.get("bollinger_band_width")
+        if bb_w is not None:
+            try:
+                self._bb_history.append(float(bb_w))
+                if len(self._bb_history) > 20:
+                    self._bb_history = self._bb_history[-20:]
+            except Exception:
+                pass
+        thr = self.config.entry_threshold * DISCRETE_THR.get(detail, 1.0)
+        signal = generate_signal(
+            factors,
+            threshold=thr,
+            bb_history=list(self._bb_history),
+            mr_enabled=(detail == "CHOPPY"),
+        )
+        # per-mode exits: CHOPPY uses MR ladder
+        self._rebuild_ladder(detail)
         if signal.direction == "FLAT":
             return self._decision(
                 k, regime, signal=signal, action="hold", reason=signal.reason
             )
 
-        # 6. 仓位 (Half-Kelly ATR; NEUTRAL 半仓)
+        # 6. 仓位 (Half-Kelly ATR; NEUTRAL 半仓; discrete de-risk qty<=orig)
         atr = self._atr(factors, k.close)
-        qty = await self._size_position(k.close, signal, regime, atr)
+        qty = await self._size_position(k.close, signal, regime, atr, detail=detail)
         if qty <= 0:
             return self._decision(
                 k, regime, signal=signal, action="hold",
                 reason="sizing returned zero (no positive expectancy)",
             )
 
-        # 7. grounding
-        sl, tp = self._structure_prices(signal.direction, k.close, atr)
+        # 7. grounding (per-mode SL/TP)
+        sl, tp = self._structure_prices(signal.direction, k.close, atr, detail=detail)
         plan = SimpleNamespace(
             entry_orders=[{"price": k.close}],
             stop_loss_orders=[{"trigger_price": sl}],
@@ -482,11 +543,12 @@ class RuleEngineLoop:
     # ------------------------------------------------------------------
 
     async def _size_position(
-        self, entry: float, signal: RuleSignal, regime: Regime, atr: float
+        self, entry: float, signal: RuleSignal, regime: Regime, atr: float,
+        detail: str | None = None,
     ) -> float:
         balance = await self._get_equity()
-        sl, tp = self._structure_prices(signal.direction, entry, atr)
-        qty = calculate_atr_position_size(
+        sl, tp = self._structure_prices(signal.direction, entry, atr, detail=detail)
+        orig_qty = calculate_atr_position_size(
             account_equity=balance,
             confidence=signal.strength,
             entry_price=entry,
@@ -495,8 +557,14 @@ class RuleEngineLoop:
             atr_30m=atr,
             max_single_notional=self.config.max_single_notional,
         )
+        qty = float(orig_qty)
         if regime == Regime.NEUTRAL:
             qty *= self.config.neutral_risk_scale
+        if detail is not None:
+            qty *= DISCRETE_QTY.get(detail, 1.0)
+            qty = min(qty, float(orig_qty) * (self.config.neutral_risk_scale if regime == Regime.NEUTRAL else 1.0))
+            # ensure never > discrete-scaled orig, and never > orig
+            qty = min(qty, float(orig_qty))
         return float(qty)
 
     # ------------------------------------------------------------------
