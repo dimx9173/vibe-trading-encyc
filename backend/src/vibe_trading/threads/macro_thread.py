@@ -80,10 +80,9 @@ class MacroAnalysisThread:
         # Initialize storage
         await self.storage.init()
 
-        # Create tool context
         self._tool_context = ToolContext(
             symbol=self.symbol,
-            interval="1h",
+            interval=getattr(self, "kline_interval", "30m"),
         )
 
         # Initialize macro agent

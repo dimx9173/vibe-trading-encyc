@@ -75,6 +75,12 @@ def test_resolve_switchboard_base_url_set(monkeypatch):
     )
 
 
+def test_resolve_var_empty_env_treated_as_unset(monkeypatch):
+    monkeypatch.setenv("MY_VAR", "")
+    assert _resolve_value("${MY_VAR:default123}", "openai") == "default123"
+    assert _resolve_value("${MY_VAR}", "openai") is None
+
+
 def test_resolve_literal():
     assert _resolve_value("literal_value", "openai") == "literal_value"
     assert _resolve_value("literal_value", "custom_openai") == "literal_value"

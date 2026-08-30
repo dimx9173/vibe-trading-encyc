@@ -24,7 +24,7 @@ tags: [roadmap, convergence, rule-engine, validation-gates]
 | Q2 | 引擎 | 规则层为主（AlphaZoo + ExitLadder + Half-Kelly + EvidenceGate），LLM 降级 |
 | Q3/Q5 | 范围/标的 | Binance 一家，三币：BTCUSDT + ETHUSDT + SOLUSDT |
 | Q4/Q7 | 回测验证 | 三组代表性 168h 窗口（上涨/盘整/下跌），**每段各自 PF ≥ 1.2**，总 MaxDD ≤ 5%（10k 本金） |
-| Q6 | LLM 残留角色 | 每小时 macro → RISK_ON/NEUTRAL/RISK_OFF 三态，RISK_OFF 禁开新仓（挡单不下单） |
+| Q6 | LLM 残留角色 | 每2小时 macro（24hr 30m K線投喂 48 bars，`RULE_MACRO_*` 可调）→ RISK_ON/NEUTRAL/RISK_OFF 三态，RISK_OFF 禁开新仓（挡单不下单）；staleness 容忍 4hr（`RULE_MACRO_MAX_AGE_SECONDS=14400`，容許一次失敗） |
 | Q8 | 上线管线 | 3×168h 回测 → 14d paper → 500U 实盘 |
 | Q9 | 12-agent 辩论链 | **留码不跑**：代码与测试保留，不进任何自动回路，可手动离线对照 |
 | Q10 | 冻结清单执行 | **删码**（物理删除，可逆性依赖 git 历史） |
@@ -53,7 +53,7 @@ tags: [roadmap, convergence, rule-engine, validation-gates]
 
 - 交易回路改为规则层直接驱动：AlphaZoo 因子 → 信号 → Half-Kelly 仓位 → EvidenceGate/grounding → ExitLadder 出场
 - 标的扩为 `["BTCUSDT", "ETHUSDT", "SOLUSDT"]`（Binance，30m bar）
-- LLM 仅保留每小时一次 macro regime 判定，输出收敛为 `RISK_ON / NEUTRAL / RISK_OFF`；`RISK_OFF` 时规则层禁开新仓（既有持仓出场逻辑不受影响）
+- LLM 仅保留每2小时一次 macro regime 判定（24hr 30m K線投喂 48 bars，`RULE_MACRO_*` 可覆盖：`RULE_MACRO_INTERVAL_SECONDS=7200`、`RULE_MACRO_LOOKBACK_HOURS=24`、`RULE_MACRO_MAX_AGE_SECONDS=14400` 容忍一次失敗），输出收敛为 `RISK_ON / NEUTRAL / RISK_OFF`；`RISK_OFF` 时规则层禁开新仓（既有持仓出场逻辑不受影响）
 - 12-agent 辩论链不进任何自动回路（保留手动触发入口做离线对照）
 
 **验收**：三币各跑一段短 replay 烟雾测试，确认 regime gate 在 RISK_OFF 时确实挡下开仓；相关 pytest 全绿。

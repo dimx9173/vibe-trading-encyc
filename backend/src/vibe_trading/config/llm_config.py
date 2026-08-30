@@ -96,6 +96,7 @@ def _resolve_value(raw: str, provider: str) -> Optional[str]:
         inner = raw.split("${", 1)[1].split("}", 1)[0]
         var_name, _, default = inner.partition(":")
         v = os.environ.get(var_name)
+        # 空串视为未设置（与 `if v:` 语义一致），以便 fallback 到 default / None
         if v:
             return v
         return default if default else None

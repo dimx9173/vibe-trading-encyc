@@ -75,6 +75,63 @@ DEBUG=false
 2. 在 `.env` 中设置 `LLM_MODEL=<配置名>`。
 3. 按该配置需要设置对应 API Key，例如 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GOOGLE_API_KEY`。
 
+### Custom OpenAI（Switchboard / 任意 OpenAI 兼容網關）
+
+`backend/src/vibe_trading/config/llm.yaml` 已支援通用 `provider: custom_openai`（映射到 `openai-completions`），`base_url` / `api_key` 均可參數化為環境變數，無需改代碼即可接入自建網關或本地 `switchboard` 代理：
+
+```yaml
+muse_spark_1_2_contributor:
+  provider: custom_openai
+  api_key: ${SWITCHBOARD_API_KEY:}
+  base_url: ${SWITCHBOARD_BASE_URL:http://127.0.0.1:8415/v1}
+  model: muse-spark-1.2-contributor
+  description: "Muse Spark 1.2 Contributor (custom OpenAI)"
+
+opencode_mimo_v25:
+  provider: custom_openai
+  api_key: ${SWITCHBOARD_API_KEY:}
+  base_url: ${SWITCHBOARD_BASE_URL:http://127.0.0.1:8415/v1}
+  model: mimo-v2.5
+  description: "Mimo V2.5 (custom OpenAI)"
+
+opencode_zen:
+  provider: custom_openai
+  api_key: ${SWITCHBOARD_API_KEY:}
+  base_url: ${SWITCHBOARD_BASE_URL:http://127.0.0.1:8415/v1}
+  model: mimo-v2.5
+  description: "Zen alias (custom OpenAI)"
+
+opencode_zen_deepseek_v4_flash:
+  provider: custom_openai
+  api_key: ${SWITCHBOARD_API_KEY:}
+  base_url: ${SWITCHBOARD_BASE_URL:http://127.0.0.1:8415/v1}
+  model: deepseek-v4-flash
+  description: "DeepSeek V4 Flash (custom OpenAI)"
+```
+
+環境變數（在 `.env` 配置）：
+
+```env
+SWITCHBOARD_BASE_URL=http://127.0.0.1:8415/v1
+SWITCHBOARD_API_KEY=sb-xxx  # 對應 switchboard-go/.env 的 PROXY_API_KEY
+```
+
+> ⚠️ `llm.yaml` 已被 `.gitignore` 忽略，倉庫僅提供 `llm.yaml.example`。新增機器需 `cp backend/src/vibe_trading/config/llm.yaml.example backend/src/vibe_trading/config/llm.yaml` 後再填入上述條目與 `SWITCHBOARD_*` 環境變數。
+
+解析邏輯見 `backend/src/vibe_trading/config/llm_config.py`：`_resolve_value` 支援 `${VAR}` / `${VAR:default}`，`custom_openai` 按環境變數回退到 `SWITCHBOARD_*`。
+
+### Rule Engine — Regime Gate 調優（Q6 可調參數，Phase 2 FROZEN）
+
+LLM regime gate（`MacroAnalysisThread` → `MacroAnalysisAgent` → `RISK_ON / NEUTRAL / RISK_OFF`）的節奏與投喂窗口由以下環境變數控制，均為 **Q6 可調參數**、非新增信號或交易所（收斂計畫 Phase 2 FROZEN）：
+
+| 環境變數 | 默認值 | 說明 |
+| --- | --- | --- |
+| `RULE_MACRO_INTERVAL_SECONDS` | `7200`（2hr） | Macro LLM 判定週期，每 2hr 跑一次（`MacroAnalysisThread.interval_seconds`） |
+| `RULE_MACRO_LOOKBACK_HOURS` | `24` | 回看窗口，30m 週期對應 `48 bars`（`kline_lookback_hours` / `kline_interval`） |
+| `RULE_MACRO_MAX_AGE_SECONDS` | `14400`（4hr） | Staleness 容忍，`4hr = 2 × interval`，允許一次失敗（on-bar 線程以 4hr max_age 讀取最新 macro state） |
+
+對應代碼：`backend/src/vibe_trading/rule_engine/config.py`（`RuleEngineConfig.from_env`）、`backend/src/vibe_trading/threads/macro_thread.py`（`_collect_klines_24h` / `_collect_market_data`）。調參無需改代碼，改 `.env` 並重啟即可；回測與實盤共用同一套 env 覆盖。
+
 ## Binance 配置
 
 Paper Trading 默认使用 Binance Futures Testnet：

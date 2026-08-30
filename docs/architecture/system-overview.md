@@ -4,7 +4,7 @@
 > Repo: `~/project/vibe-trading` (branch: local/brian)
 > 基於實際 code 分析（2026-08-04），官方文件見 `docs/guide/architecture.md`
 
-> ⚠️ **收斂計畫更新（2026-08-28，權威文件 `docs/specs/money-printer-convergence-plan.md`）**：本文件原始分析基準為 2026-08-04。收斂後系統改為 **Binance 單交易所**（BTCUSDT / ETHUSDT / SOLUSDT，30m），主執行回路是**規則層**（AlphaZoo 因子 → 信號 → Half-Kelly 倉位 → EvidenceGate/grounding → ExitLadder 出場）；LLM 僅保留每小時一次 macro regime 判定（RISK_ON / NEUTRAL / RISK_OFF，RISK_OFF 禁開新倉）。下方描述的 12-agent 辯論鏈（Phase 1–5 LLM 流水線）**代碼與測試保留，但僅留作離線手動對照，不進入任何自動交易回路**（見收斂計畫 Q9、Q2/Q6）。已物理刪除的模組：OKX/Bybit/Bitget/Hyperliquid/Jupiter executor、broker_connector、SOR、MCP server、Pine/MQL5 exporter、prime 模式（見 Q10）。
+> ⚠️ **收斂計畫更新（2026-08-28，權威文件 `docs/specs/money-printer-convergence-plan.md`）**：本文件原始分析基準為 2026-08-04。收斂後系統改為 **Binance 單交易所**（BTCUSDT / ETHUSDT / SOLUSDT，30m），主執行回路是**規則層**（AlphaZoo 因子 → 信號 → Half-Kelly 倉位 → EvidenceGate/grounding → ExitLadder 出場）；LLM 僅保留每2小時一次 macro regime 判定（24hr 30m K線投喂, 48 bars, 4hr staleness 容忍一次失敗，RISK_ON / NEUTRAL / RISK_OFF，RISK_OFF 禁開新倉）。下方描述的 12-agent 辯論鏈（Phase 1–5 LLM 流水線）**代碼與測試保留，但僅留作離線手動對照，不進入任何自動交易回路**（見收斂計畫 Q9、Q2/Q6）。已物理刪除的模組：OKX/Bybit/Bitget/Hyperliquid/Jupiter executor、broker_connector、SOR、MCP server、Pine/MQL5 exporter、prime 模式（見 Q10）。
 
 ---
 
@@ -15,7 +15,7 @@ VBT 是 **AI 驅動的多 Agent 協作量化交易系統**，用 12 個專業 Ag
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    三線程架構                            │
-│  Macro Thread (1h)  OnBar Thread (K線)  Event Thread    │
+│  Macro Thread (2hr, 24h K線投喂)  OnBar Thread (K線)  Event Thread    │
 │  ────────────────  ────────────────   ────────────────  │
 │  宏觀分析          完整決策流程        緊急事件響應       │
 └───────────────────────┬─────────────────────────────────┘
@@ -27,7 +27,7 @@ VBT 是 **AI 驅動的多 Agent 協作量化交易系統**，用 12 個專業 Ag
 └─────────────────────────────────────────────────────────┘
 ```
 
-> 上圖 TradingCoordinator 內的 Phase1–5 LLM 流水線（含辯論）保留作離線手動對照，不進入自動交易回路（收斂計畫 Q9）；線上決策由規則層主引擎驅動，LLM 僅做每小時 RISK_ON/NEUTRAL/RISK_OFF regime gate（Q6）。
+> 上圖 TradingCoordinator 內的 Phase1–5 LLM 流水線（含辯論）保留作離線手動對照，不進入自動交易回路（收斂計畫 Q9）；線上決策由規則層主引擎驅動，LLM 僅做每2小時 RISK_ON/NEUTRAL/RISK_OFF regime gate（24hr 30m K線投喂, 48 bars, 4hr staleness 容忍一次失敗，Q6）。
 
 **核心檔案**：
 - 入口: `backend/src/vibe_trading/cli.py`
@@ -62,13 +62,13 @@ CLI (`cli.py`) 流程：
 ## 3. 三線程架構
 
 ### Macro Thread（`threads/macro_thread.py`）
-- 頻率：每小時（`_should_update` 檢查）
+- 頻率：每2小時（7200s，`_should_update` 檢查；24hr 30m K線投喂, 48 bars, 4hr staleness 容忍一次失敗）
 - 任務：分析市場趨勢、整體情緒、宏觀事件 → 更新 `macro_states`
 - 輸出：`MacroAnalysisAgent` 的宏觀狀態（trend_direction / market_regime / sentiment）
 
 ### OnBar Thread（`threads/onbar_thread.py`）
 - 觸發：新 K 線到達（WebSocket 訂閱 `btcusdt@kline_30m`）
-- 任務：`_process_kline` → 觸發線上決策（**規則層主引擎**：AlphaZoo→信號→Half-Kelly→EvidenceGate→ExitLadder，受每小時 LLM RISK_ON/NEUTRAL/RISK_OFF regime gate 約束，RISK_OFF 禁開新倉）。12-agent LLM 5 階段流水線（13 agents）代碼保留，僅作離線手動對照，不進自動回路（收斂計畫 Q9）
+- 任務：`_process_kline` → 觸發線上決策（**規則層主引擎**：AlphaZoo→信號→Half-Kelly→EvidenceGate→ExitLadder，受每2小時 LLM RISK_ON/NEUTRAL/RISK_OFF regime gate 約束（24hr 30m K線投喂, 48 bars, 4hr staleness 容忍一次失敗），RISK_OFF 禁開新倉）。12-agent LLM 5 階段流水線（13 agents）代碼保留，僅作離線手動對照，不進自動回路（收斂計畫 Q9）
 - `_execute_trade`：目前是 placeholder（只 log），實際下單由 coordinator/executor 處理
 
 ### Event Thread（`threads/event` → `coordinator/event_queue.py`）
@@ -140,7 +140,7 @@ CLI (`cli.py`) 流程：
 
 ## 5. Agent 生態（13 Agents）
 
-> **註（收斂計畫 Q9）**：下表 12-agent 辯論鏈（除 Macro 背景 Agent 外）代碼與測試保留，但僅留作離線手動對照，不進入自動交易回路；MacroAnalysisAgent 現承擔每小時 LLM RISK_ON/NEUTRAL/RISK_OFF regime gate（Q6）。
+> **註（收斂計畫 Q9）**：下表 12-agent 辯論鏈（除 Macro 背景 Agent 外）代碼與測試保留，但僅留作離線手動對照，不進入自動交易回路；MacroAnalysisAgent 現承擔每2小時 LLM RISK_ON/NEUTRAL/RISK_OFF regime gate（24hr 30m K線投喂, 48 bars, 4hr staleness 容忍一次失敗，Q6）。
 
 ### 角色定義（`config/agent_config.py` AgentRole & `macro_agent.py`）
 | 團隊 | Agent | Role | 運行線程 |
