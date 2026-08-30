@@ -69,14 +69,16 @@ P2（仓库卫生；git mutation 前先问用户）
 - **验收**：✅ 三测试文件 99 passed（含 P0-1/P0-3 新测试）/ 全量 tests/ 1912 passed / ruff・mypy 无新增错误 / replay BTC 段 432 bars 正常完成（决策分布与基线一致）
 - **处置**：P0-1 开仓即武装初始 stop；P0-2 旗标透传 start→executor；P0-3 regime 市场级读取；P1 五项；P2 全项（详见 475be6f commit message）
 
-### 阶段 2：3×168h regime 回测（硬门槛 1）🔄 进行中（两轮 sweep 40/40 未过门槛；range 段结构性无动量 edge；待用户决策分岔点 A/B/C）
+### 阶段 2：3×168h regime 回测（硬门槛 1）⛔ 冻结（按计划默认：任一不过 → 不进实盘）
 - [x] `replay/fetch_bars.py` 补齐三币 180d 30m K 线
 - [x] 按 BTC 168h 报酬率选上涨/盘整/下跌三段窗口，三币共用日期（`replay/data/windows.json`）
 - [x] 纯规则层 replay + 20 组合参数 sweep × 2 轮，产出三段 tearsheet（`replay/tearsheet_rule.py`）
 - **门槛**：每段各自 PF ≥ 1.2，总 MaxDD ≤ 5%；不过 → 修策略，不加功能
 - **v1 结论**：20/20 未过（range 0.59–0.90）；发现 TP 接线缺陷（commit 533d932 + 484dad4）
 - **v2 结论**：修复 TP 接线（ab73c7d）后重跑 20/20 未过（range 0.51–1.14 峰值；uptrend/downtrend 高阈值+宽止损可各自达标但同组合无法兼顾）。range 段 40/40 < 1.2 → 动量信号在横盘无 edge，非参数问题
-- **分岔点（待用户决策）**：A. 靠 LLM regime gate 实盘切 range 段（放宽回测口径）｜ B. 信号层迭代（ADX/效率比方向化，接近加功能红线）｜ C. 保持 FAIL 不进实盘。详见 [阶段 2 回测报告](docs/specs/phase2-regime-backtest-verdict.md)
+- **判别因子复测（882ce38）**：trend_strength / ADX / Efficiency-Ratio 三窗口分布全部完全重叠 → 无「横盘判别因子」可加，问题在信号本身（30m 减采样后净零漂移窗口无可交易结构）
+- **数据验证**：独立重算 PF 精确匹配 sweep log；tearsheet equity/MaxDD 计算正确（margin 不计亏损）；doc↔log↔raw 四层一致
+- **处置**：⛔ 按计划「任一不过 → 不进实盘」冻结，不进阶段 3。重启需用户明确指示（如实盘 regime gate 切段 A / 信号层迭代 / 换窗口口径），非当前待办。详见 [阶段 2 回测报告](docs/specs/phase2-regime-backtest-verdict.md)
 
 ### 阶段 3：14 天 paper shadow（硬门槛 2）
 - [ ] 完成 EvidenceGate→coordinator 整合（`docs/operations/deployment-checklist.md` blocker）
