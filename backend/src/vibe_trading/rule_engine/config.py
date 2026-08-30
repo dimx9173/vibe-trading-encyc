@@ -38,10 +38,12 @@ class RuleEngineConfig:
     sl_atr_mult: float = 1.5               # 初始止损距离 = 1.5 × ATR (与 ExitLadderEngine 的 R 口径一致)
     tp_atr_mult: float = 2.5               # 初始止盈距离 = 2.5 × ATR
     neutral_risk_scale: float = 0.5        # NEUTRAL 半仓系数
-    macro_max_age_seconds: int = 7200      # macro state 最大年龄 (2h; macro 线程 1h 一跑)
+    macro_max_age_seconds: int = 14400     # macro state 最大年龄 (4hr; macro 线程 2hr 一跑，容忍一次失敗)
     max_single_notional: float = 500.0     # 单笔名义价值上限 (5% of 10k)
 
-    interval: str = "30m"                  # 规则回路 K 线周期 (multi_thread_main 设定覆盖)
+    interval: str = "30m"                  # 规则回路 K 线周期 (multi_thread_main 设定覆盖，30m 主执行)
+    macro_interval_seconds: int = 7200     # LLM 判斷週期 (2hr)
+    macro_lookback_hours: int = 24         # 每次判斷回看的 K 線時長 (24hr @ 30m = 48根)
 
     @classmethod
     def from_env(cls) -> "RuleEngineConfig":
@@ -55,4 +57,6 @@ class RuleEngineConfig:
             macro_max_age_seconds=_env_int("RULE_MACRO_MAX_AGE_SECONDS", cls.macro_max_age_seconds),
             max_single_notional=_env_float("RULE_MAX_SINGLE_NOTIONAL", cls.max_single_notional),
             interval=os.getenv("RULE_INTERVAL", cls.interval),
+            macro_interval_seconds=_env_int("RULE_MACRO_INTERVAL_SECONDS", cls.macro_interval_seconds),
+            macro_lookback_hours=_env_int("RULE_MACRO_LOOKBACK_HOURS", cls.macro_lookback_hours),
         )

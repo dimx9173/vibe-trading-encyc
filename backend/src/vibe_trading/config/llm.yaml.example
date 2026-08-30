@@ -70,3 +70,39 @@ llms:
     base_url: https://open.bigmodel.cn/api/paas/v4
     model: glm-4-plus
     description: "Zhipu GLM-4.7"
+
+  # ── Custom OpenAI 兼容通道（switchboard / 任意 OpenAI 兼容網關） ──
+  # 設計：provider=custom_openai，base_url/api_key 均參數化到環境變數，
+  # 自建網關只需改這兩個變數名與 model id 即可；llm_config.py 已支援
+  # base_url 的 ${VAR:default} 與 custom_openai 映射。
+  # 本機範例：switchboard 本地代理 http://127.0.0.1:8415/v1
+  # 需在 .env 配置：
+  #   SWITCHBOARD_BASE_URL=http://127.0.0.1:8415/v1
+  #   SWITCHBOARD_API_KEY=sb-... （見 switchboard-go/.env 的 PROXY_API_KEY）
+  muse_spark_1_2_contributor:
+    provider: custom_openai
+    api_key: ${SWITCHBOARD_API_KEY:}
+    base_url: ${SWITCHBOARD_BASE_URL:http://127.0.0.1:8415/v1}
+    model: muse-spark-1.2-contributor
+    description: "Muse Spark 1.2 Contributor (custom OpenAI)"
+
+  opencode_mimo_v25:
+    provider: custom_openai
+    api_key: ${SWITCHBOARD_API_KEY:}
+    base_url: ${SWITCHBOARD_BASE_URL:http://127.0.0.1:8415/v1}
+    model: mimo-v2.5
+    description: "Mimo V2.5 (custom OpenAI)"
+
+  opencode_zen_deepseek_v4_flash:
+    provider: custom_openai
+    api_key: ${SWITCHBOARD_API_KEY:}
+    base_url: ${SWITCHBOARD_BASE_URL:http://127.0.0.1:8415/v1}
+    model: deepseek-v4-flash
+    description: "DeepSeek V4 Flash (custom OpenAI)"
+
+  opencode_zen:
+    provider: custom_openai
+    api_key: ${SWITCHBOARD_API_KEY:}
+    base_url: ${SWITCHBOARD_BASE_URL:http://127.0.0.1:8415/v1}
+    model: mimo-v2.5
+    description: "Zen alias (custom OpenAI)"

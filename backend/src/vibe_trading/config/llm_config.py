@@ -13,18 +13,24 @@ pi-py 的 ``pi_ai`` 删除了 YAML 配置层（``config.py``）和 ``ModelRouter
 
 每个 YAML 条目的字段映射到 pi-py Model：
 
-    provider: openai|anthropic   -> Model.api = "openai-completions" | "anthropic-messages"
-    model:    <model_id>         -> Model.id
-    base_url: <url>              -> Model.base_url
-    api_key:  <literal|${ENV}>   -> 不进 Model；由 get_api_key_for(name) 返回，
-                                    通过 AgentOptions(get_api_key=...) 注入
+    provider: openai|custom_openai|anthropic -> Model.api = "openai-completions" | "anthropic-messages"
+    model:    <model_id>                    -> Model.id
+    base_url: <url|${ENV:default}>          -> Model.base_url（经环境变量解析）
+    api_key:  <literal|${ENV:default}>      -> 不进 Model；由 get_api_key_for(name) 返回，
+                                               通过 AgentOptions(get_api_key=...) 注入
 
-对于 OpenAI 兼容端点（longcat / iflow / deepseek / aliyun / opencode-zen 等），
+对于 OpenAI 兼容端点（longcat / iflow / deepseek / aliyun / switchboard 等），
 统一使用 ``api = "openai-completions"`` + 自定义 ``base_url``。
+
+Custom 通道：``provider: custom_openai`` 为通用 OpenAI 兼容 provider，不绑定具体上游；
+只需在 llm.yaml 配置 ``provider: custom_openai`` + 參數化的 ``base_url: ${MY_BASE_URL:...}``
+與 ``api_key: ${MY_API_KEY:}``，即可接入任意自建網關或 switchboard 本地代理
+（見 llm.yaml 的 SWITCHBOARD_* 範例），無需改代碼。
 
 安全提示：``llm.yaml`` 历史上包含明文 API key（longcat / iflow / glm_4_7 / aliyun_* /
 opencode-zen）。这些 key 已在 git 历史中，轮换需另行处理，不在本次迁移范围内。
 """
+
 from __future__ import annotations
 
 import os
@@ -46,8 +52,11 @@ except Exception:  # pragma: no cover - logger 可选
 
 
 # YAML provider 名 -> pi-py 注册的 API provider key
+# custom_openai：任意 OpenAI 兼容端点（switchboard / 本地代理 / 第三方网关），
+# 只要提供 base_url + api_key 即可，不绑定具体上游。
 _PROVIDER_TO_API: Dict[str, str] = {
     "openai": "openai-completions",
+    "custom_openai": "openai-completions",
     "anthropic": "anthropic-messages",
     # google / ollama 等暂无对应 pi-py provider，遇到时按 openai-completions 兼容处理
 }
@@ -64,24 +73,38 @@ def _default_config_path() -> str:
     return str(primary)
 
 
-def _resolve_api_key(raw: str, provider: str) -> Optional[str]:
-    """解析 api_key 字段，支持 ``${VAR}`` / ``${VAR:default}`` / 环境变量回退。"""
+def _resolve_value(raw: str, provider: str) -> Optional[str]:
+    """通用 ``${VAR}`` / ``${VAR:default}`` 解析，支持环境变量替换。
+
+    用于 api_key / base_url 等任意字段：``${FOO}`` 取环境变量，``${FOO:default}``
+    在未设置时回退到 default。若无替换语法则原样返回；空串按 provider 做
+    常规环境变量回退。
+    """
     if not raw:
-        # 空值时按 provider 回退到常见环境变量
         env_fallback = {
             "openai": "OPENAI_API_KEY",
+            "custom_openai": "OPENAI_API_KEY",
             "anthropic": "ANTHROPIC_API_KEY",
             "google": "GOOGLE_API_KEY",
         }.get(provider)
-        return os.environ.get(env_fallback) if env_fallback else None
-
-    # ${VAR} 或 ${VAR:default}
+        if env_fallback:
+            v = os.environ.get(env_fallback)
+            if v:
+                return v
+        return None
     if "${" in raw:
         inner = raw.split("${", 1)[1].split("}", 1)[0]
         var_name, _, default = inner.partition(":")
-        return os.environ.get(var_name, default)
-
+        v = os.environ.get(var_name)
+        if v:
+            return v
+        return default if default else None
     return raw
+
+
+def _resolve_api_key(raw: str, provider: str) -> Optional[str]:
+    """解析 api_key 字段（兼容旧名）。"""
+    return _resolve_value(raw, provider)
 
 
 class LLMConfig:
@@ -109,9 +132,7 @@ class LLMConfig:
         name = name or self.get_current_name()
         llms = self._config.get("llms", {})
         if name not in llms:
-            raise ValueError(
-                f"LLM 配置不存在: {name}\n可用配置: {list(llms.keys())}"
-            )
+            raise ValueError(f"LLM 配置不存在: {name}\n可用配置: {list(llms.keys())}")
         return llms[name]
 
     def get_model(self, name: Optional[str] = None) -> Model:
@@ -122,7 +143,10 @@ class LLMConfig:
         provider = cfg.get("provider", "openai")
         api = _PROVIDER_TO_API.get(provider, "openai-completions")
         model_id = cfg.get("model", "gpt-4o")
-        base_url = cfg.get("base_url", "")
+        raw_base_url = cfg.get("base_url", "") or ""
+        # base_url 也支持 ${VAR} / ${VAR:default}，便于通过环境变量覆盖接入方
+        resolved_base = _resolve_value(raw_base_url, provider)
+        base_url = resolved_base if resolved_base is not None else raw_base_url
 
         return Model(
             id=model_id,

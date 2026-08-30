@@ -2,8 +2,8 @@
 Multi-threaded Trading System Main Entry Point
 
 Launches and manages all threads:
-1. Macro Analysis Thread (1h polling)
-2. On Bar Thread (K-line triggered)
+1. Macro Analysis Thread (2hr polling, 24hr 30m K線投喂)
+2. On Bar Thread (30m K-line triggered)
 3. Event Driven Thread (Trigger monitoring)
 """
 import asyncio
@@ -110,18 +110,18 @@ class MultiThreadedTradingSystem:
         # Initialize shared state cleanup task
         await self.shared_state.start_cleanup_task(interval_seconds=60)
         
-        # Initialize macro thread (market-level regime judgment, 主 symbol)
-        self.macro_thread = MacroAnalysisThread(
-            symbol=self.symbol,
-            interval_seconds=3600,  # 1 hour
-        )
-        await self.macro_thread.initialize()
-
-        # Phase 1: 每 symbol 一条规则回路 (12-agent chain 不进自动回路)
-        storage = KlineStorage()
-        macro_storage = get_macro_storage()
         rule_config = RuleEngineConfig.from_env()
         rule_config.interval = self.interval
+        storage = KlineStorage()
+        macro_storage = get_macro_storage()
+        self.macro_thread = MacroAnalysisThread(
+            symbol=self.symbol,
+            interval_seconds=rule_config.macro_interval_seconds,
+            kline_storage=storage,
+            kline_lookback_hours=rule_config.macro_lookback_hours,
+            kline_interval=self.interval,
+        )
+        await self.macro_thread.initialize()
         for sym in self.symbols:
             loop = RuleEngineLoop(
                 symbol=sym,

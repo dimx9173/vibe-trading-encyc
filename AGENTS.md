@@ -13,8 +13,8 @@ Vibe Trading is a multi-agent cryptocurrency trading system powered by Large Lan
 - **vibe_trading**: Main trading application with agents, coordinators, data sources, and execution
 
 **Current Execution Model (post convergence):**
-- **Rule-Engine Primary Loop**: AlphaZoo → signal → Half-Kelly sizing → EvidenceGate/grounding → ExitLadder
-- **LLM Regime Gate**: Hourly macro judgment outputs RISK_ON/NEUTRAL/RISK_OFF; RISK_OFF disables new position entry
+- **Rule-Engine Primary Loop**: AlphaZoo → signal → Half-Kelly sizing → EvidenceGate/grounding → ExitLadder (30m)
+- **LLM Regime Gate**: 2hr macro judgment (24hr 30m K線投喂, 48 bars) outputs RISK_ON/NEUTRAL/RISK_OFF; RISK_OFF disables new position entry; staleness tolerant to 4hr (1 failure)
 - **12-Agent Debate Chain**: Retained for manual offline analysis only, NOT in automatic loops
 - **Single Exchange**: Binance only (OKX/Bybit/Bitget/Hyperliquid/Jupiter, SOR, MCP Server, exporters deleted 2026-08-28)
 
@@ -25,8 +25,8 @@ Vibe Trading is a multi-agent cryptocurrency trading system powered by Large Lan
 4. **Phase 4 - Decision Layer**: Trader creates execution plan → Portfolio manager makes final decision
 
 **Threading Architecture:**
-- **Macro Thread**: Runs every hour, analyzes macro environment (trend, sentiment, events)
-- **On Bar Thread**: K-line triggered, reads macro state and runs simplified 3-phase flow
+- **Macro Thread**: Runs every 2hr, feeds 24hr of 30m klines (48 bars) to LLM for regime judgment (tolerant to 1 failure via 4hr max_age)
+- **On Bar Thread**: 30m K-line triggered, reads macro state and runs simplified 3-phase flow
 - **Event Thread**: Real-time trigger monitoring with priority queue for emergency responses
 
 ## Development Commands
