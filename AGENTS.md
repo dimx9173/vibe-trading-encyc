@@ -13,8 +13,11 @@ Vibe Trading is a multi-agent cryptocurrency trading system powered by Large Lan
 - **vibe_trading**: Main trading application with agents, coordinators, data sources, and execution
 
 **Current Execution Model (post convergence):**
-- **Rule-Engine Primary Loop**: AlphaZoo → signal → Half-Kelly sizing → EvidenceGate/grounding → ExitLadder (30m)
-- **LLM Regime Gate**: 2hr macro judgment (24hr 30m K線投喂, 48 bars) outputs RISK_ON/NEUTRAL/RISK_OFF; RISK_OFF disables new position entry; staleness tolerant to 4hr (1 failure)
+- **Rule-Engine Primary Loop**: AlphaZoo → signal → Half-Kelly sizing → EvidenceGate/grounding → ExitLadder (30m; per-mode exits — CHOPPY/MR: sl 2.5×ATR / tp 1.8×ATR / trailing 0 / ladder 50/30/20 vs TRENDING/MOM: sl 1.5-2.0 / tp 2.5-3.0 / trailing 1.0×ATR / 30/40/30)
+- **Signal Dual-Mode**: Adaptive BB `median(20)×0.7` (floor 0.015) + hysteresis 3-enter/2-exit; CHOPPY → FLAT (qty×0.3試探) or MR `-(rsi_zscore+price_to_ma×10)` vs TRENDING → momentum `tanh(mean(momentum_12_1,rate_of_change))` (spec §3 Trader Review)
+- **LLM Regime Gate**: 2hr macro judgment (24hr 30m K線投喂, 48 bars) outputs discrete `CHOPPY/TRENDING/UNCERTAIN` + `RISK_ON/NEUTRAL/RISK_OFF` (de-risk only: qty 0.3/1.0/0.5 × threshold 1.4/1.0/1.2, never adds size; latency>8000ms warning; staleness 4hr fail-safe → NEUTRAL)
+- **Replay Gate**: `fee_bps=8` + per-coin PF + choppy circuit (6hr PF<0.9 → 48hr threshold 0) + Walk-Forward 90d→30d×3 + configurable `REPLAY_WINDOW_DAYS`/`--window-days ×48` windows (spec §2/§5)
+- **Spec / Plan**: `docs/superpowers/specs/2026-08-30-perpetual-printer-design.md` + `docs/superpowers/plans/2026-08-30-perpetual-printer-plan.md` (8 tasks, G1-G5 chain)
 - **12-Agent Debate Chain**: Retained for manual offline analysis only, NOT in automatic loops
 - **Single Exchange**: Binance only (OKX/Bybit/Bitget/Hyperliquid/Jupiter, SOR, MCP Server, exporters deleted 2026-08-28)
 
